@@ -10,6 +10,7 @@ class ParsedPreview:
     headers: list[str]
     rows: list[dict[str, object]]
     shape: tuple[int, int]
+    dataframe: pd.DataFrame
 
 
 def parse_uploaded_file(file_obj) -> ParsedPreview:
@@ -25,7 +26,12 @@ def parse_uploaded_file(file_obj) -> ParsedPreview:
 
     sample_df = df.head(100)
     records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
-    return ParsedPreview(headers=[str(h) for h in sample_df.columns], rows=records, shape=df.shape)
+    return ParsedPreview(
+        headers=[str(h) for h in sample_df.columns],
+        rows=records,
+        shape=df.shape,
+        dataframe=df,
+    )
 
 
 def infer_column_kind(series: pd.Series) -> str:

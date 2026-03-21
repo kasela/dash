@@ -7,6 +7,7 @@ A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-te
 - Minimal Django project skeleton (`core/` + modular `apps/` layout)
 - Email/password auth pages (login/signup/logout)
 - Dataset upload endpoint using `request.FILES`
+- Authenticated uploads are persisted into `Dataset`, `DatasetVersion`, and `DatasetColumn` metadata
 - Pandas-based parser for `.csv`, `.xlsx`, `.xlsm`, `.json`
 - Preview rendering for first 100 rows through an HTMX partial
 - Example responsive Chart.js widget on the homepage
