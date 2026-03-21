@@ -49,7 +49,7 @@ _FALLBACK_CHART = {
     },
 }
 
-_VALID_CHART_TYPES = {"bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar"}
+_VALID_CHART_TYPES = {"bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table"}
 
 
 def landing_page(request: HttpRequest) -> HttpResponse:
@@ -218,6 +218,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
         ("hbar",     "↔️", "Horiz. Bar"),
         ("scatter",  "✦",  "Scatter"),
         ("radar",    "🕸️", "Radar"),
+        ("table",    "🧾", "Table"),
         ("kpi",      "🔢", "KPI"),
     ]
     palette_names = list(PALETTES.keys())
@@ -372,19 +373,43 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    result = _build_widget_config(dashboard, data)
+    if result.get("error"):
+        return JsonResponse({"error": result["error"]}, status=result.get("status", 400))
+    chart_type = result["chart_type"]
+    title = result["title"]
+    config = result["config"]
+    preview_only = result["preview_only"]
+
+    if preview_only:
+        return JsonResponse({"success": True, "chart_config": config})
+
+    max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
+    # Map area -> line type for widget_type storage (area uses line Chart.js type)
+    stored_type = chart_type
+    widget = DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title=title,
+        widget_type=stored_type,
+        position=max_pos + 1,
+        chart_config=config,
+    )
+
+    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config})
+
+
+def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     chart_type = data.get("chart_type", "").strip()
     title = data.get("title", "").strip() or "New Widget"
     dimension = data.get("dimension", "").strip()
-    # measures can be a list (multi-series) or single string
     raw_measures = data.get("measures", data.get("measure", ""))
     if isinstance(raw_measures, list):
         measures = [m.strip() for m in raw_measures if m.strip()]
     else:
         measures = [raw_measures.strip()] if raw_measures else []
     measure = measures[0] if measures else ""
-
-    x_measure = data.get("x_measure", "").strip()   # for scatter
-    y_measure = data.get("y_measure", "").strip()    # for scatter
+    x_measure = data.get("x_measure", "").strip()
+    y_measure = data.get("y_measure", "").strip()
     x_label = data.get("x_label", "").strip()
     y_label = data.get("y_label", "").strip()
     palette = data.get("palette", "indigo").strip()
@@ -393,10 +418,9 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
     preview_only = bool(data.get("preview_only", False))
 
     if chart_type not in _VALID_CHART_TYPES:
-        return JsonResponse({"error": "Invalid chart type"}, status=400)
+        return {"error": "Invalid chart type", "status": 400}
 
     config: dict = {}
-
     if chart_type == "kpi":
         if measure and dashboard.dataset_version:
             df = _load_df_from_version(dashboard.dataset_version)
@@ -407,49 +431,36 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
                 config = {"kpi": measure, "value": "N/A"}
         else:
             config = {"kpi": "value", "value": "0"}
-
     else:
         if not dashboard.dataset_version:
-            return JsonResponse({"error": "Dashboard has no dataset"}, status=400)
-
+            return {"error": "Dashboard has no dataset", "status": 400}
         df = _load_df_from_version(dashboard.dataset_version)
         if df is None:
-            return JsonResponse({"error": "Could not load dataset file"}, status=500)
-
+            return {"error": "Could not load dataset file", "status": 500}
         try:
             if chart_type == "bar":
                 if not dimension or not measures:
-                    return JsonResponse({"error": "dimension and at least one measure are required for bar charts"}, status=400)
+                    return {"error": "dimension and at least one measure are required for bar charts", "status": 400}
                 if len(measures) == 1:
                     top = df.groupby(dimension)[measure].sum().nlargest(10)
-                    labels = [str(l) for l in top.index.tolist()]
-                    values = [round(float(v), 2) for v in top.values.tolist()]
-                    config = _bar_config(labels, values, measure, palette, x_label, y_label)
+                    config = _bar_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette, x_label, y_label)
                 else:
-                    # multi-series: use all categories present
                     all_cats = [str(c) for c in df[dimension].dropna().unique()[:15]]
                     datasets = []
                     for m in measures:
                         if m not in df.columns:
                             continue
                         grp = df.groupby(dimension)[m].sum()
-                        datasets.append({
-                            "label": m,
-                            "data": [round(float(grp.get(c, 0)), 2) for c in all_cats],
-                        })
+                        datasets.append({"label": m, "data": [round(float(grp.get(c, 0)), 2) for c in all_cats]})
                     config = _multi_bar_config(all_cats, datasets, palette, x_label, y_label)
-
             elif chart_type == "hbar":
                 if not dimension or not measure:
-                    return JsonResponse({"error": "dimension and measure are required for horizontal bar charts"}, status=400)
+                    return {"error": "dimension and measure are required for horizontal bar charts", "status": 400}
                 top = df.groupby(dimension)[measure].sum().nlargest(10)
-                labels = [str(l) for l in top.index.tolist()]
-                values = [round(float(v), 2) for v in top.values.tolist()]
-                config = _hbar_config(labels, values, measure, palette, x_label, y_label)
-
+                config = _hbar_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette, x_label, y_label)
             elif chart_type == "line":
                 if not dimension or not measures:
-                    return JsonResponse({"error": "dimension and at least one measure are required for line charts"}, status=400)
+                    return {"error": "dimension and at least one measure are required for line charts", "status": 400}
                 if len(measures) == 1:
                     tmp = df[[dimension, measure]].copy()
                     try:
@@ -458,9 +469,7 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
                         trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                     except Exception:
                         trend = tmp.groupby(dimension)[measure].sum()
-                    labels = [str(p) for p in trend.index.tolist()]
-                    values = [round(float(v), 2) for v in trend.values.tolist()]
-                    config = _line_config(labels, values, measure, palette, x_label, y_label)
+                    config = _line_config([str(p) for p in trend.index.tolist()], [round(float(v), 2) for v in trend.values.tolist()], measure, palette, x_label, y_label)
                 else:
                     all_cats = None
                     datasets = []
@@ -478,10 +487,9 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
                             all_cats = [str(p) for p in trend.index.tolist()]
                         datasets.append({"label": m, "data": [round(float(v), 2) for v in trend.values.tolist()]})
                     config = _multi_line_config(all_cats or [], datasets, palette, x_label, y_label)
-
             elif chart_type == "area":
                 if not dimension or not measure:
-                    return JsonResponse({"error": "dimension and measure are required for area charts"}, status=400)
+                    return {"error": "dimension and measure are required for area charts", "status": 400}
                 tmp = df[[dimension, measure]].copy()
                 try:
                     tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
@@ -489,68 +497,111 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
                     trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
                     trend = tmp.groupby(dimension)[measure].sum()
-                labels = [str(p) for p in trend.index.tolist()]
-                values = [round(float(v), 2) for v in trend.values.tolist()]
-                config = _area_config(labels, values, measure, palette, x_label, y_label)
-
+                config = _area_config([str(p) for p in trend.index.tolist()], [round(float(v), 2) for v in trend.values.tolist()], measure, palette, x_label, y_label)
             elif chart_type == "pie":
                 if not dimension:
-                    return JsonResponse({"error": "dimension is required for pie charts"}, status=400)
-                if measure and measure in df.columns:
-                    vc = df.groupby(dimension)[measure].sum().nlargest(6)
-                else:
-                    vc = df[dimension].value_counts().head(6)
-                labels = [str(l) for l in vc.index.tolist()]
-                values = [round(float(v), 2) for v in vc.values.tolist()]
-                config = _pie_config(labels, values, palette)
-
+                    return {"error": "dimension is required for pie charts", "status": 400}
+                vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
+                config = _pie_config([str(l) for l in vc.index.tolist()], [round(float(v), 2) for v in vc.values.tolist()], palette)
             elif chart_type == "doughnut":
                 if not dimension:
-                    return JsonResponse({"error": "dimension is required for doughnut charts"}, status=400)
-                if measure and measure in df.columns:
-                    vc = df.groupby(dimension)[measure].sum().nlargest(6)
-                else:
-                    vc = df[dimension].value_counts().head(6)
-                labels = [str(l) for l in vc.index.tolist()]
-                values = [round(float(v), 2) for v in vc.values.tolist()]
-                config = _doughnut_config(labels, values, palette)
-
+                    return {"error": "dimension is required for doughnut charts", "status": 400}
+                vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
+                config = _doughnut_config([str(l) for l in vc.index.tolist()], [round(float(v), 2) for v in vc.values.tolist()], palette)
             elif chart_type == "scatter":
                 if not x_measure or not y_measure:
-                    return JsonResponse({"error": "x_measure and y_measure are required for scatter charts"}, status=400)
+                    return {"error": "x_measure and y_measure are required for scatter charts", "status": 400}
                 if x_measure not in df.columns or y_measure not in df.columns:
-                    return JsonResponse({"error": "Selected columns not found in dataset"}, status=400)
+                    return {"error": "Selected columns not found in dataset", "status": 400}
                 tmp = df[[x_measure, y_measure]].dropna().head(500)
-                x_vals = [round(float(v), 4) for v in tmp[x_measure].tolist()]
-                y_vals = [round(float(v), 4) for v in tmp[y_measure].tolist()]
-                config = _scatter_config(x_vals, y_vals, x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
-
+                config = _scatter_config([round(float(v), 4) for v in tmp[x_measure].tolist()], [round(float(v), 4) for v in tmp[y_measure].tolist()], x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
             elif chart_type == "radar":
                 if not dimension or not measure:
-                    return JsonResponse({"error": "dimension and measure are required for radar charts"}, status=400)
+                    return {"error": "dimension and measure are required for radar charts", "status": 400}
                 top = df.groupby(dimension)[measure].sum().nlargest(8)
-                labels = [str(l) for l in top.index.tolist()]
-                values = [round(float(v), 2) for v in top.values.tolist()]
-                config = _radar_config(labels, values, measure, palette)
-
+                config = _radar_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette)
+            elif chart_type == "table":
+                columns = [c for c in ([dimension] + measures) if c and c in df.columns]
+                if not columns:
+                    columns = [str(c) for c in df.columns[:5]]
+                preview_df = df[columns].head(12).fillna("")
+                rows = [[str(v) for v in row] for row in preview_df.values.tolist()]
+                config = {"columns": columns, "rows": rows}
         except Exception as exc:
-            return JsonResponse({"error": str(exc)}, status=500)
+            return {"error": str(exc), "status": 500}
+    return {"chart_type": chart_type, "title": title, "config": config, "preview_only": preview_only}
 
-    if preview_only:
-        return JsonResponse({"success": True, "chart_config": config})
 
-    max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
-    # Map area -> line type for widget_type storage (area uses line Chart.js type)
-    stored_type = chart_type
-    widget = DashboardWidget.objects.create(
-        dashboard=dashboard,
-        title=title,
-        widget_type=stored_type,
-        position=max_pos + 1,
-        chart_config=config,
-    )
+@login_required
+def dashboard_update_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    result = _build_widget_config(dashboard, data)
+    if result.get("error"):
+        return JsonResponse({"error": result["error"]}, status=result.get("status", 400))
+    widget.title = result["title"]
+    widget.widget_type = result["chart_type"]
+    widget.chart_config = result["config"]
+    widget.save(update_fields=["title", "widget_type", "chart_config"])
+    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": widget.chart_config})
 
-    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config})
+
+@login_required
+def dashboard_resize_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    size = data.get("size", "md").strip().lower()
+    if size not in {"sm", "md", "lg"}:
+        return JsonResponse({"error": "Invalid size"}, status=400)
+    raw_height = data.get("height")
+    height = None
+    if raw_height is not None:
+        try:
+            height = int(raw_height)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid height"}, status=400)
+        if height < 180 or height > 900:
+            return JsonResponse({"error": "Height out of range"}, status=400)
+    cfg = widget.chart_config or {}
+    layout = cfg.get("layout", {})
+    layout["size"] = size
+    if height is not None:
+        layout["height"] = height
+    cfg["layout"] = layout
+    widget.chart_config = cfg
+    widget.save(update_fields=["chart_config"])
+    return JsonResponse({"success": True, "size": size, "height": layout.get("height")})
+
+
+@login_required
+def dashboard_rename(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    new_title = data.get("title", "").strip()
+    if not new_title:
+        return JsonResponse({"error": "Title cannot be empty"}, status=400)
+    if len(new_title) > 200:
+        return JsonResponse({"error": "Title too long (max 200 chars)"}, status=400)
+    dashboard.title = new_title
+    dashboard.save(update_fields=["title"])
+    return JsonResponse({"success": True, "title": dashboard.title})
 
 
 @login_required

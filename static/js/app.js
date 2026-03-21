@@ -450,14 +450,17 @@
   // ── Chart Builder Modal ──────────────────────────────────────────────────
 
   var cbPreviewChart = null;
+  var cbEditingWidgetId = null;
+  var cbPendingEdit = null;
 
   var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar']);
   var MULTI_MEASURE_TYPES = new Set(['bar', 'line']);
   var SCATTER_TYPES = new Set(['scatter']);
-  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar']);
-  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie']);
+  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table']);
+  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table']);
 
-  function openChartBuilder() {
+  function openChartBuilder(opts) {
+    cbPendingEdit = opts || null;
     var modal = document.getElementById('chart-builder-modal');
     var overlay = document.getElementById('chart-builder-overlay');
     if (!modal) return;
@@ -473,6 +476,9 @@
     document.getElementById('cb-preview-wrap').style.display = 'none';
     var valErr = document.getElementById('cb-validation-error');
     if (valErr) valErr.style.display = 'none';
+    cbEditingWidgetId = cbPendingEdit ? cbPendingEdit.widgetId : null;
+    var submitBtn = document.getElementById('cb-submit-btn');
+    if (submitBtn) submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
 
     var titleInput = document.getElementById('cb-title');
     if (titleInput) titleInput.value = '';
@@ -495,7 +501,15 @@
         document.getElementById('cb-form').style.display = 'block';
         document.getElementById('cb-preview-btn').style.display = '';
         document.getElementById('cb-submit-btn').style.display = '';
-        updateCbFieldVisibility();
+        if (cbPendingEdit && cbPendingEdit.type) {
+          var typeRadio = document.querySelector('input[name="cb_chart_type"][value="' + cbPendingEdit.type + '"]');
+          if (typeRadio) typeRadio.checked = true;
+        }
+        updateCbFieldVisibility(!cbPendingEdit);
+        if (cbPendingEdit && cbPendingEdit.title) {
+          var t = document.getElementById('cb-title');
+          if (t) t.value = cbPendingEdit.title;
+        }
       })
       .catch(function (err) {
         showCbError('Could not load dataset columns (' + err.message + '). Make sure the dataset file is still accessible.');
@@ -508,6 +522,7 @@
     if (modal) modal.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
     destroyCbPreview();
+    cbPendingEdit = null;
   }
 
   function showCbError(msg) {
@@ -599,7 +614,7 @@
     else if (dim && measure) titleInput.value = measure + ' by ' + dim;
   }
 
-  function updateCbFieldVisibility() {
+  function updateCbFieldVisibility(shouldResetTitle) {
     var type = getSelectedChartType();
     var dimWrap = document.getElementById('cb-dimension-wrap');
     var measureWrap = document.getElementById('cb-measure-wrap');
@@ -633,8 +648,10 @@
       }
     });
 
-    document.getElementById('cb-title').value = '';
-    autoSetTitle();
+    if (shouldResetTitle !== false) {
+      document.getElementById('cb-title').value = '';
+      autoSetTitle();
+    }
     destroyCbPreview();
     document.getElementById('cb-preview-wrap').style.display = 'none';
     hideCbValidationError();
@@ -695,6 +712,10 @@
     }
     if (type === 'scatter' && (!xm || !ym)) {
       showCbValidationError('Select both X and Y numeric columns for the scatter chart.');
+      return false;
+    }
+    if (type === 'table' && !dim && measures.length === 0) {
+      showCbValidationError('Select at least one dimension or measure column for the table.');
       return false;
     }
     hideCbValidationError();
@@ -806,7 +827,10 @@
     submitBtn.textContent = 'Adding…';
     submitBtn.disabled = true;
 
-    fetch(cfg.addWidgetUrl, {
+    var submitUrl = cbEditingWidgetId
+      ? (cfg.updateWidgetBaseUrl + cbEditingWidgetId + '/update/')
+      : cfg.addWidgetUrl;
+    fetch(submitUrl, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
@@ -817,21 +841,138 @@
         return r.json();
       })
       .then(function (data) {
-        submitBtn.textContent = 'Add to Dashboard';
+        submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
         submitBtn.disabled = false;
         if (data.success) {
           closeChartBuilder();
-          showToast('Chart added — reloading…', 'success');
+          showToast(cbEditingWidgetId ? 'Widget updated — reloading…' : 'Chart added — reloading…', 'success');
           setTimeout(function () { window.location.reload(); }, 700);
         } else {
           showCbValidationError(data.error || 'Failed to add widget. Please try again.');
         }
       })
       .catch(function (err) {
-        submitBtn.textContent = 'Add to Dashboard';
+        submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
         submitBtn.disabled = false;
         showCbValidationError('Network error: ' + err.message);
       });
+  }
+
+  function initWidgetResize() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+    document.querySelectorAll('.widget-size-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var widgetId = sel.dataset.widgetId;
+        fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ size: sel.value }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.success) throw new Error(data.error || 'Resize failed');
+            showToast('Card resized — reloading…', 'success');
+            setTimeout(function () { window.location.reload(); }, 400);
+          })
+          .catch(function (err) { showToast(err.message, 'error'); });
+      });
+    });
+  }
+
+  function initWidgetDragResize() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+    document.querySelectorAll('.widget-resize-handle').forEach(function (handle) {
+      handle.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        var widgetId = handle.dataset.widgetId;
+        var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (!card) return;
+        var wrap = card.querySelector('.widget-chart-wrap');
+        var startY = e.clientY;
+        var startHeight = wrap ? wrap.offsetHeight : card.offsetHeight;
+        function onMove(ev) {
+          var next = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
+          if (wrap) wrap.style.height = next + 'px';
+          card.style.minHeight = next + 'px';
+        }
+        function onUp(ev) {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          var finalHeight = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
+          var sizeSel = card.querySelector('.widget-size-select');
+          var size = sizeSel ? sizeSel.value : 'md';
+          fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ size: size, height: finalHeight }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) throw new Error(data.error || 'Could not save resize');
+              showToast('Widget size saved', 'success');
+            })
+            .catch(function (err) { showToast(err.message, 'error'); });
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
+  function initWidgetEdit() {
+    document.querySelectorAll('.edit-widget-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openChartBuilder({
+          widgetId: btn.dataset.widgetId,
+          type: btn.dataset.widgetType || 'bar',
+          title: btn.dataset.widgetTitle || '',
+        });
+      });
+    });
+  }
+
+  function initDashboardRename() {
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.renameDashboardUrl) return;
+    var titleEl = document.getElementById('dashboard-title');
+    var inputEl = document.getElementById('dashboard-title-input');
+    if (!titleEl || !inputEl) return;
+    titleEl.addEventListener('click', function () {
+      titleEl.classList.add('hidden');
+      inputEl.classList.remove('hidden');
+      inputEl.focus();
+      inputEl.select();
+    });
+    function commit() {
+      var v = inputEl.value.trim();
+      if (!v) return cancel();
+      fetch(cfg.renameDashboardUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ title: v }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) throw new Error(data.error || 'Rename failed');
+          titleEl.textContent = data.title;
+          showToast('Dashboard renamed', 'success');
+          cancel();
+        })
+        .catch(function (err) { showToast(err.message, 'error'); cancel(); });
+    }
+    function cancel() {
+      inputEl.classList.add('hidden');
+      titleEl.classList.remove('hidden');
+    }
+    inputEl.addEventListener('blur', commit);
+    inputEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { cancel(); }
+    });
   }
 
   function initChartBuilder() {
@@ -892,6 +1033,10 @@
     initMaximize();
     initDownloadButtons();
     initChartBuilder();
+    initWidgetResize();
+    initWidgetDragResize();
+    initWidgetEdit();
+    initDashboardRename();
   });
 
 })();
