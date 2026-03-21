@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from django.db import transaction
+from django.db.utils import OperationalError, ProgrammingError
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
@@ -28,8 +29,12 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         return HttpResponseBadRequest(str(exc))
 
     dataset_version = None
+    persistence_error = None
     if request.user.is_authenticated:
-        dataset_version = _persist_dataset_for_user(request, upload, parsed)
+        try:
+            dataset_version = _persist_dataset_for_user(request, upload, parsed)
+        except (OperationalError, ProgrammingError):
+            persistence_error = "Database tables are not ready yet. Run: python manage.py migrate"
 
     context = {
         "headers": parsed.headers,
@@ -37,6 +42,7 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         "shape": parsed.shape,
         "filename": upload.name,
         "dataset_version": dataset_version,
+        "persistence_error": persistence_error,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 

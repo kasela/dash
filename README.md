@@ -53,3 +53,14 @@ Open:
 
 - The base template currently uses `https://cdn.tailwindcss.com` for fast development.
 - You can switch back to a build pipeline later for production optimization.
+
+
+### Common setup issue
+
+If you see `django.db.utils.OperationalError: no such table ...`, run:
+
+```bash
+python manage.py migrate
+```
+
+This creates the Workspace/Dataset/Dashboard tables before first upload.

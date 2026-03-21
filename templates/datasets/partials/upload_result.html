@@ -2,6 +2,10 @@
 <h2 class="text-lg font-semibold">{{ filename }}</h2>
 <p class="mt-1 text-sm text-slate-600"><strong>Total rows:</strong> {{ shape.0 }} | <strong>Total columns:</strong> {{ shape.1 }}</p>
 
+{% if persistence_error %}
+  <p class="mt-2 text-sm text-amber-700">{{ persistence_error }}</p>
+{% endif %}
+
 {% if dataset_version %}
   <p class="mt-2 text-sm text-emerald-700">Saved as dataset version {{ dataset_version.version }} (ID: {{ dataset_version.id }}).</p>
 {% else %}
