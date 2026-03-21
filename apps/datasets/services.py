@@ -13,6 +13,18 @@ class ParsedPreview:
     dataframe: pd.DataFrame
 
 
+@dataclass
+class ProfileSummary:
+    total_rows: int
+    total_columns: int
+    duplicate_rows: int
+    missing_cells: int
+    numeric_columns: list[str]
+    categorical_columns: list[str]
+    suggested_dimensions: list[str]
+    suggested_measures: list[str]
+
+
 def parse_uploaded_file(file_obj) -> ParsedPreview:
     name = file_obj.name.lower()
     if name.endswith(".csv"):
@@ -45,3 +57,22 @@ def infer_column_kind(series: pd.Series) -> str:
     if series.nunique(dropna=True) <= 1:
         return "unknown"
     return "dimension"
+
+
+def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
+    numeric_columns = [str(c) for c in df.select_dtypes(include=["number"]).columns]
+    categorical_columns = [str(c) for c in df.select_dtypes(exclude=["number", "datetime"]).columns]
+
+    suggested_dimensions = categorical_columns[:6]
+    suggested_measures = numeric_columns[:6]
+
+    return ProfileSummary(
+        total_rows=int(df.shape[0]),
+        total_columns=int(df.shape[1]),
+        duplicate_rows=int(df.duplicated().sum()),
+        missing_cells=int(df.isna().sum().sum()),
+        numeric_columns=numeric_columns,
+        categorical_columns=categorical_columns,
+        suggested_dimensions=suggested_dimensions,
+        suggested_measures=suggested_measures,
+    )

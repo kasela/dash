@@ -9,7 +9,7 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.workspaces.models import Workspace
 
 from .models import Dataset, DatasetColumn, DatasetVersion
-from .services import infer_column_kind, parse_uploaded_file
+from .services import build_profile_summary, infer_column_kind, parse_uploaded_file
 
 
 @require_GET
@@ -28,6 +28,8 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
     except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
+    profile_summary = build_profile_summary(parsed.dataframe)
+
     dataset_version = None
     persistence_error = None
     if request.user.is_authenticated:
@@ -43,6 +45,7 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         "filename": upload.name,
         "dataset_version": dataset_version,
         "persistence_error": persistence_error,
+        "profile": profile_summary,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 
