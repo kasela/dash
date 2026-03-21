@@ -37,6 +37,16 @@
 
 {% block content %}
 
+<style>
+  .dashboard-section-heading {
+    font-family: "Poppins", "Inter", "Segoe UI", sans-serif;
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+  }
+</style>
+
 <!-- Dashboard header -->
 <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
   <div>
@@ -58,6 +68,10 @@
 
 <!-- Share links panel -->
 {% if share_links %}
+<div class="mb-3 flex items-center gap-2">
+  <span class="dashboard-section-heading text-indigo-700">Sharing</span>
+  <span class="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">Secure Links</span>
+</div>
 <div class="mb-8 rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
   <div class="mb-3 flex items-center gap-2">
     <svg class="h-4 w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,6 +106,10 @@
 {% endif %}
 
 <!-- Widgets grid -->
+<div class="mb-3 flex items-center gap-2">
+  <span class="dashboard-section-heading text-emerald-700">Dashboard Widgets</span>
+  <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Analysis Canvas</span>
+</div>
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
   {% for widget in widgets %}
   <div class="widget-card relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'sm' %}sm:col-span-1{% elif widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
