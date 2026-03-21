@@ -158,13 +158,38 @@ _MULTI_COLORS = [
 ]
 
 
+_TOOLTIP_OPTS = {
+    "backgroundColor": "rgba(15,23,42,0.92)",
+    "titleColor": "#f8fafc",
+    "bodyColor": "#cbd5e1",
+    "borderColor": "rgba(99,102,241,0.3)",
+    "borderWidth": 1,
+    "padding": 10,
+    "cornerRadius": 8,
+    "callbacks": {
+        "label": "function(ctx){var v=ctx.parsed.y??ctx.parsed;if(typeof v==='number')return ' '+v.toLocaleString();return ' '+v;}"
+    },
+}
+
+_ANIMATION_OPTS = {
+    "duration": 600,
+    "easing": "easeInOutQuart",
+}
+
+
 def _scale_opts(x_label: str = "", y_label: str = "") -> dict:
-    x = {"grid": {"display": False}}
-    y = {"grid": {"color": "rgba(0,0,0,0.05)"}, "ticks": {"color": "#94a3b8"}}
+    x = {
+        "grid": {"display": False},
+        "ticks": {"color": "#94a3b8", "font": {"size": 11}},
+    }
+    y = {
+        "grid": {"color": "rgba(0,0,0,0.05)", "drawBorder": False},
+        "ticks": {"color": "#94a3b8", "font": {"size": 11}},
+    }
     if x_label:
-        x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 12}}
+        x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 12, "weight": "500"}}
     if y_label:
-        y["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 12}}
+        y["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 12, "weight": "500"}}
     return {"x": x, "y": y}
 
 
@@ -186,12 +211,18 @@ def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",
                 "data": values,
                 "backgroundColor": colors,
                 "borderRadius": 6,
+                "borderSkipped": False,
+                "hoverBackgroundColor": [c + "cc" for c in colors],
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -208,6 +239,8 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
             "data": ds["data"],
             "backgroundColor": color,
             "borderRadius": 4,
+            "borderSkipped": False,
+            "hoverBackgroundColor": color + "cc",
         })
     return {
         "type": "bar",
@@ -215,7 +248,11 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": True, "position": "top"}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": True, "position": "top", "labels": {"color": "#475569", "font": {"size": 12}}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -225,7 +262,6 @@ def _line_config(labels: list, values: list, label: str, palette: str = "indigo"
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
-    bg = border.replace(")", ",0.1)").replace("rgb", "rgba") if border.startswith("rgb") else border + "1a"
     return {
         "type": "line",
         "data": {
@@ -234,16 +270,25 @@ def _line_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "label": label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": "rgba(99,102,241,0.1)",
+                "backgroundColor": border + "1a",
                 "tension": 0.4,
                 "fill": False,
-                "pointRadius": 3,
+                "pointRadius": 4,
+                "pointHoverRadius": 6,
+                "pointBackgroundColor": border,
+                "pointBorderColor": "#ffffff",
+                "pointBorderWidth": 2,
+                "borderWidth": 2.5,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -261,7 +306,12 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
             "backgroundColor": color + "1a",
             "tension": 0.4,
             "fill": False,
-            "pointRadius": 3,
+            "pointRadius": 4,
+            "pointHoverRadius": 6,
+            "pointBackgroundColor": color,
+            "pointBorderColor": "#ffffff",
+            "pointBorderWidth": 2,
+            "borderWidth": 2.5,
         })
     return {
         "type": "line",
@@ -269,7 +319,11 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": True, "position": "top"}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": True, "position": "top", "labels": {"color": "#475569", "font": {"size": 12}}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -287,16 +341,25 @@ def _area_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "label": label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "33",
+                "backgroundColor": border + "28",
                 "tension": 0.4,
                 "fill": True,
-                "pointRadius": 3,
+                "pointRadius": 4,
+                "pointHoverRadius": 6,
+                "pointBackgroundColor": border,
+                "pointBorderColor": "#ffffff",
+                "pointBorderWidth": 2,
+                "borderWidth": 2.5,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -311,13 +374,19 @@ def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 6,
+                "hoverOffset": 10,
+                "borderWidth": 2,
+                "borderColor": "#ffffff",
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b"}}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b", "padding": 16}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
         },
     }
 
@@ -331,15 +400,20 @@ def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dic
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 8,
-                "borderWidth": 2,
+                "hoverOffset": 10,
+                "borderWidth": 3,
+                "borderColor": "#ffffff",
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "cutout": "65%",
-            "plugins": {"legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b"}}},
+            "cutout": "68%",
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b", "padding": 16}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
         },
     }
 
@@ -356,13 +430,19 @@ def _hbar_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "data": values,
                 "backgroundColor": colors,
                 "borderRadius": 4,
+                "borderSkipped": False,
+                "hoverBackgroundColor": [c + "cc" for c in colors],
             }],
         },
         "options": {
             "indexAxis": "y",
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -378,15 +458,21 @@ def _scatter_config(x_values: list, y_values: list, x_label: str = "", y_label: 
             "datasets": [{
                 "label": label,
                 "data": points,
-                "backgroundColor": colors[0] + "aa",
+                "backgroundColor": colors[0] + "88",
                 "borderColor": colors[0],
+                "borderWidth": 1.5,
                 "pointRadius": 5,
+                "pointHoverRadius": 7,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
             "scales": _scale_opts(x_label, y_label),
         },
     }
@@ -403,15 +489,30 @@ def _radar_config(labels: list, values: list, label: str, palette: str = "indigo
                 "label": label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "33",
+                "backgroundColor": border + "28",
                 "pointRadius": 4,
+                "pointHoverRadius": 6,
+                "pointBackgroundColor": border,
+                "pointBorderColor": "#ffffff",
+                "pointBorderWidth": 2,
+                "borderWidth": 2,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "plugins": {"legend": {"display": False}},
-            "scales": {"r": {"ticks": {"color": "#94a3b8"}, "grid": {"color": "rgba(0,0,0,0.08)"}}},
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": {
+                "r": {
+                    "ticks": {"color": "#94a3b8", "backdropColor": "transparent", "font": {"size": 10}},
+                    "grid": {"color": "rgba(0,0,0,0.08)"},
+                    "pointLabels": {"color": "#64748b", "font": {"size": 11}},
+                }
+            },
         },
     }
 

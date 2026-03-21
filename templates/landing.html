@@ -1,6 +1,80 @@
 {% extends "base.html" %}
 
 {% block title %}DashAI – Turn Spreadsheets into Beautiful Dashboards{% endblock %}
+{% block meta_description %}Turn CSV, Excel, or JSON files into beautiful interactive dashboards in seconds. AI-powered chart suggestions, one-click sharing. Free forever on the Starter plan.{% endblock %}
+{% block og_title %}DashAI – Turn Spreadsheets into Beautiful Dashboards{% endblock %}
+{% block og_description %}Turn CSV, Excel, or JSON files into beautiful interactive dashboards in seconds. AI-powered chart suggestions, one-click sharing.{% endblock %}
+{% block twitter_title %}DashAI – Turn Spreadsheets into Beautiful Dashboards{% endblock %}
+{% block twitter_description %}Turn CSV, Excel, or JSON files into beautiful interactive dashboards in seconds. AI-powered chart suggestions, one-click sharing.{% endblock %}
+
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "DashAI",
+  "description": "AI-powered dashboard builder. Upload CSV, Excel, or JSON and generate beautiful shareable dashboards instantly.",
+  "url": "https://dashai.io",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Starter",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "Free plan with 3 dashboards and 5 uploads per month"
+    },
+    {
+      "@type": "Offer",
+      "name": "Pro",
+      "price": "29",
+      "priceCurrency": "USD",
+      "description": "Pro plan with unlimited dashboards and team collaboration"
+    }
+  ],
+  "featureList": [
+    "CSV, Excel, JSON upload",
+    "AI-powered chart suggestions",
+    "One-click shareable dashboards",
+    "10+ chart types",
+    "Team collaboration"
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What file types does DashAI support?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "DashAI supports CSV, XLSX, XLSM, and JSON files on all plans."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is DashAI free to use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes! The Starter plan is free forever with no credit card required. You get 3 dashboards and 5 uploads per month."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do viewers need an account to see shared dashboards?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Every share link uses a unique UUID token. Anyone with the link can view the dashboard without creating an account."
+      }
+    }
+  ]
+}
+</script>
+{% endblock %}
 
 {% block content %}
 

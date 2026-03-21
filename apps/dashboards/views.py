@@ -162,6 +162,8 @@ def pricing_page(request: HttpRequest) -> HttpResponse:
 def app_home(request: HttpRequest) -> HttpResponse:
     import hashlib
     from apps.datasets.models import Dataset
+    from apps.billing.models import UserProfile
+    UserProfile.objects.get_or_create(user=request.user)  # ensure profile exists
 
     all_dashboards = Dashboard.objects.filter(workspace__owner=request.user).order_by("-created_at")
     total_dashboards = all_dashboards.count()
@@ -242,6 +244,20 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         id=version_id,
         dataset__workspace__owner=request.user,
     )
+
+    # Enforce dashboard limit for free plan
+    from apps.billing.models import UserProfile
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not profile.is_pro:
+        current_count = Dashboard.objects.filter(workspace__owner=request.user).count()
+        if current_count >= profile.max_dashboards:
+            from django.contrib import messages
+            messages.error(
+                request,
+                f"You've reached the {profile.max_dashboards} dashboard limit on the Free plan. "
+                "Upgrade to Pro for unlimited dashboards."
+            )
+            return redirect("app-home")
 
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,

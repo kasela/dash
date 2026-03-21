@@ -66,6 +66,22 @@
           <div class="my-4 border-t border-slate-700/60"></div>
           <p class="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Account</p>
 
+          <a href="{% url 'account-settings' %}"
+            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_account_class %}text-slate-300 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+            Account Settings
+          </a>
+
+          <a href="{% url 'team-settings' %}"
+            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_team_class %}text-slate-300 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Team
+          </a>
+
           <a href="{% url 'pricing' %}"
             class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,11 +109,17 @@
             </div>
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-semibold text-white">{{ user.username }}</p>
-              <p class="truncate text-xs text-slate-400">Free plan</p>
+              <p class="truncate text-xs text-slate-400">
+                {% if user_profile.plan == 'pro' %}Pro plan
+                {% elif user_profile.plan == 'enterprise' %}Enterprise
+                {% else %}Free plan{% endif %}
+              </p>
             </div>
-            <a href="{% url 'pricing' %}" class="shrink-0 rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-500 transition-colors">
+            {% if not user_profile.is_pro %}
+            <a href="{% url 'checkout-pro' %}" class="shrink-0 rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-500 transition-colors">
               Upgrade
             </a>
+            {% endif %}
           </div>
         </div>
       </aside>

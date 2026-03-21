@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
+from django.http import HttpResponse
 
 from apps.dashboards.views import (
     app_home,
@@ -15,14 +17,37 @@ from apps.dashboards.views import (
     pricing_page,
 )
 from apps.datasets.views import dataset_upload, dataset_upload_result
+from apps.seo.sitemaps import StaticViewSitemap
+
+
+def robots_txt(request):
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /app/",
+        "Disallow: /datasets/",
+        "Disallow: /dashboards/share/",
+        "",
+        "Sitemap: https://dashai.io/sitemap.xml",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain")
+
+
+sitemaps = {"static": StaticViewSitemap}
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("apps.accounts.urls")),
+    path("billing/", include("apps.billing.urls")),
 
     # Marketing pages
     path("", landing_page, name="landing"),
     path("pricing/", pricing_page, name="pricing"),
+
+    # SEO
+    path("robots.txt", robots_txt, name="robots-txt"),
+    path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="sitemap"),
 
     # Authenticated app
     path("app/", app_home, name="app-home"),
