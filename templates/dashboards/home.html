@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Home{% endblock %}
+
+{% block content %}
+  <div class="space-y-5">
+    <section class="rounded-xl bg-white p-5 shadow">
+      <h1 class="text-2xl font-bold tracking-tight">AI Dashboard Builder</h1>
+      <p class="mt-2 max-w-2xl text-sm text-slate-600">Upload CSV/XLSX/XLSM/JSON and generate a dashboard with server-driven interactions powered by HTMX.</p>
+      <a class="mt-4 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" href="{% url 'dataset-upload' %}">Upload dataset</a>
+    </section>
+
+    <section class="rounded-xl bg-white p-5 shadow">
+      <h2 class="text-xl font-semibold">Sample responsive chart</h2>
+      {{ chart_config|json_script:"chart-config" }}
+      <div class="mt-3 h-80">
+        <canvas id="home-chart"></canvas>
+      </div>
+    </section>
+
+    {% if user.is_authenticated %}
+      <section class="rounded-xl bg-white p-5 shadow">
+        <h2 class="text-xl font-semibold">Recent dashboards</h2>
+        {% if recent_dashboards %}
+          <ul class="mt-3 space-y-2 text-sm">
+            {% for d in recent_dashboards %}
+              <li class="rounded border border-slate-200 px-3 py-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <strong>{{ d.title }}</strong>
+                    <span class="text-slate-500">· {{ d.created_at }}</span>
+                  </div>
+                  <form method="post" action="{% url 'dashboard-create-share' d.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="rounded bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-700">Create share link</button>
+                  </form>
+                </div>
+                {% if d.share_url %}
+                  <p class="mt-2 break-all text-xs text-indigo-700">{{ d.share_url }}</p>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="mt-2 text-sm text-slate-500">No dashboards yet. Upload a dataset and create one.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
+{% endblock %}
