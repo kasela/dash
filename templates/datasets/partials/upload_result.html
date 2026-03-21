@@ -26,6 +26,15 @@
   </div>
 </section>
 
+<section class="mt-4 rounded-md border border-blue-200 bg-blue-50 p-3">
+  <h3 class="text-sm font-semibold text-blue-900">Widget suggestions</h3>
+  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-blue-900">
+    {% for item in widget_suggestions %}
+      <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
 <div class="mt-3 max-h-[420px] overflow-auto rounded-md border border-slate-200">
   <table class="min-w-full border-collapse text-sm">
     <thead class="sticky top-0 bg-slate-100">

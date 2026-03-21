@@ -76,3 +76,32 @@ def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
         suggested_dimensions=suggested_dimensions,
         suggested_measures=suggested_measures,
     )
+
+
+
+def build_widget_suggestions(profile: ProfileSummary) -> list[str]:
+    suggestions: list[str] = []
+
+    if profile.suggested_measures and profile.suggested_dimensions:
+        dim = profile.suggested_dimensions[0]
+        measure = profile.suggested_measures[0]
+        suggestions.append(f"{measure} by {dim}")
+
+    if profile.suggested_measures:
+        measure = profile.suggested_measures[0]
+        suggestions.append(f"Top 10 categories by {measure}")
+
+    date_like_dims = [d for d in profile.suggested_dimensions if any(k in d.lower() for k in ["date", "month", "year", "period", "quarter"])]
+    if date_like_dims and profile.suggested_measures:
+        suggestions.append(f"Trend of {profile.suggested_measures[0]} by {date_like_dims[0]}")
+
+    if profile.duplicate_rows > 0:
+        suggestions.append("Data quality: duplicate records overview")
+
+    if profile.missing_cells > 0:
+        suggestions.append("Data quality: missing values by column")
+
+    if not suggestions:
+        suggestions.append("Overview KPI dashboard")
+
+    return suggestions[:6]

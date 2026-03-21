@@ -11,6 +11,7 @@ A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-te
 - Pandas-based parser for `.csv`, `.xlsx`, `.xlsm`, `.json`
 - Preview rendering for first 100 rows through an HTMX partial
 - Automatic profile snapshot (duplicates, missing cells, suggested dimensions/measures) after upload
+- Auto-generated widget suggestions (e.g., measure-by-dimension, trend, data-quality views)
 - Example responsive Chart.js widget on the homepage
 - Tailwind CSS via CDN for instant styling in constrained environments
 

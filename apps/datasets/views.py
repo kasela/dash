@@ -9,7 +9,12 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.workspaces.models import Workspace
 
 from .models import Dataset, DatasetColumn, DatasetVersion
-from .services import build_profile_summary, infer_column_kind, parse_uploaded_file
+from .services import (
+    build_profile_summary,
+    build_widget_suggestions,
+    infer_column_kind,
+    parse_uploaded_file,
+)
 
 
 @require_GET
@@ -29,6 +34,7 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         return HttpResponseBadRequest(str(exc))
 
     profile_summary = build_profile_summary(parsed.dataframe)
+    widget_suggestions = build_widget_suggestions(profile_summary)
 
     dataset_version = None
     persistence_error = None
@@ -46,6 +52,7 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         "dataset_version": dataset_version,
         "persistence_error": persistence_error,
         "profile": profile_summary,
+        "widget_suggestions": widget_suggestions,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 
