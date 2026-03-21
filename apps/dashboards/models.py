@@ -19,6 +19,11 @@ class DashboardWidget(models.Model):
         BAR = "bar", "Bar"
         LINE = "line", "Line"
         PIE = "pie", "Pie"
+        DOUGHNUT = "doughnut", "Doughnut"
+        AREA = "area", "Area"
+        HBAR = "hbar", "Horiz. Bar"
+        SCATTER = "scatter", "Scatter"
+        RADAR = "radar", "Radar"
         TABLE = "table", "Table"
 
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="widgets")

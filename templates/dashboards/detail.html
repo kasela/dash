@@ -81,12 +81,40 @@
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
   {% for widget in widgets %}
   <div class="widget-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-widget-id="{{ widget.id }}">
-    <div class="mb-1 flex items-center justify-between">
-      <h3 class="font-semibold text-slate-900">{{ widget.title }}</h3>
-      <div class="flex items-center gap-2">
+    <!-- Card header -->
+    <div class="mb-1 flex items-center justify-between gap-2">
+      <!-- Editable title -->
+      <div class="flex-1 min-w-0">
+        <h3 class="widget-title font-semibold text-slate-900 truncate cursor-pointer hover:text-indigo-600 transition-colors" title="Click to rename" data-widget-id="{{ widget.id }}">{{ widget.title }}</h3>
+        <input class="widget-title-input hidden w-full rounded-md border border-indigo-400 px-2 py-0.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500" type="text" value="{{ widget.title }}" data-widget-id="{{ widget.id }}">
+      </div>
+      <!-- Action buttons -->
+      <div class="flex items-center gap-1 shrink-0">
         <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+        {% if widget.widget_type not in 'kpi,table' %}
+        <!-- Maximize -->
         <button
-          class="delete-widget-btn flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+          class="maximize-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
+          data-widget-id="{{ widget.id }}"
+          title="Maximize chart">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+          </svg>
+        </button>
+        <!-- Download PNG -->
+        <button
+          class="download-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-500"
+          data-widget-id="{{ widget.id }}"
+          data-title="{{ widget.title }}"
+          title="Download as PNG">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+        </button>
+        {% endif %}
+        <!-- Delete -->
+        <button
+          class="delete-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
           data-widget-id="{{ widget.id }}"
           data-delete-url="{% url 'dashboard-delete-widget' dashboard.id widget.id %}"
           title="Delete widget">
@@ -104,13 +132,6 @@
         <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
       </div>
 
-    {% elif widget.widget_type in 'bar,line,pie' %}
-      <!-- Chart widget -->
-      <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
-        <canvas></canvas>
-        <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
-      </div>
-
     {% elif widget.widget_type == 'table' %}
       <!-- Table widget placeholder -->
       <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
@@ -118,7 +139,8 @@
       </div>
 
     {% else %}
-      <div class="mt-3 h-40" data-widget-chart="{{ widget.chart_config|to_json }}">
+      <!-- Chart widget -->
+      <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}">
         <canvas></canvas>
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
@@ -127,7 +149,7 @@
   {% endfor %}
 </div>
 
-<!-- Empty state (shown when no widgets remain) -->
+<!-- Empty state -->
 <div id="empty-state" class="{% if widgets %}hidden{% endif %} flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 text-center">
   <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-4">
     <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,11 +160,35 @@
   <p class="mt-1 text-sm text-slate-500">Click "Add Chart" to create your first widget.</p>
 </div>
 
+<!-- ── Maximize Overlay ───────────────────────────────────────────────────── -->
+<div id="maximize-overlay" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,0.85);" aria-hidden="true"></div>
+<div id="maximize-modal" style="display:none;position:fixed;inset:2rem;z-index:70;background:#fff;border-radius:1rem;box-shadow:0 25px 50px rgba(0,0,0,0.4);flex-direction:column;" role="dialog">
+  <div class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-6">
+    <h2 id="maximize-title" class="text-base font-semibold text-slate-900"></h2>
+    <div class="flex items-center gap-2">
+      <button id="maximize-download-btn" class="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Download PNG
+      </button>
+      <button id="close-maximize-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="flex-1 p-6 relative">
+    <canvas id="maximize-canvas"></canvas>
+  </div>
+</div>
+
 <!-- ── Chart Builder Modal ────────────────────────────────────────────────── -->
 <div id="chart-builder-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
 
 <div id="chart-builder-modal"
-  style="display:none;position:fixed;top:0;right:0;bottom:0;z-index:50;width:100%;max-width:28rem;flex-direction:column;background:#fff;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
+  style="display:none;position:fixed;top:0;right:0;bottom:0;z-index:50;width:100%;max-width:32rem;flex-direction:column;background:#fff;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
   role="dialog" aria-modal="true" aria-label="Add chart">
 
   <!-- Modal header -->
@@ -156,7 +202,7 @@
   </div>
 
   <!-- Modal body -->
-  <div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+  <div class="flex-1 overflow-y-auto px-6 py-6 space-y-5">
 
     <!-- Loading state -->
     <div id="cb-loading" style="display:flex;" class="items-center justify-center py-12">
@@ -166,18 +212,18 @@
     <!-- Error state -->
     <div id="cb-error" style="display:none;" class="rounded-xl bg-red-50 p-4 text-sm text-red-700"></div>
 
-    <!-- Form (hidden until columns load) -->
+    <!-- Form -->
     <div id="cb-form" style="display:none;" class="space-y-5">
 
       <!-- Chart type -->
       <div>
         <label class="mb-2 block text-sm font-semibold text-slate-700">Chart type</label>
-        <div class="grid grid-cols-4 gap-2" id="cb-type-selector">
+        <div class="grid grid-cols-3 gap-2" id="cb-type-selector">
           {% for ctype, icon, label in chart_types %}
-          <label class="cb-type-option flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-slate-200 p-3 text-center transition-colors hover:border-indigo-400 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50">
+          <label class="cb-type-option flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-slate-200 p-2.5 text-center transition-colors hover:border-indigo-400 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50">
             <input type="radio" name="cb_chart_type" value="{{ ctype }}" class="sr-only" {% if forloop.first %}checked{% endif %}>
-            <span class="text-xl">{{ icon }}</span>
-            <span class="text-xs font-medium text-slate-600">{{ label }}</span>
+            <span class="text-lg">{{ icon }}</span>
+            <span class="text-xs font-medium text-slate-600 leading-tight">{{ label }}</span>
           </label>
           {% endfor %}
         </div>
@@ -202,7 +248,7 @@
         </select>
       </div>
 
-      <!-- Measure -->
+      <!-- Measure (single, for most chart types) -->
       <div id="cb-measure-wrap">
         <label for="cb-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
           Y-axis / Measure
@@ -212,6 +258,70 @@
           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
           <option value="">— select column —</option>
         </select>
+      </div>
+
+      <!-- Multi-measure (bar/line multi-series) -->
+      <div id="cb-measures-wrap" style="display:none;">
+        <label class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Measures <span class="ml-1 text-xs font-normal text-slate-400">(select multiple for multi-series)</span>
+        </label>
+        <select id="cb-measures" multiple
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style="min-height:80px;">
+        </select>
+        <p class="mt-1 text-xs text-slate-400">Hold Ctrl / Cmd to select multiple</p>
+      </div>
+
+      <!-- Scatter: X measure -->
+      <div id="cb-x-measure-wrap" style="display:none;">
+        <label for="cb-x-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
+          X-axis column <span class="ml-1 text-xs font-normal text-slate-400">(numeric)</span>
+        </label>
+        <select id="cb-x-measure"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <option value="">— select column —</option>
+        </select>
+      </div>
+
+      <!-- Scatter: Y measure -->
+      <div id="cb-y-measure-wrap" style="display:none;">
+        <label for="cb-y-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Y-axis column <span class="ml-1 text-xs font-normal text-slate-400">(numeric)</span>
+        </label>
+        <select id="cb-y-measure"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <option value="">— select column —</option>
+        </select>
+      </div>
+
+      <!-- Axis labels (shown for bar/line/area/hbar/scatter/radar) -->
+      <div id="cb-axis-labels-wrap" style="display:none;" class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="cb-x-label" class="mb-1 block text-xs font-semibold text-slate-600">X-axis label</label>
+          <input id="cb-x-label" type="text" placeholder="e.g. Region"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+        <div>
+          <label for="cb-y-label" class="mb-1 block text-xs font-semibold text-slate-600">Y-axis label</label>
+          <input id="cb-y-label" type="text" placeholder="e.g. Revenue ($)"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+      </div>
+
+      <!-- Color palette -->
+      <div>
+        <label class="mb-2 block text-sm font-semibold text-slate-700">Color palette</label>
+        <div class="flex flex-wrap gap-2" id="cb-palette-selector">
+          {% for pname in palette_names %}
+          <label class="cb-palette-option cursor-pointer" title="{{ pname|capfirst }}">
+            <input type="radio" name="cb_palette" value="{{ pname }}" class="sr-only" {% if forloop.first %}checked{% endif %}>
+            <span class="flex items-center gap-1 rounded-lg border-2 border-transparent px-2 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+              <span class="palette-dots flex gap-0.5" data-palette="{{ pname }}"></span>
+              {{ pname|capfirst }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
       </div>
 
       <!-- Live preview area -->
@@ -247,7 +357,15 @@
 {
   "columnsUrl": "{% url 'dashboard-get-columns' dashboard.id %}",
   "addWidgetUrl": "{% url 'dashboard-add-widget' dashboard.id %}",
+  "renameWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "csrfToken": "{{ csrf_token }}"
+}
+</script>
+
+<!-- Palette color data for JS rendering -->
+<script id="dashboard-palettes" type="application/json">
+{
+  {% for pname in palette_names %}"{{ pname }}": ["#6366f1","#8b5cf6","#a78bfa","#818cf8","#4f46e5"]{% if not forloop.last %},{% endif %}{% endfor %}
 }
 </script>
 

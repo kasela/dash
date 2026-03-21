@@ -43,14 +43,13 @@
             <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
           </div>
 
-        {% elif widget.widget_type in 'bar,line,pie' %}
-          <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
-            <canvas></canvas>
-            <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
+        {% elif widget.widget_type == 'table' %}
+          <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
+            <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
           </div>
 
         {% else %}
-          <div class="mt-3 h-52" data-widget-chart="{{ widget.chart_config|to_json }}">
+          <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
             <canvas></canvas>
             <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
           </div>
