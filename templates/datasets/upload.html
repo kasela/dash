@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Dataset{% endblock %}
+
+{% block content %}
+  <div class="space-y-4">
+    <section class="rounded-xl bg-white p-5 shadow">
+      <h1 class="text-2xl font-bold tracking-tight">Upload Dataset</h1>
+      <p class="mt-1 text-sm text-slate-600">Supported types: CSV, XLSX, XLSM, JSON.</p>
+      <form
+        class="mt-4 flex flex-wrap items-center gap-3"
+        hx-post="{% url 'dataset-upload-result' %}"
+        hx-target="#upload-result"
+        hx-swap="innerHTML"
+        enctype="multipart/form-data"
+      >
+        {% csrf_token %}
+        <input class="block rounded-md border border-slate-300 bg-white px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium" type="file" name="dataset_file" accept=".csv,.xlsx,.xlsm,.json" required />
+        <button class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" type="submit">Parse file</button>
+      </form>
+    </section>
+
+    <section id="upload-result" class="rounded-xl bg-white p-5 shadow">
+      <em class="text-slate-500">No file parsed yet.</em>
+    </section>
+  </div>
+{% endblock %}
