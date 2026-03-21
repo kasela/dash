@@ -1,64 +1,142 @@
 {% load dataset_extras %}
-<h2 class="text-lg font-semibold">{{ filename }}</h2>
-<p class="mt-1 text-sm text-slate-600"><strong>Total rows:</strong> {{ shape.0 }} | <strong>Total columns:</strong> {{ shape.1 }}</p>
 
-{% if persistence_error %}
-  <p class="mt-2 text-sm text-amber-700">{{ persistence_error }}</p>
-{% endif %}
+<!-- File summary -->
+<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        <svg class="h-5 w-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        <h2 class="text-lg font-bold text-slate-900 break-all">{{ filename }}</h2>
+      </div>
+      <div class="flex flex-wrap gap-3 text-sm">
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+          {{ shape.0 }} rows
+        </span>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+          {{ shape.1 }} columns
+        </span>
+      </div>
+    </div>
 
-{% if dataset_version %}
-  <p class="mt-2 text-sm text-emerald-700">Saved as dataset version {{ dataset_version.version }} (ID: {{ dataset_version.id }}).</p>
+    {% if persistence_error %}
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+        ⚠ {{ persistence_error }}
+      </div>
+    {% endif %}
 
-  <form method="post" action="{% url 'dashboard-create-from-version' dataset_version.id %}" class="mt-2">
-    {% csrf_token %}
-    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700">Create starter dashboard</button>
-  </form>
-{% else %}
-  <p class="mt-2 text-sm text-slate-500">Sign in to persist this upload as a dataset version.</p>
-{% endif %}
-
-<section class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-  <h3 class="text-sm font-semibold text-slate-900">Profile snapshot</h3>
-  <div class="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-    <p><strong>Rows:</strong> {{ profile.total_rows }}</p>
-    <p><strong>Columns:</strong> {{ profile.total_columns }}</p>
-    <p><strong>Duplicate rows:</strong> {{ profile.duplicate_rows }}</p>
-    <p><strong>Missing cells:</strong> {{ profile.missing_cells }}</p>
+    {% if dataset_version %}
+      <div class="flex flex-col items-end gap-3">
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          ✓ Saved as version {{ dataset_version.version }}
+        </div>
+        <form method="post" action="{% url 'dashboard-create-from-version' dataset_version.id %}">
+          {% csrf_token %}
+          <button type="submit" class="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-px">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Create starter dashboard
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+        <a href="{% url 'login' %}" class="font-semibold text-indigo-600 hover:underline">Sign in</a> to save this dataset
+      </div>
+    {% endif %}
   </div>
-  <div class="mt-2 text-sm">
-    <p><strong>Suggested dimensions:</strong> {{ profile.suggested_dimensions|join:", "|default:"None" }}</p>
-    <p><strong>Suggested measures:</strong> {{ profile.suggested_measures|join:", "|default:"None" }}</p>
+</div>
+
+<!-- Profile + Suggestions row -->
+<div class="mt-5 grid gap-5 sm:grid-cols-2">
+
+  <!-- Profile snapshot -->
+  <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      </div>
+      <h3 class="text-sm font-bold text-slate-900">Profile snapshot</h3>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="rounded-xl bg-slate-50 p-3">
+        <p class="text-xs text-slate-500">Rows</p>
+        <p class="text-xl font-bold text-slate-900">{{ profile.total_rows }}</p>
+      </div>
+      <div class="rounded-xl bg-slate-50 p-3">
+        <p class="text-xs text-slate-500">Columns</p>
+        <p class="text-xl font-bold text-slate-900">{{ profile.total_columns }}</p>
+      </div>
+      <div class="rounded-xl {% if profile.duplicate_rows > 0 %}bg-amber-50{% else %}bg-emerald-50{% endif %} p-3">
+        <p class="text-xs text-slate-500">Duplicate rows</p>
+        <p class="text-xl font-bold {% if profile.duplicate_rows > 0 %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ profile.duplicate_rows }}</p>
+      </div>
+      <div class="rounded-xl {% if profile.missing_cells > 0 %}bg-amber-50{% else %}bg-emerald-50{% endif %} p-3">
+        <p class="text-xs text-slate-500">Missing cells</p>
+        <p class="text-xl font-bold {% if profile.missing_cells > 0 %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ profile.missing_cells }}</p>
+      </div>
+    </div>
+    <div class="mt-4 space-y-2 text-sm">
+      <div class="flex gap-2">
+        <span class="shrink-0 text-xs font-semibold text-slate-500 w-28">Dimensions:</span>
+        <span class="text-xs text-slate-700">{{ profile.suggested_dimensions|join:", "|default:"None detected" }}</span>
+      </div>
+      <div class="flex gap-2">
+        <span class="shrink-0 text-xs font-semibold text-slate-500 w-28">Measures:</span>
+        <span class="text-xs text-slate-700">{{ profile.suggested_measures|join:", "|default:"None detected" }}</span>
+      </div>
+    </div>
   </div>
-</section>
 
-<section class="mt-4 rounded-md border border-blue-200 bg-blue-50 p-3">
-  <h3 class="text-sm font-semibold text-blue-900">Widget suggestions</h3>
-  <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-blue-900">
-    {% for item in widget_suggestions %}
-      <li>{{ item }}</li>
-    {% endfor %}
-  </ul>
-</section>
+  <!-- Widget suggestions -->
+  <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-200 text-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      </div>
+      <h3 class="text-sm font-bold text-indigo-900">Widget suggestions</h3>
+    </div>
+    <ul class="space-y-2">
+      {% for item in widget_suggestions %}
+        <li class="flex items-start gap-2 text-sm text-indigo-800">
+          <svg class="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          {{ item }}
+        </li>
+      {% empty %}
+        <li class="text-sm text-indigo-700">No suggestions available for this dataset.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
 
-<div class="mt-3 max-h-[420px] overflow-auto rounded-md border border-slate-200">
-  <table class="min-w-full border-collapse text-sm">
-    <thead class="sticky top-0 bg-slate-100">
-      <tr>
-        {% for header in headers %}
-          <th class="border-b border-slate-200 px-2 py-1 text-left font-semibold">{{ header }}</th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-        <tr class="odd:bg-white even:bg-slate-50">
+<!-- Data preview table -->
+<div class="mt-5 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+  <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+    <h3 class="text-sm font-bold text-slate-900">Data preview</h3>
+    <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">First {{ rows|length }} rows</span>
+  </div>
+  <div class="max-h-96 overflow-auto">
+    <table class="min-w-full border-collapse text-sm">
+      <thead class="sticky top-0 bg-slate-50 z-10">
+        <tr>
           {% for header in headers %}
-            <td class="border-b border-slate-200 px-2 py-1">{{ row|get_item:header }}</td>
+            <th class="whitespace-nowrap border-b border-slate-200 px-4 py-2.5 text-left text-xs font-semibold text-slate-700">{{ header }}</th>
           {% endfor %}
         </tr>
-      {% empty %}
-        <tr><td colspan="99" class="px-2 py-2">No rows found.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in rows %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            {% for header in headers %}
+              <td class="whitespace-nowrap px-4 py-2 text-xs text-slate-600">{{ row|get_item:header|default:"—" }}</td>
+            {% endfor %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="99" class="px-4 py-6 text-center text-sm text-slate-400">No rows found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
