@@ -139,10 +139,10 @@
 </div>
 
 <!-- ── Chart Builder Modal ────────────────────────────────────────────────── -->
-<div id="chart-builder-overlay" class="fixed inset-0 z-40 hidden bg-slate-900/60" aria-hidden="true"></div>
+<div id="chart-builder-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
 
 <div id="chart-builder-modal"
-  class="fixed inset-y-0 right-0 z-50 hidden w-full max-w-md flex-col bg-white shadow-2xl"
+  style="display:none;position:fixed;top:0;right:0;bottom:0;z-index:50;width:100%;max-width:28rem;flex-direction:column;background:#fff;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
   role="dialog" aria-modal="true" aria-label="Add chart">
 
   <!-- Modal header -->
@@ -159,15 +159,15 @@
   <div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
 
     <!-- Loading state -->
-    <div id="cb-loading" class="flex items-center justify-center py-12">
+    <div id="cb-loading" style="display:flex;" class="items-center justify-center py-12">
       <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
     </div>
 
     <!-- Error state -->
-    <div id="cb-error" class="hidden rounded-xl bg-red-50 p-4 text-sm text-red-700"></div>
+    <div id="cb-error" style="display:none;" class="rounded-xl bg-red-50 p-4 text-sm text-red-700"></div>
 
     <!-- Form (hidden until columns load) -->
-    <div id="cb-form" class="hidden space-y-5">
+    <div id="cb-form" style="display:none;" class="space-y-5">
 
       <!-- Chart type -->
       <div>
@@ -215,28 +215,28 @@
       </div>
 
       <!-- Live preview area -->
-      <div id="cb-preview-wrap" class="hidden">
+      <div id="cb-preview-wrap" style="display:none;">
         <p class="mb-2 text-sm font-semibold text-slate-700">Preview</p>
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div class="h-48 relative" id="cb-preview-container">
             <canvas id="cb-preview-canvas"></canvas>
-            <p id="cb-preview-kpi" class="hidden text-4xl font-extrabold text-indigo-600 text-center py-8"></p>
+            <p id="cb-preview-kpi" style="display:none;" class="text-4xl font-extrabold text-indigo-600 text-center py-8"></p>
           </div>
         </div>
       </div>
 
       <!-- Validation error -->
-      <div id="cb-validation-error" class="hidden rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-700"></div>
+      <div id="cb-validation-error" style="display:none;" class="rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-700"></div>
 
     </div>
   </div>
 
   <!-- Modal footer -->
   <div class="shrink-0 border-t border-slate-200 px-6 py-4 flex items-center gap-3">
-    <button id="cb-preview-btn" class="hidden flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+    <button id="cb-preview-btn" style="display:none;" class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
       Preview
     </button>
-    <button id="cb-submit-btn" class="hidden flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
+    <button id="cb-submit-btn" style="display:none;" class="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
       Add to Dashboard
     </button>
   </div>
