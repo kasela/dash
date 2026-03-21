@@ -3,10 +3,11 @@ from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.datasets.models import DatasetVersion
+from apps.datasets.services import generate_widget_specs_from_version
 
 from .models import Dashboard, DashboardShareLink, DashboardWidget
 
-SAMPLE_CHART = {
+_FALLBACK_CHART = {
     "type": "bar",
     "data": {
         "labels": ["North", "South", "East", "West"],
@@ -33,7 +34,7 @@ SAMPLE_CHART = {
 
 def landing_page(request: HttpRequest) -> HttpResponse:
     context = {
-        "chart_config": SAMPLE_CHART,
+        "chart_config": _FALLBACK_CHART,
         "mock_stats": [
             {"label": "Total Revenue", "value": "$48,200"},
             {"label": "Active Users", "value": "3,841"},
@@ -214,20 +215,33 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         title=f"{dataset_version.dataset.name} Overview",
     )
 
-    DashboardWidget.objects.create(
-        dashboard=dashboard,
-        title="Total Rows",
-        widget_type=DashboardWidget.WidgetType.KPI,
-        position=1,
-        chart_config={"kpi": "total_rows", "value": dataset_version.row_count},
-    )
-    DashboardWidget.objects.create(
-        dashboard=dashboard,
-        title="Top Categories",
-        widget_type=DashboardWidget.WidgetType.BAR,
-        position=2,
-        chart_config=SAMPLE_CHART,
-    )
+    widget_specs = generate_widget_specs_from_version(dataset_version)
+
+    if widget_specs:
+        for spec in widget_specs:
+            DashboardWidget.objects.create(
+                dashboard=dashboard,
+                title=spec["title"],
+                widget_type=spec["widget_type"],
+                position=spec["position"],
+                chart_config=spec["config"],
+            )
+    else:
+        # Fallback widgets when data cannot be parsed
+        DashboardWidget.objects.create(
+            dashboard=dashboard,
+            title="Total Rows",
+            widget_type=DashboardWidget.WidgetType.KPI,
+            position=1,
+            chart_config={"kpi": "rows", "value": f"{dataset_version.row_count:,}"},
+        )
+        DashboardWidget.objects.create(
+            dashboard=dashboard,
+            title="Top Categories",
+            widget_type=DashboardWidget.WidgetType.BAR,
+            position=2,
+            chart_config=_FALLBACK_CHART,
+        )
 
     return redirect("dashboard-detail", dashboard_id=dashboard.id)
 
