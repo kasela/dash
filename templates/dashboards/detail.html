@@ -20,6 +20,14 @@
     </svg>
     <span class="hidden sm:inline">Add Chart</span>
   </button>
+  <button
+    id="open-heading-builder-btn"
+    class="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/>
+    </svg>
+    <span class="hidden sm:inline">Add Heading</span>
+  </button>
 
   <!-- Share button -->
   <form method="post" action="{% url 'dashboard-create-share' dashboard.id %}">
@@ -123,6 +131,7 @@
       <!-- Action buttons -->
       <div class="flex items-center gap-1 shrink-0">
         <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+        {% if widget.widget_type != 'heading' %}
         <button
           class="edit-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
           data-widget-id="{{ widget.id }}"
@@ -134,12 +143,13 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M4 20l4.5-1 9.7-9.7a1.8 1.8 0 00-2.5-2.5L6 16.5 4 20z"/>
           </svg>
         </button>
+        {% endif %}
         <select class="widget-size-select rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500" data-widget-id="{{ widget.id }}" title="Card size">
           <option value="sm" {% if widget.chart_config.layout.size == 'sm' %}selected{% endif %}>S</option>
           <option value="md" {% if widget.chart_config.layout.size == 'md' or not widget.chart_config.layout.size %}selected{% endif %}>M</option>
           <option value="lg" {% if widget.chart_config.layout.size == 'lg' %}selected{% endif %}>L</option>
         </select>
-        {% if widget.widget_type not in 'kpi,table' %}
+        {% if widget.widget_type not in 'kpi,table,heading' %}
         <!-- Maximize -->
         <button
           class="maximize-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
@@ -207,6 +217,18 @@
         {% endif %}
       </div>
 
+    {% elif widget.widget_type == 'heading' %}
+      <div class="mt-3 py-2">
+        <h2
+          class="
+          {% if widget.chart_config.font_size == 'lg' %}text-lg{% elif widget.chart_config.font_size == 'xl' %}text-xl{% elif widget.chart_config.font_size == '3xl' %}text-3xl{% else %}text-2xl{% endif %}
+          {% if widget.chart_config.color == 'slate' %}text-slate-700{% elif widget.chart_config.color == 'emerald' %}text-emerald-700{% elif widget.chart_config.color == 'rose' %}text-rose-700{% elif widget.chart_config.color == 'amber' %}text-amber-700{% else %}text-indigo-700{% endif %}
+          {% if widget.chart_config.font_family == 'poppins' %}font-['Poppins']{% elif widget.chart_config.font_family == 'serif' %}font-serif{% elif widget.chart_config.font_family == 'mono' %}font-mono{% else %}font-semibold{% endif %}
+          {% if widget.chart_config.align == 'center' %}text-center{% elif widget.chart_config.align == 'right' %}text-right{% else %}text-left{% endif %}
+          ">
+          {{ widget.chart_config.text|default:widget.title }}
+        </h2>
+      </div>
     {% else %}
       <!-- Chart widget -->
       <div class="mt-3 widget-chart-wrap {% if not widget.chart_config.layout.height %}{% if widget.chart_config.layout.size == 'sm' %}h-48{% elif widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}{% endif %}" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
@@ -214,7 +236,9 @@
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
     {% endif %}
+    {% if widget.widget_type != 'heading' %}
     <button class="widget-resize-handle absolute bottom-2 right-2 h-4 w-4 cursor-se-resize rounded-sm border border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100" data-widget-id="{{ widget.id }}" title="Drag to resize"></button>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
@@ -251,6 +275,76 @@
   </div>
   <div class="flex-1 p-6 relative">
     <canvas id="maximize-canvas"></canvas>
+  </div>
+</div>
+
+<!-- ── Heading Builder Modal ─────────────────────────────────────────────── -->
+<div id="heading-builder-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="heading-builder-modal"
+  style="display:none;position:fixed;top:5rem;left:50%;transform:translateX(-50%);z-index:50;width:100%;max-width:36rem;background:#fff;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
+  role="dialog" aria-modal="true" aria-label="Add heading">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+    <h3 class="text-base font-semibold text-slate-900">Add Text Heading</h3>
+    <button id="close-heading-builder-btn" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button>
+  </div>
+  <div class="space-y-4 px-5 py-4">
+    <div>
+      <label for="hb-text" class="mb-1 block text-sm font-semibold text-slate-700">Heading text</label>
+      <input id="hb-text" type="text" placeholder="e.g. Q1 Revenue Performance"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label for="hb-font-size" class="mb-1 block text-xs font-semibold text-slate-600">Size</label>
+        <select id="hb-font-size" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="lg">Large</option>
+          <option value="xl">Extra large</option>
+          <option value="2xl" selected>2XL</option>
+          <option value="3xl">3XL</option>
+        </select>
+      </div>
+      <div>
+        <label for="hb-color" class="mb-1 block text-xs font-semibold text-slate-600">Color</label>
+        <select id="hb-color" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="indigo" selected>Indigo</option>
+          <option value="emerald">Emerald</option>
+          <option value="rose">Rose</option>
+          <option value="amber">Amber</option>
+          <option value="slate">Slate</option>
+        </select>
+      </div>
+      <div>
+        <label for="hb-font-family" class="mb-1 block text-xs font-semibold text-slate-600">Font</label>
+        <select id="hb-font-family" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="inter" selected>Inter</option>
+          <option value="poppins">Poppins</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Mono</option>
+        </select>
+      </div>
+      <div>
+        <label for="hb-align" class="mb-1 block text-xs font-semibold text-slate-600">Align</label>
+        <select id="hb-align" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="left" selected>Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label for="hb-after-widget" class="mb-1 block text-xs font-semibold text-slate-600">Place heading</label>
+      <select id="hb-after-widget" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+        <option value="0">At top of dashboard</option>
+        {% for widget in widgets %}
+        <option value="{{ widget.id }}">After: {{ widget.title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div id="hb-error" style="display:none;" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+  </div>
+  <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+    <button id="cancel-heading-builder-btn" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+    <button id="submit-heading-builder-btn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">Add Heading</button>
   </div>
 </div>
 
@@ -452,6 +546,7 @@
 {
   "columnsUrl": "{% url 'dashboard-get-columns' dashboard.id %}",
   "addWidgetUrl": "{% url 'dashboard-add-widget' dashboard.id %}",
+  "addHeadingUrl": "{% url 'dashboard-add-heading' dashboard.id %}",
   "renameDashboardUrl": "{% url 'dashboard-rename' dashboard.id %}",
   "renameWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "updateWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",

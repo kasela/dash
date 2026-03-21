@@ -1099,6 +1099,80 @@
     });
   }
 
+  function initHeadingBuilder() {
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.addHeadingUrl) return;
+    var openBtn = document.getElementById('open-heading-builder-btn');
+    var modal = document.getElementById('heading-builder-modal');
+    var overlay = document.getElementById('heading-builder-overlay');
+    var closeBtn = document.getElementById('close-heading-builder-btn');
+    var cancelBtn = document.getElementById('cancel-heading-builder-btn');
+    var submitBtn = document.getElementById('submit-heading-builder-btn');
+    var textInput = document.getElementById('hb-text');
+    var errorEl = document.getElementById('hb-error');
+    if (!openBtn || !modal || !overlay || !submitBtn || !textInput) return;
+
+    function openModal() {
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+      textInput.value = '';
+      modal.style.display = 'block';
+      overlay.style.display = 'block';
+      setTimeout(function () { textInput.focus(); }, 20);
+    }
+    function closeModal() {
+      modal.style.display = 'none';
+      overlay.style.display = 'none';
+    }
+
+    openBtn.addEventListener('click', openModal);
+    overlay.addEventListener('click', closeModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    submitBtn.addEventListener('click', function () {
+      var payload = {
+        text: (textInput.value || '').trim(),
+        font_size: (document.getElementById('hb-font-size') || {}).value || '2xl',
+        color: (document.getElementById('hb-color') || {}).value || 'indigo',
+        font_family: (document.getElementById('hb-font-family') || {}).value || 'inter',
+        align: (document.getElementById('hb-align') || {}).value || 'left',
+        after_widget_id: (document.getElementById('hb-after-widget') || {}).value || '0',
+      };
+      if (!payload.text) {
+        if (errorEl) {
+          errorEl.textContent = 'Please enter heading text.';
+          errorEl.style.display = 'block';
+        }
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adding…';
+      fetch(cfg.addHeadingUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) throw new Error(data.error || 'Failed to add heading');
+          showToast('Heading added', 'success');
+          closeModal();
+          setTimeout(function () { window.location.reload(); }, 300);
+        })
+        .catch(function (err) {
+          if (errorEl) {
+            errorEl.textContent = err.message;
+            errorEl.style.display = 'block';
+          }
+        })
+        .finally(function () {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Add Heading';
+        });
+    });
+  }
+
   function initChartBuilder() {
     var openBtn = document.getElementById('open-chart-builder-btn');
     if (!openBtn) return;
@@ -1161,6 +1235,7 @@
     initWidgetDragResize();
     initWidgetEdit();
     initDashboardRename();
+    initHeadingBuilder();
   });
 
 })();

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from django.db import models
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -396,6 +397,68 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
     )
 
     return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config})
+
+
+@login_required
+def dashboard_add_heading(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Create a text heading widget at a user-selected location."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    text = str(data.get("text", "")).strip()
+    if not text:
+        return JsonResponse({"error": "Heading text is required"}, status=400)
+    if len(text) > 200:
+        return JsonResponse({"error": "Heading text too long (max 200 chars)"}, status=400)
+
+    font_size = str(data.get("font_size", "2xl")).strip().lower()
+    if font_size not in {"lg", "xl", "2xl", "3xl"}:
+        font_size = "2xl"
+    color = str(data.get("color", "indigo")).strip().lower()
+    if color not in {"slate", "indigo", "emerald", "rose", "amber"}:
+        color = "indigo"
+    font_family = str(data.get("font_family", "inter")).strip().lower()
+    if font_family not in {"inter", "poppins", "serif", "mono"}:
+        font_family = "inter"
+    align = str(data.get("align", "left")).strip().lower()
+    if align not in {"left", "center", "right"}:
+        align = "left"
+
+    after_widget_id = data.get("after_widget_id")
+    insert_pos = 1
+    if after_widget_id in (None, "", 0, "0"):
+        insert_pos = 1
+    else:
+        try:
+            after_id = int(after_widget_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid after_widget_id"}, status=400)
+        after_widget = get_object_or_404(DashboardWidget, id=after_id, dashboard=dashboard)
+        insert_pos = after_widget.position + 1
+
+    dashboard.widgets.filter(position__gte=insert_pos).update(position=models.F("position") + 1)
+    config = {
+        "text": text,
+        "font_size": font_size,
+        "color": color,
+        "font_family": font_family,
+        "align": align,
+        "layout": {"size": "lg"},
+    }
+    widget = DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title=text[:80],
+        widget_type="heading",
+        position=insert_pos,
+        chart_config=config,
+    )
+    return JsonResponse({"success": True, "widget_id": widget.id})
 
 
 def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:

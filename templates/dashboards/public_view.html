@@ -69,6 +69,19 @@
             {% endif %}
           </div>
 
+        {% elif widget.widget_type == 'heading' %}
+          <div class="mt-3 py-2">
+            <h2
+              class="
+              {% if widget.chart_config.font_size == 'lg' %}text-lg{% elif widget.chart_config.font_size == 'xl' %}text-xl{% elif widget.chart_config.font_size == '3xl' %}text-3xl{% else %}text-2xl{% endif %}
+              {% if widget.chart_config.color == 'slate' %}text-slate-700{% elif widget.chart_config.color == 'emerald' %}text-emerald-700{% elif widget.chart_config.color == 'rose' %}text-rose-700{% elif widget.chart_config.color == 'amber' %}text-amber-700{% else %}text-indigo-700{% endif %}
+              {% if widget.chart_config.font_family == 'poppins' %}font-['Poppins']{% elif widget.chart_config.font_family == 'serif' %}font-serif{% elif widget.chart_config.font_family == 'mono' %}font-mono{% else %}font-semibold{% endif %}
+              {% if widget.chart_config.align == 'center' %}text-center{% elif widget.chart_config.align == 'right' %}text-right{% else %}text-left{% endif %}
+              ">
+              {{ widget.chart_config.text|default:widget.title }}
+            </h2>
+          </div>
+
         {% else %}
           <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
             <canvas></canvas>
