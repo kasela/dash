@@ -40,7 +40,10 @@
 <!-- Dashboard header -->
 <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
   <div>
-    <h1 class="text-2xl font-extrabold text-slate-900">{{ dashboard.title }}</h1>
+    <div class="flex items-center gap-2">
+      <h1 id="dashboard-title" class="text-2xl font-extrabold text-slate-900 cursor-pointer" title="Click to rename dashboard">{{ dashboard.title }}</h1>
+      <input id="dashboard-title-input" class="hidden rounded-md border border-indigo-400 px-2 py-1 text-xl font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500" type="text" value="{{ dashboard.title }}">
+    </div>
     <div class="mt-1.5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
       <span>Created {{ dashboard.created_at|date:"N j, Y" }}</span>
       <span class="h-1 w-1 rounded-full bg-slate-300"></span>
@@ -71,6 +74,17 @@
         class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-indigo-700">
         Copy
       </button>
+      <a
+        class="shrink-0 rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        href="mailto:?subject={{ dashboard.title|urlencode }}&body={{ request.scheme }}://{{ request.get_host }}{% url 'dashboard-public-view' link.token %}">
+        Email
+      </a>
+      <a
+        class="shrink-0 rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        target="_blank"
+        href="https://wa.me/?text={{ request.scheme }}://{{ request.get_host }}{% url 'dashboard-public-view' link.token %}">
+        WhatsApp
+      </a>
     </div>
     {% endfor %}
   </div>
@@ -80,7 +94,7 @@
 <!-- Widgets grid -->
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
   {% for widget in widgets %}
-  <div class="widget-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-widget-id="{{ widget.id }}">
+  <div class="widget-card relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'sm' %}sm:col-span-1{% elif widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
     <!-- Card header -->
     <div class="mb-1 flex items-center justify-between gap-2">
       <!-- Editable title -->
@@ -91,6 +105,22 @@
       <!-- Action buttons -->
       <div class="flex items-center gap-1 shrink-0">
         <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+        <button
+          class="edit-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
+          data-widget-id="{{ widget.id }}"
+          data-widget-type="{{ widget.widget_type }}"
+          data-widget-title="{{ widget.title }}"
+          data-widget-config="{{ widget.chart_config|to_json|escapejs }}"
+          title="Edit widget">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M4 20l4.5-1 9.7-9.7a1.8 1.8 0 00-2.5-2.5L6 16.5 4 20z"/>
+          </svg>
+        </button>
+        <select class="widget-size-select rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500" data-widget-id="{{ widget.id }}" title="Card size">
+          <option value="sm" {% if widget.chart_config.layout.size == 'sm' %}selected{% endif %}>S</option>
+          <option value="md" {% if widget.chart_config.layout.size == 'md' or not widget.chart_config.layout.size %}selected{% endif %}>M</option>
+          <option value="lg" {% if widget.chart_config.layout.size == 'lg' %}selected{% endif %}>L</option>
+        </select>
         {% if widget.widget_type not in 'kpi,table' %}
         <!-- Maximize -->
         <button
@@ -135,16 +165,38 @@
     {% elif widget.widget_type == 'table' %}
       <!-- Table widget placeholder -->
       <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
+        {% if widget.chart_config.rows %}
+        <table class="min-w-full text-xs">
+          <thead class="bg-slate-50 text-slate-600">
+            <tr>
+              {% for column in widget.chart_config.columns %}
+                <th class="px-3 py-2 text-left font-semibold">{{ column }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in widget.chart_config.rows %}
+            <tr class="border-t border-slate-100">
+              {% for cell in row %}
+                <td class="px-3 py-2 text-slate-700">{{ cell }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
         <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
+        {% endif %}
       </div>
 
     {% else %}
       <!-- Chart widget -->
-      <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}">
+      <div class="mt-3 widget-chart-wrap {% if not widget.chart_config.layout.height %}{% if widget.chart_config.layout.size == 'sm' %}h-48{% elif widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}{% endif %}" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
         <canvas></canvas>
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
     {% endif %}
+    <button class="widget-resize-handle absolute bottom-2 right-2 h-4 w-4 cursor-se-resize rounded-sm border border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100" data-widget-id="{{ widget.id }}" title="Drag to resize"></button>
   </div>
   {% endfor %}
 </div>
@@ -272,6 +324,30 @@
         <p class="mt-1 text-xs text-slate-400">Hold Ctrl / Cmd to select multiple</p>
       </div>
 
+      <!-- Table: visible columns -->
+      <div id="cb-table-columns-wrap" style="display:none;">
+        <label class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Table columns <span class="ml-1 text-xs font-normal text-slate-400">(select multiple)</span>
+        </label>
+        <select id="cb-table-columns" multiple
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style="min-height:90px;">
+        </select>
+        <p class="mt-1 text-xs text-slate-400">Choose the columns shown in the table.</p>
+      </div>
+
+      <!-- Table: group by -->
+      <div id="cb-group-by-wrap" style="display:none;">
+        <label class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Group by <span class="ml-1 text-xs font-normal text-slate-400">(optional, multi-column)</span>
+        </label>
+        <select id="cb-group-by" multiple
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style="min-height:80px;">
+        </select>
+        <p class="mt-1 text-xs text-slate-400">If selected, numeric columns are aggregated by sum.</p>
+      </div>
+
       <!-- Scatter: X measure -->
       <div id="cb-x-measure-wrap" style="display:none;">
         <label for="cb-x-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
@@ -331,6 +407,7 @@
           <div class="h-48 relative" id="cb-preview-container">
             <canvas id="cb-preview-canvas"></canvas>
             <p id="cb-preview-kpi" style="display:none;" class="text-4xl font-extrabold text-indigo-600 text-center py-8"></p>
+            <div id="cb-preview-table" style="display:none;" class="h-full overflow-auto rounded-lg border border-slate-200 bg-white p-2"></div>
           </div>
         </div>
       </div>
@@ -357,7 +434,10 @@
 {
   "columnsUrl": "{% url 'dashboard-get-columns' dashboard.id %}",
   "addWidgetUrl": "{% url 'dashboard-add-widget' dashboard.id %}",
+  "renameDashboardUrl": "{% url 'dashboard-rename' dashboard.id %}",
   "renameWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "updateWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "resizeWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>
