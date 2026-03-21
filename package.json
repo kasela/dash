@@ -1,0 +1,11 @@
+{
+  "name": "ai-dashboard-builder",
+  "private": true,
+  "scripts": {
+    "tw:build": "tailwindcss -i ./static/src/input.css -o ./static/dist/tailwind.css --minify",
+    "tw:watch": "tailwindcss -i ./static/src/input.css -o ./static/dist/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}
