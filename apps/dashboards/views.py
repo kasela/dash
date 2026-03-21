@@ -408,6 +408,20 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     else:
         measures = [raw_measures.strip()] if raw_measures else []
     measure = measures[0] if measures else ""
+    raw_table_columns = data.get("table_columns", [])
+    if isinstance(raw_table_columns, list):
+        table_columns = [c.strip() for c in raw_table_columns if isinstance(c, str) and c.strip()]
+    elif isinstance(raw_table_columns, str):
+        table_columns = [raw_table_columns.strip()] if raw_table_columns.strip() else []
+    else:
+        table_columns = []
+    raw_group_by = data.get("group_by", [])
+    if isinstance(raw_group_by, list):
+        group_by = [c.strip() for c in raw_group_by if isinstance(c, str) and c.strip()]
+    elif isinstance(raw_group_by, str):
+        group_by = [raw_group_by.strip()] if raw_group_by.strip() else []
+    else:
+        group_by = []
     x_measure = data.get("x_measure", "").strip()
     y_measure = data.get("y_measure", "").strip()
     x_label = data.get("x_label", "").strip()
@@ -521,14 +535,48 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                 top = df.groupby(dimension)[measure].sum().nlargest(8)
                 config = _radar_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette)
             elif chart_type == "table":
-                columns = [c for c in ([dimension] + measures) if c and c in df.columns]
+                columns = [c for c in table_columns if c in df.columns]
+                if not columns:
+                    columns = [c for c in ([dimension] + measures) if c and c in df.columns]
                 if not columns:
                     columns = [str(c) for c in df.columns[:5]]
-                preview_df = df[columns].head(12).fillna("")
+                table_df = df[columns].copy()
+                valid_group_by = []
+                for col in group_by:
+                    if col in table_df.columns and col not in valid_group_by:
+                        valid_group_by.append(col)
+                if valid_group_by:
+                    numeric_agg_cols = [
+                        col for col in table_df.columns
+                        if col not in valid_group_by and pd.api.types.is_numeric_dtype(table_df[col])
+                    ]
+                    if numeric_agg_cols:
+                        grouped = table_df.groupby(valid_group_by, dropna=False)[numeric_agg_cols].sum().reset_index()
+                    else:
+                        grouped = table_df.groupby(valid_group_by, dropna=False).size().reset_index(name="row_count")
+                    table_df = grouped
+                preview_df = table_df.head(100).fillna("")
                 rows = [[str(v) for v in row] for row in preview_df.values.tolist()]
-                config = {"columns": columns, "rows": rows}
+                config = {
+                    "columns": [str(c) for c in preview_df.columns.tolist()],
+                    "rows": rows,
+                    "group_by": valid_group_by,
+                }
         except Exception as exc:
             return {"error": str(exc), "status": 500}
+    if isinstance(config, dict):
+        config["builder"] = {
+            "dimension": dimension,
+            "measures": measures,
+            "measure": measure,
+            "x_measure": x_measure,
+            "y_measure": y_measure,
+            "x_label": x_label,
+            "y_label": y_label,
+            "palette": palette,
+            "table_columns": table_columns,
+            "group_by": group_by,
+        }
     return {"chart_type": chart_type, "title": title, "config": config, "preview_only": preview_only}
 
 

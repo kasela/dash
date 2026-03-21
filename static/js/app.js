@@ -506,6 +506,7 @@
           if (typeRadio) typeRadio.checked = true;
         }
         updateCbFieldVisibility(!cbPendingEdit);
+        applyPendingSelections();
         if (cbPendingEdit && cbPendingEdit.title) {
           var t = document.getElementById('cb-title');
           if (t) t.value = cbPendingEdit.title;
@@ -542,18 +543,27 @@
     var measuresSel = document.getElementById('cb-measures');
     var xMeasureSel = document.getElementById('cb-x-measure');
     var yMeasureSel = document.getElementById('cb-y-measure');
+    var tableColsSel = document.getElementById('cb-table-columns');
+    var groupBySel = document.getElementById('cb-group-by');
 
     dimSel.innerHTML = '<option value="">— select column —</option>';
     measureSel.innerHTML = '<option value="">— select column —</option>';
     if (measuresSel) measuresSel.innerHTML = '';
     if (xMeasureSel) xMeasureSel.innerHTML = '<option value="">— select column —</option>';
     if (yMeasureSel) yMeasureSel.innerHTML = '<option value="">— select column —</option>';
+    if (tableColsSel) tableColsSel.innerHTML = '';
+    if (groupBySel) groupBySel.innerHTML = '';
 
     var dimCols = dimensions.length > 0 ? dimensions : allCols;
     dimCols.forEach(function (col) {
       var opt = document.createElement('option');
       opt.value = col; opt.textContent = col;
       dimSel.appendChild(opt);
+      if (groupBySel) {
+        var optGroup = document.createElement('option');
+        optGroup.value = col; optGroup.textContent = col;
+        groupBySel.appendChild(optGroup);
+      }
     });
 
     measures.forEach(function (col) {
@@ -574,6 +584,19 @@
       }
     });
 
+    allCols.forEach(function (col) {
+      if (tableColsSel) {
+        var opt = document.createElement('option');
+        opt.value = col; opt.textContent = col;
+        tableColsSel.appendChild(opt);
+      }
+      if (groupBySel && dimensions.indexOf(col) === -1) {
+        var optGroup = document.createElement('option');
+        optGroup.value = col; optGroup.textContent = col;
+        groupBySel.appendChild(optGroup);
+      }
+    });
+
     if (dimCols.length > 0) dimSel.value = dimCols[0];
     if (measures.length > 0) {
       measureSel.value = measures[0];
@@ -588,9 +611,50 @@
     }
   }
 
+  function setMultiSelectValues(selectEl, values) {
+    if (!selectEl || !Array.isArray(values)) return;
+    var wanted = new Set(values);
+    for (var i = 0; i < selectEl.options.length; i++) {
+      selectEl.options[i].selected = wanted.has(selectEl.options[i].value);
+    }
+  }
+
+  function applyPendingSelections() {
+    if (!cbPendingEdit || !cbPendingEdit.config || !cbPendingEdit.config.builder) return;
+    var builder = cbPendingEdit.config.builder || {};
+    var dimEl = document.getElementById('cb-dimension');
+    var measureEl = document.getElementById('cb-measure');
+    var xMeasureEl = document.getElementById('cb-x-measure');
+    var yMeasureEl = document.getElementById('cb-y-measure');
+    var xLabelEl = document.getElementById('cb-x-label');
+    var yLabelEl = document.getElementById('cb-y-label');
+    if (dimEl && builder.dimension) dimEl.value = builder.dimension;
+    if (measureEl && builder.measure) measureEl.value = builder.measure;
+    if (xMeasureEl && builder.x_measure) xMeasureEl.value = builder.x_measure;
+    if (yMeasureEl && builder.y_measure) yMeasureEl.value = builder.y_measure;
+    if (xLabelEl && typeof builder.x_label === 'string') xLabelEl.value = builder.x_label;
+    if (yLabelEl && typeof builder.y_label === 'string') yLabelEl.value = builder.y_label;
+    if (Array.isArray(builder.measures)) setMultiSelectValues(document.getElementById('cb-measures'), builder.measures);
+    if (Array.isArray(builder.table_columns)) setMultiSelectValues(document.getElementById('cb-table-columns'), builder.table_columns);
+    if (Array.isArray(builder.group_by)) setMultiSelectValues(document.getElementById('cb-group-by'), builder.group_by);
+    if (builder.palette) {
+      var paletteInput = document.querySelector('input[name="cb_palette"][value="' + builder.palette + '"]');
+      if (paletteInput) paletteInput.checked = true;
+    }
+  }
+
   function getSelectedChartType() {
     var checked = document.querySelector('input[name="cb_chart_type"]:checked');
     return checked ? checked.value : 'bar';
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function getSelectedPalette() {
@@ -622,6 +686,8 @@
     var xMeasureWrap = document.getElementById('cb-x-measure-wrap');
     var yMeasureWrap = document.getElementById('cb-y-measure-wrap');
     var axisWrap = document.getElementById('cb-axis-labels-wrap');
+    var tableColsWrap = document.getElementById('cb-table-columns-wrap');
+    var groupByWrap = document.getElementById('cb-group-by-wrap');
 
     var showDim = DIMENSION_TYPES.has(type);
     var showMeasure = MEASURE_TYPES.has(type) && !SCATTER_TYPES.has(type);
@@ -635,6 +701,8 @@
     if (xMeasureWrap) xMeasureWrap.style.display = showScatter ? '' : 'none';
     if (yMeasureWrap) yMeasureWrap.style.display = showScatter ? '' : 'none';
     if (axisWrap) axisWrap.style.display = showAxis ? '' : 'none';
+    if (tableColsWrap) tableColsWrap.style.display = type === 'table' ? '' : 'none';
+    if (groupByWrap) groupByWrap.style.display = type === 'table' ? '' : 'none';
 
     // Update selected visual state on type pills
     document.querySelectorAll('.cb-type-option').forEach(function (lbl) {
@@ -686,6 +754,16 @@
     return single ? [single] : [];
   }
 
+  function getSelectedMultiValues(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return [];
+    var selected = [];
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].selected) selected.push(sel.options[i].value);
+    }
+    return selected;
+  }
+
   function validateCbForm() {
     var type = getSelectedChartType();
     var dim = (document.getElementById('cb-dimension') || {}).value || '';
@@ -718,6 +796,13 @@
       showCbValidationError('Select at least one dimension or measure column for the table.');
       return false;
     }
+    if (type === 'table') {
+      var tableColumns = getSelectedMultiValues('cb-table-columns');
+      if (tableColumns.length === 0 && !dim && measures.length === 0) {
+        showCbValidationError('Select at least one table column, dimension, or measure.');
+        return false;
+      }
+    }
     hideCbValidationError();
     return true;
   }
@@ -733,6 +818,8 @@
     }
     var kpiEl = document.getElementById('cb-preview-kpi');
     if (kpiEl) { kpiEl.style.display = 'none'; kpiEl.textContent = ''; }
+    var tableEl = document.getElementById('cb-preview-table');
+    if (tableEl) { tableEl.style.display = 'none'; tableEl.innerHTML = ''; }
   }
 
   function buildPayload(previewOnly) {
@@ -748,6 +835,8 @@
       y_measure: (document.getElementById('cb-y-measure') || {}).value || '',
       x_label: (document.getElementById('cb-x-label') || {}).value || '',
       y_label: (document.getElementById('cb-y-label') || {}).value || '',
+      table_columns: getSelectedMultiValues('cb-table-columns'),
+      group_by: getSelectedMultiValues('cb-group-by'),
       palette: getSelectedPalette(),
       preview_only: !!previewOnly,
     };
@@ -801,9 +890,39 @@
       kpiEl.textContent = (config && config.value) ? config.value : '–';
       return;
     }
+    var tableEl = document.getElementById('cb-preview-table');
+    if (type === 'table') {
+      canvas.style.display = 'none';
+      if (kpiEl) kpiEl.style.display = 'none';
+      if (tableEl) {
+        tableEl.style.display = 'block';
+        var columns = (config && Array.isArray(config.columns)) ? config.columns : [];
+        var rows = (config && Array.isArray(config.rows)) ? config.rows : [];
+        if (rows.length === 0 || columns.length === 0) {
+          tableEl.innerHTML = '<p class="text-xs text-slate-500">No rows to preview.</p>';
+        } else {
+          var html = '<table class="min-w-full text-xs"><thead><tr>';
+          columns.forEach(function (col) {
+            html += '<th class="border-b border-slate-200 px-2 py-1 text-left font-semibold text-slate-600">' + escapeHtml(col) + '</th>';
+          });
+          html += '</tr></thead><tbody>';
+          rows.slice(0, 12).forEach(function (row) {
+            html += '<tr>';
+            row.forEach(function (cell) {
+              html += '<td class="border-b border-slate-100 px-2 py-1.5 text-slate-700">' + escapeHtml(cell) + '</td>';
+            });
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          tableEl.innerHTML = html;
+        }
+      }
+      return;
+    }
 
     canvas.style.display = '';
     if (kpiEl) kpiEl.style.display = 'none';
+    if (tableEl) tableEl.style.display = 'none';
 
     if (!config || typeof Chart === 'undefined') return;
     try {
@@ -926,10 +1045,15 @@
   function initWidgetEdit() {
     document.querySelectorAll('.edit-widget-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
+        var parsedConfig = null;
+        if (btn.dataset.widgetConfig) {
+          try { parsedConfig = JSON.parse(btn.dataset.widgetConfig); } catch (_) {}
+        }
         openChartBuilder({
           widgetId: btn.dataset.widgetId,
           type: btn.dataset.widgetType || 'bar',
           title: btn.dataset.widgetTitle || '',
+          config: parsedConfig,
         });
       });
     });

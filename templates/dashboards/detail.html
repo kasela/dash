@@ -110,6 +110,7 @@
           data-widget-id="{{ widget.id }}"
           data-widget-type="{{ widget.widget_type }}"
           data-widget-title="{{ widget.title }}"
+          data-widget-config="{{ widget.chart_config|to_json|escapejs }}"
           title="Edit widget">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M4 20l4.5-1 9.7-9.7a1.8 1.8 0 00-2.5-2.5L6 16.5 4 20z"/>
@@ -323,6 +324,30 @@
         <p class="mt-1 text-xs text-slate-400">Hold Ctrl / Cmd to select multiple</p>
       </div>
 
+      <!-- Table: visible columns -->
+      <div id="cb-table-columns-wrap" style="display:none;">
+        <label class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Table columns <span class="ml-1 text-xs font-normal text-slate-400">(select multiple)</span>
+        </label>
+        <select id="cb-table-columns" multiple
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style="min-height:90px;">
+        </select>
+        <p class="mt-1 text-xs text-slate-400">Choose the columns shown in the table.</p>
+      </div>
+
+      <!-- Table: group by -->
+      <div id="cb-group-by-wrap" style="display:none;">
+        <label class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Group by <span class="ml-1 text-xs font-normal text-slate-400">(optional, multi-column)</span>
+        </label>
+        <select id="cb-group-by" multiple
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style="min-height:80px;">
+        </select>
+        <p class="mt-1 text-xs text-slate-400">If selected, numeric columns are aggregated by sum.</p>
+      </div>
+
       <!-- Scatter: X measure -->
       <div id="cb-x-measure-wrap" style="display:none;">
         <label for="cb-x-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
@@ -382,6 +407,7 @@
           <div class="h-48 relative" id="cb-preview-container">
             <canvas id="cb-preview-canvas"></canvas>
             <p id="cb-preview-kpi" style="display:none;" class="text-4xl font-extrabold text-indigo-600 text-center py-8"></p>
+            <div id="cb-preview-table" style="display:none;" class="h-full overflow-auto rounded-lg border border-slate-200 bg-white p-2"></div>
           </div>
         </div>
       </div>
