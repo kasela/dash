@@ -43,9 +43,28 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
 
     dataset_version = None
     persistence_error = None
+    plan_error = None
     if request.user.is_authenticated:
         try:
-            dataset_version = _persist_dataset_for_user(request, upload, parsed)
+            from apps.billing.models import UserProfile
+            from django.utils import timezone
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            if not profile.is_pro:
+                # Count uploads this calendar month
+                from apps.datasets.models import DatasetVersion as DV
+                from django.db.models.functions import TruncMonth
+                month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                monthly_count = DV.objects.filter(
+                    dataset__workspace__owner=request.user,
+                    created_at__gte=month_start,
+                ).count()
+                if monthly_count >= profile.max_monthly_uploads:
+                    plan_error = f"You've reached the {profile.max_monthly_uploads} upload/month limit on the Free plan."
+                    dataset_version = None
+                else:
+                    dataset_version = _persist_dataset_for_user(request, upload, parsed)
+            else:
+                dataset_version = _persist_dataset_for_user(request, upload, parsed)
         except (OperationalError, ProgrammingError):
             persistence_error = "Database tables are not ready yet. Run: python manage.py migrate"
 
@@ -56,6 +75,7 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         "filename": upload.name,
         "dataset_version": dataset_version,
         "persistence_error": persistence_error,
+        "plan_error": plan_error,
         "profile": profile_summary,
         "widget_suggestions": widget_suggestions,
     }

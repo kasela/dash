@@ -18,6 +18,41 @@
 
 {% block content %}
 
+<!-- Django messages -->
+{% if messages %}
+<div class="mb-6 space-y-2">
+  {% for msg in messages %}
+  <div class="flex items-start gap-3 rounded-xl px-4 py-3 text-sm font-medium
+    {% if msg.tags == 'error' %}bg-red-50 text-red-700 border border-red-200
+    {% elif msg.tags == 'success' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+    {% else %}bg-amber-50 text-amber-700 border border-amber-200{% endif %}">
+    {{ msg }}
+    {% if msg.tags == 'error' %}
+    <a href="{% url 'checkout-pro' %}" class="ml-auto shrink-0 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700">Upgrade →</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Plan usage bar (free users only) -->
+{% if not user_profile.is_pro %}
+<div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-amber-800">
+      Free plan: {{ stats.total_dashboards }}/3 dashboards used
+    </p>
+    <div class="mt-1.5 h-1.5 rounded-full bg-amber-200 overflow-hidden w-48">
+      <div class="h-full rounded-full bg-amber-500 transition-all" style="width: {% widthratio stats.total_dashboards 3 100 %}%"></div>
+    </div>
+  </div>
+  <a href="{% url 'checkout-pro' %}" class="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    Upgrade to Pro – $29/mo
+  </a>
+</div>
+{% endif %}
+
 <!-- Stats row -->
 <div class="mb-8 grid gap-5 sm:grid-cols-3">
   <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

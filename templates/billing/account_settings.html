@@ -1,0 +1,186 @@
+{% extends "app_base.html" %}
+
+{% block title %}Account Settings · DashAI{% endblock %}
+
+{% block breadcrumb %}
+  <span class="text-slate-400">Settings</span>
+  <span class="mx-2 text-slate-300">/</span>
+  <span class="text-slate-900 font-semibold">Account</span>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-8">
+
+  <!-- Messages -->
+  {% if messages %}
+  <div class="space-y-2">
+    {% for msg in messages %}
+    <div class="rounded-xl px-4 py-3 text-sm font-medium
+      {% if msg.tags == 'error' %}bg-red-50 text-red-700 border border-red-200
+      {% elif msg.tags == 'success' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+      {% else %}bg-blue-50 text-blue-700 border border-blue-200{% endif %}">
+      {{ msg }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Page header -->
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Account Settings</h1>
+    <p class="mt-1 text-sm text-slate-500">Manage your profile, password, and subscription.</p>
+  </div>
+
+  <!-- ── Profile ─────────────────────────────────────────────────────────── -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900 mb-5">Profile Information</h2>
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update_profile">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">First Name</label>
+          <input type="text" name="first_name" value="{{ user.first_name }}"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Last Name</label>
+          <input type="text" name="last_name" value="{{ user.last_name }}"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Username</label>
+        <input type="text" value="{{ user.username }}" disabled
+          class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500 cursor-not-allowed">
+        <p class="mt-1 text-xs text-slate-400">Username cannot be changed.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Email Address</label>
+        <input type="email" name="email" value="{{ user.email }}" placeholder="your@email.com"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+      </div>
+      <div class="flex justify-end pt-1">
+        <button type="submit" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Password ───────────────────────────────────────────────────────── -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900 mb-5">Change Password</h2>
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="change_password">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Current Password</label>
+        <input type="password" name="old_password" autocomplete="current-password"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+        {% if password_form.old_password.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ password_form.old_password.errors.0 }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">New Password</label>
+        <input type="password" name="new_password1" autocomplete="new-password"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+        {% if password_form.new_password1.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ password_form.new_password1.errors.0 }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Confirm New Password</label>
+        <input type="password" name="new_password2" autocomplete="new-password"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+        {% if password_form.new_password2.errors %}
+        <p class="mt-1 text-xs text-red-600">{{ password_form.new_password2.errors.0 }}</p>
+        {% endif %}
+      </div>
+      <div class="flex justify-end pt-1">
+        <button type="submit" class="rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-700">
+          Update Password
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Subscription ───────────────────────────────────────────────────── -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-base font-semibold text-slate-900">Subscription Plan</h2>
+        <p class="mt-1 text-sm text-slate-500">Manage your current plan and billing.</p>
+      </div>
+      <span class="shrink-0 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+        {% if profile.plan == 'pro' %}bg-indigo-100 text-indigo-700
+        {% elif profile.plan == 'enterprise' %}bg-violet-100 text-violet-700
+        {% else %}bg-slate-100 text-slate-600{% endif %}">
+        {{ profile.plan_display }}
+      </span>
+    </div>
+
+    <div class="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
+      {% if profile.plan == 'free' %}
+      <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div class="flex-1">
+          <p class="text-sm font-medium text-slate-900">You're on the Free plan</p>
+          <p class="mt-0.5 text-xs text-slate-500">3 dashboards · 5 uploads/month · Basic charts</p>
+        </div>
+        <a href="{% url 'checkout-pro' %}" class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 shrink-0">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Upgrade to Pro – $29/mo
+        </a>
+      </div>
+      {% else %}
+      <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div class="flex-1">
+          <p class="text-sm font-medium text-slate-900">
+            {% if profile.ls_subscription_status == 'active' %}Active subscription
+            {% elif profile.ls_subscription_status == 'cancelled' %}Cancelled – access ends {{ profile.subscription_ends_at|date:"N j, Y" }}
+            {% elif profile.ls_subscription_status == 'paused' %}Subscription paused
+            {% else %}{{ profile.plan_display }} plan{% endif %}
+          </p>
+          {% if profile.subscription_renews_at and profile.ls_subscription_status == 'active' %}
+          <p class="mt-0.5 text-xs text-slate-500">Renews {{ profile.subscription_renews_at|date:"N j, Y" }}</p>
+          {% endif %}
+        </div>
+        {% if profile.ls_subscription_status == 'active' %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="cancel_subscription">
+          <button type="submit"
+            onclick="return confirm('Cancel your subscription? You\'ll retain access until the end of the billing period.')"
+            class="text-sm font-medium text-red-600 hover:text-red-700 transition-colors">
+            Cancel subscription
+          </button>
+        </form>
+        {% else %}
+        <a href="{% url 'checkout-pro' %}" class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 shrink-0">
+          Reactivate
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Plan limits -->
+    <div class="mt-4 grid gap-3 sm:grid-cols-3">
+      <div class="rounded-lg border border-slate-100 bg-white p-3 text-center">
+        <p class="text-lg font-bold text-slate-900">{% if profile.is_pro %}∞{% else %}3{% endif %}</p>
+        <p class="text-xs text-slate-500 mt-0.5">Dashboards</p>
+      </div>
+      <div class="rounded-lg border border-slate-100 bg-white p-3 text-center">
+        <p class="text-lg font-bold text-slate-900">{% if profile.is_pro %}∞{% else %}5/mo{% endif %}</p>
+        <p class="text-xs text-slate-500 mt-0.5">Uploads</p>
+      </div>
+      <div class="rounded-lg border border-slate-100 bg-white p-3 text-center">
+        <p class="text-lg font-bold text-slate-900">{% if profile.is_pro %}5{% else %}—{% endif %}</p>
+        <p class="text-xs text-slate-500 mt-0.5">Team seats</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

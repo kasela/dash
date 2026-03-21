@@ -13,10 +13,12 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sitemaps",
     "apps.accounts",
     "apps.workspaces",
     "apps.datasets",
     "apps.dashboards",
+    "apps.billing.apps.BillingConfig",
 ]
 
 MIDDLEWARE = [
@@ -41,6 +43,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.billing.context_processors.user_profile",
             ],
         },
     }
@@ -72,3 +75,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_REDIRECT_URL = "app-home"
 LOGOUT_REDIRECT_URL = "landing"
+
+# ── LemonSqueezy settings (set via environment variables) ──────────────────────
+import os
+LEMONSQUEEZY_API_KEY = os.environ.get("LEMONSQUEEZY_API_KEY", "")
+LEMONSQUEEZY_WEBHOOK_SECRET = os.environ.get("LEMONSQUEEZY_WEBHOOK_SECRET", "")
+LEMONSQUEEZY_PRO_VARIANT_ID = os.environ.get("LEMONSQUEEZY_PRO_VARIANT_ID", "")
+LEMONSQUEEZY_STORE_SLUG = os.environ.get("LEMONSQUEEZY_STORE_SLUG", "")
+
+# Site metadata for SEO
+SITE_NAME = "DashAI"
+SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "https://dashai.io")
