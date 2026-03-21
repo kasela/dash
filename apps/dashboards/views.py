@@ -1,9 +1,19 @@
+import json
+from pathlib import Path
+
+import pandas as pd
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.datasets.models import DatasetVersion
-from apps.datasets.services import generate_widget_specs_from_version
+from apps.datasets.services import (
+    _bar_config,
+    _line_config,
+    _pie_config,
+    build_profile_summary,
+    generate_widget_specs_from_version,
+)
 
 from .models import Dashboard, DashboardShareLink, DashboardWidget
 
@@ -187,6 +197,12 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     widgets = dashboard.widgets.order_by("position")
     share_links = dashboard.share_links.filter(is_active=True).order_by("-created_at")
+    chart_types = [
+        ("bar", "📊", "Bar"),
+        ("line", "📈", "Line"),
+        ("pie", "🥧", "Pie"),
+        ("kpi", "🔢", "KPI"),
+    ]
     return render(
         request,
         "dashboards/detail.html",
@@ -194,6 +210,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
             "dashboard": dashboard,
             "widgets": widgets,
             "share_links": share_links,
+            "chart_types": chart_types,
         },
     )
 
@@ -270,3 +287,150 @@ def dashboard_public_view(request: HttpRequest, token) -> HttpResponse:
     dashboard = share_link.dashboard
     widgets = dashboard.widgets.order_by("position")
     return render(request, "dashboards/public_view.html", {"dashboard": dashboard, "widgets": widgets})
+
+
+def _load_df_from_version(dataset_version) -> pd.DataFrame | None:
+    """Load a DataFrame from a DatasetVersion's source file. Returns None on failure."""
+    try:
+        file_path = dataset_version.source_file.path
+        name = Path(file_path).name.lower()
+        if name.endswith(".csv"):
+            return pd.read_csv(file_path)
+        elif name.endswith((".xlsx", ".xlsm")):
+            return pd.read_excel(file_path)
+        elif name.endswith(".json"):
+            return pd.read_json(file_path)
+    except Exception:
+        pass
+    return None
+
+
+@login_required
+def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Return column metadata for the dataset linked to a dashboard."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+
+    if not dashboard.dataset_version:
+        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": []})
+
+    df = _load_df_from_version(dashboard.dataset_version)
+    if df is None:
+        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": []})
+
+    profile = build_profile_summary(df)
+    date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+
+    return JsonResponse({
+        "dimensions": profile.categorical_columns,
+        "measures": profile.numeric_columns,
+        "date_cols": date_cols,
+        "all_cols": [str(c) for c in df.columns],
+    })
+
+
+@login_required
+def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Create a new chart widget and append it to the dashboard."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    chart_type = data.get("chart_type", "").strip()
+    title = data.get("title", "").strip() or "New Widget"
+    dimension = data.get("dimension", "").strip()
+    measure = data.get("measure", "").strip()
+    preview_only = bool(data.get("preview_only", False))
+
+    if chart_type not in ("bar", "line", "pie", "kpi"):
+        return JsonResponse({"error": "Invalid chart type"}, status=400)
+
+    config: dict = {}
+
+    if chart_type == "kpi":
+        if measure and dashboard.dataset_version:
+            df = _load_df_from_version(dashboard.dataset_version)
+            if df is not None and measure in df.columns:
+                total = df[measure].sum()
+                config = {"kpi": measure, "value": f"{total:,.0f}"}
+            else:
+                config = {"kpi": measure, "value": "N/A"}
+        else:
+            config = {"kpi": "value", "value": "0"}
+
+    else:
+        if not dashboard.dataset_version:
+            return JsonResponse({"error": "Dashboard has no dataset"}, status=400)
+
+        df = _load_df_from_version(dashboard.dataset_version)
+        if df is None:
+            return JsonResponse({"error": "Could not load dataset file"}, status=500)
+
+        try:
+            if chart_type == "bar":
+                if not dimension or not measure:
+                    return JsonResponse({"error": "dimension and measure are required for bar charts"}, status=400)
+                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                labels = [str(l) for l in top.index.tolist()]
+                values = [round(float(v), 2) for v in top.values.tolist()]
+                config = _bar_config(labels, values, measure)
+
+            elif chart_type == "line":
+                if not dimension or not measure:
+                    return JsonResponse({"error": "dimension and measure are required for line charts"}, status=400)
+                tmp = df[[dimension, measure]].copy()
+                try:
+                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp = tmp.dropna(subset=[dimension])
+                    trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
+                except Exception:
+                    trend = tmp.groupby(dimension)[measure].sum()
+                labels = [str(p) for p in trend.index.tolist()]
+                values = [round(float(v), 2) for v in trend.values.tolist()]
+                config = _line_config(labels, values, measure)
+
+            elif chart_type == "pie":
+                if not dimension:
+                    return JsonResponse({"error": "dimension is required for pie charts"}, status=400)
+                if measure and measure in df.columns:
+                    vc = df.groupby(dimension)[measure].sum().nlargest(6)
+                else:
+                    vc = df[dimension].value_counts().head(6)
+                labels = [str(l) for l in vc.index.tolist()]
+                values = [round(float(v), 2) for v in vc.values.tolist()]
+                config = _pie_config(labels, values)
+
+        except Exception as exc:
+            return JsonResponse({"error": str(exc)}, status=500)
+
+    if preview_only:
+        return JsonResponse({"success": True, "chart_config": config})
+
+    max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
+    widget = DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title=title,
+        widget_type=chart_type,
+        position=max_pos + 1,
+        chart_config=config,
+    )
+
+    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config})
+
+
+@login_required
+def dashboard_delete_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    """Delete a single widget from a dashboard."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    widget.delete()
+
+    return JsonResponse({"success": True})

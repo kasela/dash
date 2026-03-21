@@ -11,6 +11,16 @@
 
 {% block topbar_actions %}
 <div class="flex items-center gap-2">
+  <!-- Add Chart button -->
+  <button
+    id="open-chart-builder-btn"
+    class="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span class="hidden sm:inline">Add Chart</span>
+  </button>
+
   <!-- Share button -->
   <form method="post" action="{% url 'dashboard-create-share' dashboard.id %}">
     {% csrf_token %}
@@ -34,7 +44,7 @@
     <div class="mt-1.5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
       <span>Created {{ dashboard.created_at|date:"N j, Y" }}</span>
       <span class="h-1 w-1 rounded-full bg-slate-300"></span>
-      <span>{{ widgets|length }} widget{{ widgets|length|pluralize }}</span>
+      <span id="widget-count">{{ widgets|length }} widget{{ widgets|length|pluralize }}</span>
       {% if dashboard.dataset_version %}
         <span class="h-1 w-1 rounded-full bg-slate-300"></span>
         <span>{{ dashboard.dataset_version.row_count|default:"–" }} rows · {{ dashboard.dataset_version.column_count|default:"–" }} cols</span>
@@ -68,55 +78,177 @@
 {% endif %}
 
 <!-- Widgets grid -->
-{% if widgets %}
-  <div class="grid gap-6 sm:grid-cols-2">
-    {% for widget in widgets %}
-    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div class="mb-1 flex items-center justify-between">
-        <h3 class="font-semibold text-slate-900">{{ widget.title }}</h3>
+<div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
+  {% for widget in widgets %}
+  <div class="widget-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-widget-id="{{ widget.id }}">
+    <div class="mb-1 flex items-center justify-between">
+      <h3 class="font-semibold text-slate-900">{{ widget.title }}</h3>
+      <div class="flex items-center gap-2">
         <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+        <button
+          class="delete-widget-btn flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+          data-widget-id="{{ widget.id }}"
+          data-delete-url="{% url 'dashboard-delete-widget' dashboard.id widget.id %}"
+          title="Delete widget">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    {% if widget.widget_type == 'kpi' %}
+      <!-- KPI widget -->
+      <div class="mt-4 flex items-baseline gap-2">
+        <span class="text-5xl font-extrabold text-indigo-600">{{ widget.chart_config.value|default:"–" }}</span>
+        <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
       </div>
 
-      {% if widget.widget_type == 'kpi' %}
-        <!-- KPI widget -->
-        <div class="mt-4 flex items-baseline gap-2">
-          <span class="text-5xl font-extrabold text-indigo-600">{{ widget.chart_config.value|default:"–" }}</span>
-          <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
-        </div>
+    {% elif widget.widget_type in 'bar,line,pie' %}
+      <!-- Chart widget -->
+      <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
+        <canvas></canvas>
+        <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
+      </div>
 
-      {% elif widget.widget_type in 'bar,line,pie' %}
-        <!-- Chart widget -->
-        <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
-          <canvas></canvas>
-          <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
-        </div>
+    {% elif widget.widget_type == 'table' %}
+      <!-- Table widget placeholder -->
+      <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
+        <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
+      </div>
 
-      {% elif widget.widget_type == 'table' %}
-        <!-- Table widget placeholder -->
-        <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
-          <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
-        </div>
-
-      {% else %}
-        <div class="mt-3 h-40" data-widget-chart="{{ widget.chart_config|to_json }}">
-          <canvas></canvas>
-          <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
-        </div>
-      {% endif %}
-    </div>
-    {% endfor %}
+    {% else %}
+      <div class="mt-3 h-40" data-widget-chart="{{ widget.chart_config|to_json }}">
+        <canvas></canvas>
+        <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
+      </div>
+    {% endif %}
   </div>
+  {% endfor %}
+</div>
 
-{% else %}
-  <div class="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 text-center">
-    <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-4">
-      <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+<!-- Empty state (shown when no widgets remain) -->
+<div id="empty-state" class="{% if widgets %}hidden{% endif %} flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 text-center">
+  <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-4">
+    <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+    </svg>
+  </div>
+  <h3 class="text-lg font-semibold text-slate-900">No widgets</h3>
+  <p class="mt-1 text-sm text-slate-500">Click "Add Chart" to create your first widget.</p>
+</div>
+
+<!-- ── Chart Builder Modal ────────────────────────────────────────────────── -->
+<div id="chart-builder-overlay" class="fixed inset-0 z-40 hidden bg-slate-900/60" aria-hidden="true"></div>
+
+<div id="chart-builder-modal"
+  class="fixed inset-y-0 right-0 z-50 hidden w-full max-w-md flex-col bg-white shadow-2xl"
+  role="dialog" aria-modal="true" aria-label="Add chart">
+
+  <!-- Modal header -->
+  <div class="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-6">
+    <h2 class="text-base font-semibold text-slate-900">Add Chart</h2>
+    <button id="close-chart-builder-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
       </svg>
-    </div>
-    <h3 class="text-lg font-semibold text-slate-900">No widgets</h3>
-    <p class="mt-1 text-sm text-slate-500">This dashboard has no widgets yet.</p>
+    </button>
   </div>
-{% endif %}
+
+  <!-- Modal body -->
+  <div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+
+    <!-- Loading state -->
+    <div id="cb-loading" class="flex items-center justify-center py-12">
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="cb-error" class="hidden rounded-xl bg-red-50 p-4 text-sm text-red-700"></div>
+
+    <!-- Form (hidden until columns load) -->
+    <div id="cb-form" class="hidden space-y-5">
+
+      <!-- Chart type -->
+      <div>
+        <label class="mb-2 block text-sm font-semibold text-slate-700">Chart type</label>
+        <div class="grid grid-cols-4 gap-2" id="cb-type-selector">
+          {% for ctype, icon, label in chart_types %}
+          <label class="cb-type-option flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-slate-200 p-3 text-center transition-colors hover:border-indigo-400 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50">
+            <input type="radio" name="cb_chart_type" value="{{ ctype }}" class="sr-only" {% if forloop.first %}checked{% endif %}>
+            <span class="text-xl">{{ icon }}</span>
+            <span class="text-xs font-medium text-slate-600">{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Title -->
+      <div>
+        <label for="cb-title" class="mb-1.5 block text-sm font-semibold text-slate-700">Widget title</label>
+        <input id="cb-title" type="text" placeholder="e.g. Revenue by Region"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+      </div>
+
+      <!-- Dimension -->
+      <div id="cb-dimension-wrap">
+        <label for="cb-dimension" class="mb-1.5 block text-sm font-semibold text-slate-700">
+          X-axis / Dimension
+          <span class="ml-1 text-xs font-normal text-slate-400">(categorical column)</span>
+        </label>
+        <select id="cb-dimension"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <option value="">— select column —</option>
+        </select>
+      </div>
+
+      <!-- Measure -->
+      <div id="cb-measure-wrap">
+        <label for="cb-measure" class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Y-axis / Measure
+          <span class="ml-1 text-xs font-normal text-slate-400">(numeric column)</span>
+        </label>
+        <select id="cb-measure"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <option value="">— select column —</option>
+        </select>
+      </div>
+
+      <!-- Live preview area -->
+      <div id="cb-preview-wrap" class="hidden">
+        <p class="mb-2 text-sm font-semibold text-slate-700">Preview</p>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div class="h-48 relative" id="cb-preview-container">
+            <canvas id="cb-preview-canvas"></canvas>
+            <p id="cb-preview-kpi" class="hidden text-4xl font-extrabold text-indigo-600 text-center py-8"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Validation error -->
+      <div id="cb-validation-error" class="hidden rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-700"></div>
+
+    </div>
+  </div>
+
+  <!-- Modal footer -->
+  <div class="shrink-0 border-t border-slate-200 px-6 py-4 flex items-center gap-3">
+    <button id="cb-preview-btn" class="hidden flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+      Preview
+    </button>
+    <button id="cb-submit-btn" class="hidden flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50">
+      Add to Dashboard
+    </button>
+  </div>
+</div>
+
+<!-- Pass dashboard API URLs to JS -->
+<script id="dashboard-api-urls" type="application/json">
+{
+  "columnsUrl": "{% url 'dashboard-get-columns' dashboard.id %}",
+  "addWidgetUrl": "{% url 'dashboard-add-widget' dashboard.id %}",
+  "csrfToken": "{{ csrf_token }}"
+}
+</script>
 
 {% endblock %}
