@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 
 from apps.datasets.models import DatasetVersion
@@ -25,3 +26,11 @@ class DashboardWidget(models.Model):
     widget_type = models.CharField(max_length=16, choices=WidgetType.choices)
     position = models.PositiveIntegerField(default=0)
     chart_config = models.JSONField(default=dict)
+
+
+
+class DashboardShareLink(models.Model):
+    dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="share_links")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)

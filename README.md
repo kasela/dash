@@ -13,6 +13,7 @@ A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-te
 - Automatic profile snapshot (duplicates, missing cells, suggested dimensions/measures) after upload
 - Auto-generated widget suggestions (e.g., measure-by-dimension, trend, data-quality views)
 - One-click "Create starter dashboard" from a saved dataset version
+- Public dashboard share links via secure UUID tokens
 - Example responsive Chart.js widget on the homepage
 - Tailwind CSS via CDN for instant styling in constrained environments
 
