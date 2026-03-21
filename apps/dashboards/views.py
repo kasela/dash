@@ -565,13 +565,24 @@ def dashboard_resize_widget(request: HttpRequest, dashboard_id: int, widget_id: 
     size = data.get("size", "md").strip().lower()
     if size not in {"sm", "md", "lg"}:
         return JsonResponse({"error": "Invalid size"}, status=400)
+    raw_height = data.get("height")
+    height = None
+    if raw_height is not None:
+        try:
+            height = int(raw_height)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid height"}, status=400)
+        if height < 180 or height > 900:
+            return JsonResponse({"error": "Height out of range"}, status=400)
     cfg = widget.chart_config or {}
     layout = cfg.get("layout", {})
     layout["size"] = size
+    if height is not None:
+        layout["height"] = height
     cfg["layout"] = layout
     widget.chart_config = cfg
     widget.save(update_fields=["chart_config"])
-    return JsonResponse({"success": True, "size": size})
+    return JsonResponse({"success": True, "size": size, "height": layout.get("height")})
 
 
 @login_required

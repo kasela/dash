@@ -451,6 +451,7 @@
 
   var cbPreviewChart = null;
   var cbEditingWidgetId = null;
+  var cbPendingEdit = null;
 
   var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar']);
   var MULTI_MEASURE_TYPES = new Set(['bar', 'line']);
@@ -458,7 +459,8 @@
   var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table']);
   var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table']);
 
-  function openChartBuilder() {
+  function openChartBuilder(opts) {
+    cbPendingEdit = opts || null;
     var modal = document.getElementById('chart-builder-modal');
     var overlay = document.getElementById('chart-builder-overlay');
     if (!modal) return;
@@ -474,9 +476,9 @@
     document.getElementById('cb-preview-wrap').style.display = 'none';
     var valErr = document.getElementById('cb-validation-error');
     if (valErr) valErr.style.display = 'none';
-    cbEditingWidgetId = null;
+    cbEditingWidgetId = cbPendingEdit ? cbPendingEdit.widgetId : null;
     var submitBtn = document.getElementById('cb-submit-btn');
-    if (submitBtn) submitBtn.textContent = 'Add to Dashboard';
+    if (submitBtn) submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
 
     var titleInput = document.getElementById('cb-title');
     if (titleInput) titleInput.value = '';
@@ -499,7 +501,15 @@
         document.getElementById('cb-form').style.display = 'block';
         document.getElementById('cb-preview-btn').style.display = '';
         document.getElementById('cb-submit-btn').style.display = '';
-        updateCbFieldVisibility();
+        if (cbPendingEdit && cbPendingEdit.type) {
+          var typeRadio = document.querySelector('input[name="cb_chart_type"][value="' + cbPendingEdit.type + '"]');
+          if (typeRadio) typeRadio.checked = true;
+        }
+        updateCbFieldVisibility(!cbPendingEdit);
+        if (cbPendingEdit && cbPendingEdit.title) {
+          var t = document.getElementById('cb-title');
+          if (t) t.value = cbPendingEdit.title;
+        }
       })
       .catch(function (err) {
         showCbError('Could not load dataset columns (' + err.message + '). Make sure the dataset file is still accessible.');
@@ -512,6 +522,7 @@
     if (modal) modal.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
     destroyCbPreview();
+    cbPendingEdit = null;
   }
 
   function showCbError(msg) {
@@ -603,7 +614,7 @@
     else if (dim && measure) titleInput.value = measure + ' by ' + dim;
   }
 
-  function updateCbFieldVisibility() {
+  function updateCbFieldVisibility(shouldResetTitle) {
     var type = getSelectedChartType();
     var dimWrap = document.getElementById('cb-dimension-wrap');
     var measureWrap = document.getElementById('cb-measure-wrap');
@@ -637,8 +648,10 @@
       }
     });
 
-    document.getElementById('cb-title').value = '';
-    autoSetTitle();
+    if (shouldResetTitle !== false) {
+      document.getElementById('cb-title').value = '';
+      autoSetTitle();
+    }
     destroyCbPreview();
     document.getElementById('cb-preview-wrap').style.display = 'none';
     hideCbValidationError();
@@ -868,20 +881,56 @@
     });
   }
 
+  function initWidgetDragResize() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+    document.querySelectorAll('.widget-resize-handle').forEach(function (handle) {
+      handle.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        var widgetId = handle.dataset.widgetId;
+        var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (!card) return;
+        var wrap = card.querySelector('.widget-chart-wrap');
+        var startY = e.clientY;
+        var startHeight = wrap ? wrap.offsetHeight : card.offsetHeight;
+        function onMove(ev) {
+          var next = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
+          if (wrap) wrap.style.height = next + 'px';
+          card.style.minHeight = next + 'px';
+        }
+        function onUp(ev) {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          var finalHeight = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
+          var sizeSel = card.querySelector('.widget-size-select');
+          var size = sizeSel ? sizeSel.value : 'md';
+          fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ size: size, height: finalHeight }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) throw new Error(data.error || 'Could not save resize');
+              showToast('Widget size saved', 'success');
+            })
+            .catch(function (err) { showToast(err.message, 'error'); });
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
   function initWidgetEdit() {
     document.querySelectorAll('.edit-widget-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        openChartBuilder();
-        cbEditingWidgetId = btn.dataset.widgetId;
-        var type = btn.dataset.widgetType || 'bar';
-        var title = btn.dataset.widgetTitle || '';
-        var typeRadio = document.querySelector('input[name="cb_chart_type"][value="' + type + '"]');
-        if (typeRadio) typeRadio.checked = true;
-        var titleInput = document.getElementById('cb-title');
-        if (titleInput) titleInput.value = title;
-        updateCbFieldVisibility();
-        var submitBtn = document.getElementById('cb-submit-btn');
-        if (submitBtn) submitBtn.textContent = 'Save Widget';
+        openChartBuilder({
+          widgetId: btn.dataset.widgetId,
+          type: btn.dataset.widgetType || 'bar',
+          title: btn.dataset.widgetTitle || '',
+        });
       });
     });
   }
@@ -985,6 +1034,7 @@
     initDownloadButtons();
     initChartBuilder();
     initWidgetResize();
+    initWidgetDragResize();
     initWidgetEdit();
     initDashboardRename();
   });

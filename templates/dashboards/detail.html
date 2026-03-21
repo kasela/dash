@@ -94,7 +94,7 @@
 <!-- Widgets grid -->
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
   {% for widget in widgets %}
-  <div class="widget-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'sm' %}sm:col-span-1{% elif widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}" data-widget-id="{{ widget.id }}">
+  <div class="widget-card relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'sm' %}sm:col-span-1{% elif widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
     <!-- Card header -->
     <div class="mb-1 flex items-center justify-between gap-2">
       <!-- Editable title -->
@@ -112,7 +112,7 @@
           data-widget-title="{{ widget.title }}"
           title="Edit widget">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-1 0v14m-7-7h14"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M4 20l4.5-1 9.7-9.7a1.8 1.8 0 00-2.5-2.5L6 16.5 4 20z"/>
           </svg>
         </button>
         <select class="widget-size-select rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500" data-widget-id="{{ widget.id }}" title="Card size">
@@ -190,11 +190,12 @@
 
     {% else %}
       <!-- Chart widget -->
-      <div class="mt-3 {% if widget.chart_config.layout.size == 'sm' %}h-48{% elif widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}">
+      <div class="mt-3 widget-chart-wrap {% if not widget.chart_config.layout.height %}{% if widget.chart_config.layout.size == 'sm' %}h-48{% elif widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}{% endif %}" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
         <canvas></canvas>
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
     {% endif %}
+    <button class="widget-resize-handle absolute bottom-2 right-2 h-4 w-4 cursor-se-resize rounded-sm border border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100" data-widget-id="{{ widget.id }}" title="Drag to resize"></button>
   </div>
   {% endfor %}
 </div>
