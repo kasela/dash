@@ -1,6 +1,28 @@
 (function () {
   'use strict';
 
+  // ── Utilities ─────────────────────────────────────────────────────────────────
+
+  function getCsrfToken() {
+    // 1. Try the embedded JSON config (dashboard detail page)
+    var el = document.getElementById('dashboard-api-urls');
+    if (el) {
+      try {
+        var cfg = JSON.parse(el.textContent);
+        if (cfg.csrfToken) return cfg.csrfToken;
+      } catch (_) {}
+    }
+    // 2. Fall back to reading the csrftoken cookie
+    var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+  }
+
+  function getApiConfig() {
+    var el = document.getElementById('dashboard-api-urls');
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (_) { return null; }
+  }
+
   // ── Chart rendering ──────────────────────────────────────────────────────────
 
   function renderHomeChart() {
@@ -26,7 +48,8 @@
         new Chart(canvas, cfg);
       } catch (e) {
         console.warn('DashAI: widget chart error', e);
-        wrap.querySelector('.chart-error') && (wrap.querySelector('.chart-error').hidden = false);
+        var errEl = wrap.querySelector('.chart-error');
+        if (errEl) errEl.hidden = false;
       }
     });
   }
@@ -133,35 +156,73 @@
 
   // ── Widget deletion ──────────────────────────────────────────────────────────
 
+  function doDeleteWidget(btn) {
+    var widgetId = btn.dataset.widgetId;
+    var deleteUrl = btn.dataset.deleteUrl;
+    var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+
+    btn.disabled = true;
+    btn.classList.add('opacity-50');
+
+    fetch(deleteUrl, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCsrfToken(),
+        'Content-Type': 'application/json',
+      },
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Server error ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (data.success) {
+          if (card) {
+            card.style.transition = 'opacity 0.2s';
+            card.style.opacity = '0';
+            setTimeout(function () { card.remove(); updateWidgetCount(-1); }, 200);
+          }
+          showToast('Widget deleted', 'success');
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50');
+        showToast('Could not delete widget: ' + err.message, 'error');
+        console.error('DashAI delete error:', err);
+      });
+  }
+
   function initWidgetDelete() {
     document.querySelectorAll('.delete-widget-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        // Inline confirm via a small overlay on the card itself
         var widgetId = btn.dataset.widgetId;
-        var deleteUrl = btn.dataset.deleteUrl;
         var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (!card) return;
 
-        if (!confirm('Delete this widget?')) return;
+        // If a confirm row already exists on this card, skip
+        if (card.querySelector('.delete-confirm-row')) return;
 
-        var apiUrls = getApiUrls();
-        if (!apiUrls) return;
+        var row = document.createElement('div');
+        row.className = 'delete-confirm-row mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700';
+        row.innerHTML =
+          '<span class="flex-1">Delete this widget?</span>' +
+          '<button class="confirm-yes rounded px-2 py-1 bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors">Delete</button>' +
+          '<button class="confirm-no rounded px-2 py-1 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>';
 
-        fetch(deleteUrl, {
-          method: 'POST',
-          headers: { 'X-CSRFToken': apiUrls.csrfToken, 'Content-Type': 'application/json' },
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.success) {
-              if (card) card.remove();
-              updateWidgetCount(-1);
-              showToast('Widget deleted', 'success');
-            } else {
-              showToast('Failed to delete widget', 'error');
-            }
-          })
-          .catch(function () {
-            showToast('Network error – could not delete widget', 'error');
-          });
+        card.appendChild(row);
+
+        row.querySelector('.confirm-yes').addEventListener('click', function () {
+          row.remove();
+          doDeleteWidget(btn);
+        });
+        row.querySelector('.confirm-no').addEventListener('click', function () {
+          row.remove();
+        });
       });
     });
   }
@@ -174,7 +235,6 @@
     var n = Math.max(0, parseInt(match[1], 10) + delta);
     el.textContent = n + ' widget' + (n !== 1 ? 's' : '');
 
-    // Toggle empty state
     var grid = document.getElementById('widgets-grid');
     var empty = document.getElementById('empty-state');
     if (!grid || !empty) return;
@@ -184,78 +244,85 @@
 
   // ── Chart Builder Modal ──────────────────────────────────────────────────────
 
-  var cbColumns = { dimensions: [], measures: [], date_cols: [], all_cols: [] };
   var cbPreviewChart = null;
-
-  function getApiUrls() {
-    var el = document.getElementById('dashboard-api-urls');
-    if (!el) return null;
-    try { return JSON.parse(el.textContent); } catch (e) { return null; }
-  }
 
   function openChartBuilder() {
     var modal = document.getElementById('chart-builder-modal');
     var overlay = document.getElementById('chart-builder-overlay');
     if (!modal) return;
 
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    if (overlay) overlay.classList.remove('hidden');
+    // Show modal
+    modal.style.display = 'flex';
+    if (overlay) overlay.style.display = 'block';
 
-    // Show loading, hide everything else
-    document.getElementById('cb-loading').classList.remove('hidden');
-    document.getElementById('cb-error').classList.add('hidden');
-    document.getElementById('cb-form').classList.add('hidden');
-    document.getElementById('cb-preview-btn').classList.add('hidden');
-    document.getElementById('cb-submit-btn').classList.add('hidden');
+    // Reset to loading state
+    document.getElementById('cb-loading').style.display = 'flex';
+    document.getElementById('cb-error').style.display = 'none';
+    document.getElementById('cb-form').style.display = 'none';
+    document.getElementById('cb-preview-btn').style.display = 'none';
+    document.getElementById('cb-submit-btn').style.display = 'none';
+    document.getElementById('cb-preview-wrap').style.display = 'none';
+    var valErr = document.getElementById('cb-validation-error');
+    if (valErr) valErr.style.display = 'none';
 
-    var apiUrls = getApiUrls();
-    if (!apiUrls) {
-      showCbError('Configuration error: API URLs not found.');
+    // Reset form fields
+    var titleInput = document.getElementById('cb-title');
+    if (titleInput) titleInput.value = '';
+    destroyCbPreview();
+
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.columnsUrl) {
+      showCbError('Configuration error: dashboard API URLs not found.');
       return;
     }
 
-    fetch(apiUrls.columnsUrl)
-      .then(function (r) { return r.json(); })
+    fetch(cfg.columnsUrl, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Server returned ' + r.status);
+        return r.json();
+      })
       .then(function (data) {
-        cbColumns = data;
         populateCbForm(data);
-        document.getElementById('cb-loading').classList.add('hidden');
-        document.getElementById('cb-form').classList.remove('hidden');
-        document.getElementById('cb-preview-btn').classList.remove('hidden');
-        document.getElementById('cb-submit-btn').classList.remove('hidden');
+        document.getElementById('cb-loading').style.display = 'none';
+        document.getElementById('cb-form').style.display = 'block';
+        document.getElementById('cb-preview-btn').style.display = '';
+        document.getElementById('cb-submit-btn').style.display = '';
         updateCbFieldVisibility();
       })
-      .catch(function () {
-        showCbError('Failed to load dataset columns. Please try again.');
+      .catch(function (err) {
+        console.error('DashAI: columns fetch failed', err);
+        showCbError('Could not load dataset columns (' + err.message + '). Make sure the dataset file is still accessible.');
       });
   }
 
   function closeChartBuilder() {
     var modal = document.getElementById('chart-builder-modal');
     var overlay = document.getElementById('chart-builder-overlay');
-    if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
-    if (overlay) overlay.classList.add('hidden');
+    if (modal) modal.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
     destroyCbPreview();
   }
 
   function showCbError(msg) {
+    document.getElementById('cb-loading').style.display = 'none';
     var el = document.getElementById('cb-error');
-    document.getElementById('cb-loading').classList.add('hidden');
     el.textContent = msg;
-    el.classList.remove('hidden');
+    el.style.display = 'block';
   }
 
   function populateCbForm(data) {
+    var dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
+    var measures = Array.isArray(data.measures) ? data.measures : [];
+    var allCols = Array.isArray(data.all_cols) ? data.all_cols : [];
+
     var dimSel = document.getElementById('cb-dimension');
     var measureSel = document.getElementById('cb-measure');
 
-    // Reset options
     dimSel.innerHTML = '<option value="">— select column —</option>';
     measureSel.innerHTML = '<option value="">— select column —</option>';
 
-    // Populate dimension: all non-measure columns
-    var dimCols = data.dimensions.length > 0 ? data.dimensions : data.all_cols;
+    // Dimension: prefer categorical cols, fall back to all cols
+    var dimCols = dimensions.length > 0 ? dimensions : allCols;
     dimCols.forEach(function (col) {
       var opt = document.createElement('option');
       opt.value = col;
@@ -263,20 +330,23 @@
       dimSel.appendChild(opt);
     });
 
-    // Populate measure: numeric columns
-    data.measures.forEach(function (col) {
+    // Measure: numeric cols only
+    measures.forEach(function (col) {
       var opt = document.createElement('option');
       opt.value = col;
       opt.textContent = col;
       measureSel.appendChild(opt);
     });
 
-    // Auto-select first options
+    // Auto-select first available
     if (dimCols.length > 0) dimSel.value = dimCols[0];
-    if (data.measures.length > 0) measureSel.value = data.measures[0];
+    if (measures.length > 0) measureSel.value = measures[0];
 
-    // Auto-set title
     autoSetTitle();
+
+    if (dimCols.length === 0 && measures.length === 0) {
+      showCbValidationError('No columns found in this dataset. Try re-uploading the file.');
+    }
   }
 
   function getSelectedChartType() {
@@ -286,17 +356,13 @@
 
   function autoSetTitle() {
     var titleInput = document.getElementById('cb-title');
-    if (!titleInput || titleInput.value.trim()) return; // don't overwrite user input
+    if (!titleInput || titleInput.value.trim()) return;
     var type = getSelectedChartType();
-    var dim = document.getElementById('cb-dimension').value;
-    var measure = document.getElementById('cb-measure').value;
-    if (type === 'kpi' && measure) {
-      titleInput.value = 'Total ' + measure;
-    } else if (type === 'pie' && dim) {
-      titleInput.value = 'Distribution: ' + dim;
-    } else if (dim && measure) {
-      titleInput.value = measure + ' by ' + dim;
-    }
+    var dim = (document.getElementById('cb-dimension') || {}).value || '';
+    var measure = (document.getElementById('cb-measure') || {}).value || '';
+    if (type === 'kpi' && measure) titleInput.value = 'Total ' + measure;
+    else if (type === 'pie' && dim) titleInput.value = 'Distribution: ' + dim;
+    else if (dim && measure) titleInput.value = measure + ' by ' + dim;
   }
 
   function updateCbFieldVisibility() {
@@ -305,106 +371,122 @@
     var measureWrap = document.getElementById('cb-measure-wrap');
 
     if (type === 'kpi') {
-      dimWrap.classList.add('hidden');
-      measureWrap.classList.remove('hidden');
-    } else if (type === 'pie') {
-      dimWrap.classList.remove('hidden');
-      measureWrap.classList.remove('hidden');
+      dimWrap.style.display = 'none';
+      measureWrap.style.display = '';
     } else {
-      dimWrap.classList.remove('hidden');
-      measureWrap.classList.remove('hidden');
+      dimWrap.style.display = '';
+      measureWrap.style.display = '';
     }
 
-    // Reset title on type change
+    // Update selected visual state on type pills
+    document.querySelectorAll('.cb-type-option').forEach(function (lbl) {
+      var radio = lbl.querySelector('input[type="radio"]');
+      if (radio && radio.checked) {
+        lbl.style.borderColor = '#4f46e5';
+        lbl.style.backgroundColor = '#eef2ff';
+      } else {
+        lbl.style.borderColor = '';
+        lbl.style.backgroundColor = '';
+      }
+    });
+
     document.getElementById('cb-title').value = '';
     autoSetTitle();
     destroyCbPreview();
-    document.getElementById('cb-preview-wrap').classList.add('hidden');
-    document.getElementById('cb-validation-error').classList.add('hidden');
+    document.getElementById('cb-preview-wrap').style.display = 'none';
+    hideCbValidationError();
   }
 
-  function destroyCbPreview() {
-    if (cbPreviewChart) {
-      cbPreviewChart.destroy();
-      cbPreviewChart = null;
-    }
-    var canvas = document.getElementById('cb-preview-canvas');
-    if (canvas) {
-      var ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
+  function showCbValidationError(msg) {
+    var el = document.getElementById('cb-validation-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function hideCbValidationError() {
+    var el = document.getElementById('cb-validation-error');
+    if (el) el.style.display = 'none';
   }
 
   function validateCbForm() {
     var type = getSelectedChartType();
-    var dim = document.getElementById('cb-dimension').value;
-    var measure = document.getElementById('cb-measure').value;
-    var errEl = document.getElementById('cb-validation-error');
+    var dim = (document.getElementById('cb-dimension') || {}).value || '';
+    var measure = (document.getElementById('cb-measure') || {}).value || '';
 
     if (type === 'kpi' && !measure) {
-      errEl.textContent = 'Please select a measure column for the KPI.';
-      errEl.classList.remove('hidden');
+      showCbValidationError('Select a measure column for the KPI.');
       return false;
     }
     if ((type === 'bar' || type === 'line') && (!dim || !measure)) {
-      errEl.textContent = 'Please select both a dimension and a measure column.';
-      errEl.classList.remove('hidden');
+      showCbValidationError('Select both a dimension and a measure column.');
       return false;
     }
     if (type === 'pie' && !dim) {
-      errEl.textContent = 'Please select a dimension column for the pie chart.';
-      errEl.classList.remove('hidden');
+      showCbValidationError('Select a dimension column for the pie chart.');
       return false;
     }
-
-    errEl.classList.add('hidden');
+    hideCbValidationError();
     return true;
+  }
+
+  function destroyCbPreview() {
+    if (cbPreviewChart) {
+      try { cbPreviewChart.destroy(); } catch (_) {}
+      cbPreviewChart = null;
+    }
+    var canvas = document.getElementById('cb-preview-canvas');
+    if (canvas) {
+      try {
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      } catch (_) {}
+    }
+    var kpiEl = document.getElementById('cb-preview-kpi');
+    if (kpiEl) { kpiEl.style.display = 'none'; kpiEl.textContent = ''; }
+  }
+
+  function buildPayload(previewOnly) {
+    return {
+      chart_type: getSelectedChartType(),
+      title: (document.getElementById('cb-title').value || '').trim() || 'New Widget',
+      dimension: (document.getElementById('cb-dimension') || {}).value || '',
+      measure: (document.getElementById('cb-measure') || {}).value || '',
+      preview_only: !!previewOnly,
+    };
   }
 
   function previewChart() {
     if (!validateCbForm()) return;
 
-    var type = getSelectedChartType();
-    var dim = document.getElementById('cb-dimension').value;
-    var measure = document.getElementById('cb-measure').value;
-    var apiUrls = getApiUrls();
-    if (!apiUrls) return;
+    var cfg = getApiConfig();
+    if (!cfg) return;
 
     var previewBtn = document.getElementById('cb-preview-btn');
     previewBtn.textContent = 'Loading…';
     previewBtn.disabled = true;
 
-    fetch(apiUrls.addWidgetUrl, {
+    fetch(cfg.addWidgetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': apiUrls.csrfToken,
-      },
-      body: JSON.stringify({
-        chart_type: type,
-        title: '__preview__',
-        dimension: dim,
-        measure: measure,
-        preview_only: true,
-      }),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify(buildPayload(true)),
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Server error ' + r.status);
+        return r.json();
+      })
       .then(function (data) {
         previewBtn.textContent = 'Preview';
         previewBtn.disabled = false;
-
-        if (data.error) {
-          document.getElementById('cb-validation-error').textContent = data.error;
-          document.getElementById('cb-validation-error').classList.remove('hidden');
-          return;
-        }
-
-        renderCbPreview(data.chart_config, type);
+        if (data.error) { showCbValidationError(data.error); return; }
+        renderCbPreview(data.chart_config, getSelectedChartType());
       })
-      .catch(function () {
+      .catch(function (err) {
         previewBtn.textContent = 'Preview';
         previewBtn.disabled = false;
-        showToast('Preview failed – network error', 'error');
+        showCbValidationError('Preview failed: ' + err.message);
+        console.error('DashAI preview error:', err);
       });
   }
 
@@ -415,86 +497,77 @@
     var kpiEl = document.getElementById('cb-preview-kpi');
     var canvas = document.getElementById('cb-preview-canvas');
 
-    previewWrap.classList.remove('hidden');
+    previewWrap.style.display = 'block';
 
     if (type === 'kpi') {
       canvas.style.display = 'none';
-      kpiEl.classList.remove('hidden');
-      kpiEl.textContent = config.value || '–';
+      kpiEl.style.display = 'block';
+      kpiEl.textContent = (config && config.value) ? config.value : '–';
       return;
     }
 
     canvas.style.display = '';
-    kpiEl.classList.add('hidden');
+    if (kpiEl) kpiEl.style.display = 'none';
 
     if (!config || typeof Chart === 'undefined') return;
     try {
-      var cfg = JSON.parse(JSON.stringify(config)); // deep clone
-      if (!cfg.options) cfg.options = {};
-      cfg.options.responsive = true;
-      cfg.options.maintainAspectRatio = false;
-      cbPreviewChart = new Chart(canvas, cfg);
+      var chartCfg = JSON.parse(JSON.stringify(config));
+      if (!chartCfg.options) chartCfg.options = {};
+      chartCfg.options.responsive = true;
+      chartCfg.options.maintainAspectRatio = false;
+      cbPreviewChart = new Chart(canvas, chartCfg);
     } catch (e) {
-      console.warn('DashAI: preview chart error', e);
+      console.warn('DashAI: preview render error', e);
     }
   }
 
   function submitChartBuilder() {
     if (!validateCbForm()) return;
 
-    var type = getSelectedChartType();
-    var title = document.getElementById('cb-title').value.trim() || 'New Widget';
-    var dim = document.getElementById('cb-dimension').value;
-    var measure = document.getElementById('cb-measure').value;
-    var apiUrls = getApiUrls();
-    if (!apiUrls) return;
+    var cfg = getApiConfig();
+    if (!cfg) return;
 
     var submitBtn = document.getElementById('cb-submit-btn');
     submitBtn.textContent = 'Adding…';
     submitBtn.disabled = true;
 
-    fetch(apiUrls.addWidgetUrl, {
+    fetch(cfg.addWidgetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': apiUrls.csrfToken,
-      },
-      body: JSON.stringify({
-        chart_type: type,
-        title: title,
-        dimension: dim,
-        measure: measure,
-      }),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify(buildPayload(false)),
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Server error ' + r.status);
+        return r.json();
+      })
       .then(function (data) {
         submitBtn.textContent = 'Add to Dashboard';
         submitBtn.disabled = false;
-
         if (data.success) {
           closeChartBuilder();
-          showToast('Chart added! Refreshing…', 'success');
-          setTimeout(function () { window.location.reload(); }, 800);
+          showToast('Chart added — reloading…', 'success');
+          setTimeout(function () { window.location.reload(); }, 700);
         } else {
-          document.getElementById('cb-validation-error').textContent = data.error || 'Failed to add widget.';
-          document.getElementById('cb-validation-error').classList.remove('hidden');
+          showCbValidationError(data.error || 'Failed to add widget. Please try again.');
         }
       })
-      .catch(function () {
+      .catch(function (err) {
         submitBtn.textContent = 'Add to Dashboard';
         submitBtn.disabled = false;
-        showToast('Network error – could not add widget', 'error');
+        showCbValidationError('Network error: ' + err.message);
+        console.error('DashAI submit error:', err);
       });
   }
 
   function initChartBuilder() {
     var openBtn = document.getElementById('open-chart-builder-btn');
+    if (!openBtn) return;
+
     var closeBtn = document.getElementById('close-chart-builder-btn');
     var overlay = document.getElementById('chart-builder-overlay');
     var previewBtn = document.getElementById('cb-preview-btn');
     var submitBtn = document.getElementById('cb-submit-btn');
-
-    if (!openBtn) return; // Not on dashboard detail page
 
     openBtn.addEventListener('click', openChartBuilder);
     if (closeBtn) closeBtn.addEventListener('click', closeChartBuilder);
@@ -502,12 +575,10 @@
     if (previewBtn) previewBtn.addEventListener('click', previewChart);
     if (submitBtn) submitBtn.addEventListener('click', submitChartBuilder);
 
-    // Chart type change
     document.querySelectorAll('input[name="cb_chart_type"]').forEach(function (radio) {
       radio.addEventListener('change', updateCbFieldVisibility);
     });
 
-    // Auto-update title when dimension/measure changes
     var dimSel = document.getElementById('cb-dimension');
     var measureSel = document.getElementById('cb-measure');
     if (dimSel) dimSel.addEventListener('change', function () {
@@ -519,7 +590,6 @@
       autoSetTitle();
     });
 
-    // Close on Escape
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeChartBuilder();
     });
