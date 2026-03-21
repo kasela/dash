@@ -1,54 +1,64 @@
-# AI Dashboard Builder (MVP Blueprint)
+# AI Dashboard Builder
 
-A micro-SaaS for non-technical business users to upload Excel/CSV/JSON files and get instant, filterable dashboards.
+A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-technical business users.
 
-## Product Promise
+## What is implemented now
 
-**Upload file → AI understands the data → dashboard generated instantly.**
+- Minimal Django project skeleton (`core/` + modular `apps/` layout)
+- Dataset upload endpoint using `request.FILES`
+- Pandas-based parser for `.csv`, `.xlsx`, `.xlsm`, `.json`
+- Preview rendering for first 100 rows through an HTMX partial
+- Example responsive Chart.js widget on the homepage
+- Tailwind build-pipeline scaffolding (CLI-based, no production CDN dependency)
 
-## Core Stack
-
-- **Backend:** Django, PostgreSQL, Pandas, openpyxl, django-allauth
-- **Async jobs:** Celery + Redis
-- **Frontend:** Django templates, HTMX, Tailwind CSS (build pipeline), Chart.js
-- **Storage:** local (dev), S3/R2 (prod)
-
-## MVP Scope (V1)
-
-1. Signup/login + Google social login
-2. Upload CSV/XLSX/XLSM/JSON
-3. Parse + preview dataset (first 100 rows)
-4. Auto-detect schema (date/dimension/measure/ID)
-5. Generate 6–10 suggested widgets
-6. Interactive filters with HTMX partial refresh
-7. Save dashboard + share link
-8. Basic pricing/plan limits
-
-## App Layout
+## Project structure
 
 ```text
 apps/
   accounts/
   workspaces/
   datasets/
-  profiling/
   dashboards/
-  charts/
-  filters/
-  ai_engine/
-  billing/
-  api/
 core/
 templates/
 static/
-media/
+  src/
+  dist/
 ```
 
-## Implementation Notes
+## Quickstart
 
-- Use deterministic Python logic for ingestion, schema inference, aggregation, and chart data.
-- Use AI for suggestions, summaries, and recommendations—not for uncontrolled end-to-end dashboard generation.
-- Keep all core entities scoped to `owner` or `workspace` for multi-tenant SaaS safety.
-- Treat uploads as untrusted input; validate extension/MIME, sanitize, and enforce plan-based upload limits.
+### 1) Python dependencies
 
-See `docs/implementation-plan.md` for detailed architecture, data model, and phased delivery.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2) Optional front-end build dependencies
+
+```bash
+npm install
+npm run tw:build
+```
+
+### 3) Run app
+
+```bash
+python manage.py migrate
+python manage.py runserver
+```
+
+Open:
+
+- `/` for dashboard home
+- `/datasets/upload/` for HTMX upload + preview
+
+## Next implementation milestones
+
+1. Add Django auth + django-allauth for email/social login
+2. Persist uploads into `Dataset` / `DatasetVersion`
+3. Run profiling + schema detection and save column metadata
+4. Auto-generate starter dashboard widgets from inferred schema
+5. Add saved dashboards, sharing, and plan-limit enforcement
