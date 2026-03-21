@@ -450,12 +450,13 @@
   // ── Chart Builder Modal ──────────────────────────────────────────────────
 
   var cbPreviewChart = null;
+  var cbEditingWidgetId = null;
 
   var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar']);
   var MULTI_MEASURE_TYPES = new Set(['bar', 'line']);
   var SCATTER_TYPES = new Set(['scatter']);
-  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar']);
-  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie']);
+  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table']);
+  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table']);
 
   function openChartBuilder() {
     var modal = document.getElementById('chart-builder-modal');
@@ -473,6 +474,9 @@
     document.getElementById('cb-preview-wrap').style.display = 'none';
     var valErr = document.getElementById('cb-validation-error');
     if (valErr) valErr.style.display = 'none';
+    cbEditingWidgetId = null;
+    var submitBtn = document.getElementById('cb-submit-btn');
+    if (submitBtn) submitBtn.textContent = 'Add to Dashboard';
 
     var titleInput = document.getElementById('cb-title');
     if (titleInput) titleInput.value = '';
@@ -697,6 +701,10 @@
       showCbValidationError('Select both X and Y numeric columns for the scatter chart.');
       return false;
     }
+    if (type === 'table' && !dim && measures.length === 0) {
+      showCbValidationError('Select at least one dimension or measure column for the table.');
+      return false;
+    }
     hideCbValidationError();
     return true;
   }
@@ -806,7 +814,10 @@
     submitBtn.textContent = 'Adding…';
     submitBtn.disabled = true;
 
-    fetch(cfg.addWidgetUrl, {
+    var submitUrl = cbEditingWidgetId
+      ? (cfg.updateWidgetBaseUrl + cbEditingWidgetId + '/update/')
+      : cfg.addWidgetUrl;
+    fetch(submitUrl, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
@@ -817,21 +828,102 @@
         return r.json();
       })
       .then(function (data) {
-        submitBtn.textContent = 'Add to Dashboard';
+        submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
         submitBtn.disabled = false;
         if (data.success) {
           closeChartBuilder();
-          showToast('Chart added — reloading…', 'success');
+          showToast(cbEditingWidgetId ? 'Widget updated — reloading…' : 'Chart added — reloading…', 'success');
           setTimeout(function () { window.location.reload(); }, 700);
         } else {
           showCbValidationError(data.error || 'Failed to add widget. Please try again.');
         }
       })
       .catch(function (err) {
-        submitBtn.textContent = 'Add to Dashboard';
+        submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
         submitBtn.disabled = false;
         showCbValidationError('Network error: ' + err.message);
       });
+  }
+
+  function initWidgetResize() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+    document.querySelectorAll('.widget-size-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var widgetId = sel.dataset.widgetId;
+        fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ size: sel.value }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.success) throw new Error(data.error || 'Resize failed');
+            showToast('Card resized — reloading…', 'success');
+            setTimeout(function () { window.location.reload(); }, 400);
+          })
+          .catch(function (err) { showToast(err.message, 'error'); });
+      });
+    });
+  }
+
+  function initWidgetEdit() {
+    document.querySelectorAll('.edit-widget-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openChartBuilder();
+        cbEditingWidgetId = btn.dataset.widgetId;
+        var type = btn.dataset.widgetType || 'bar';
+        var title = btn.dataset.widgetTitle || '';
+        var typeRadio = document.querySelector('input[name="cb_chart_type"][value="' + type + '"]');
+        if (typeRadio) typeRadio.checked = true;
+        var titleInput = document.getElementById('cb-title');
+        if (titleInput) titleInput.value = title;
+        updateCbFieldVisibility();
+        var submitBtn = document.getElementById('cb-submit-btn');
+        if (submitBtn) submitBtn.textContent = 'Save Widget';
+      });
+    });
+  }
+
+  function initDashboardRename() {
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.renameDashboardUrl) return;
+    var titleEl = document.getElementById('dashboard-title');
+    var inputEl = document.getElementById('dashboard-title-input');
+    if (!titleEl || !inputEl) return;
+    titleEl.addEventListener('click', function () {
+      titleEl.classList.add('hidden');
+      inputEl.classList.remove('hidden');
+      inputEl.focus();
+      inputEl.select();
+    });
+    function commit() {
+      var v = inputEl.value.trim();
+      if (!v) return cancel();
+      fetch(cfg.renameDashboardUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ title: v }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) throw new Error(data.error || 'Rename failed');
+          titleEl.textContent = data.title;
+          showToast('Dashboard renamed', 'success');
+          cancel();
+        })
+        .catch(function (err) { showToast(err.message, 'error'); cancel(); });
+    }
+    function cancel() {
+      inputEl.classList.add('hidden');
+      titleEl.classList.remove('hidden');
+    }
+    inputEl.addEventListener('blur', commit);
+    inputEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { cancel(); }
+    });
   }
 
   function initChartBuilder() {
@@ -892,6 +984,9 @@
     initMaximize();
     initDownloadButtons();
     initChartBuilder();
+    initWidgetResize();
+    initWidgetEdit();
+    initDashboardRename();
   });
 
 })();
