@@ -1,0 +1,50 @@
+{% load dataset_extras %}
+<h2 class="text-lg font-semibold">{{ filename }}</h2>
+<p class="mt-1 text-sm text-slate-600"><strong>Total rows:</strong> {{ shape.0 }} | <strong>Total columns:</strong> {{ shape.1 }}</p>
+
+{% if persistence_error %}
+  <p class="mt-2 text-sm text-amber-700">{{ persistence_error }}</p>
+{% endif %}
+
+{% if dataset_version %}
+  <p class="mt-2 text-sm text-emerald-700">Saved as dataset version {{ dataset_version.version }} (ID: {{ dataset_version.id }}).</p>
+{% else %}
+  <p class="mt-2 text-sm text-slate-500">Sign in to persist this upload as a dataset version.</p>
+{% endif %}
+
+<section class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+  <h3 class="text-sm font-semibold text-slate-900">Profile snapshot</h3>
+  <div class="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+    <p><strong>Rows:</strong> {{ profile.total_rows }}</p>
+    <p><strong>Columns:</strong> {{ profile.total_columns }}</p>
+    <p><strong>Duplicate rows:</strong> {{ profile.duplicate_rows }}</p>
+    <p><strong>Missing cells:</strong> {{ profile.missing_cells }}</p>
+  </div>
+  <div class="mt-2 text-sm">
+    <p><strong>Suggested dimensions:</strong> {{ profile.suggested_dimensions|join:", "|default:"None" }}</p>
+    <p><strong>Suggested measures:</strong> {{ profile.suggested_measures|join:", "|default:"None" }}</p>
+  </div>
+</section>
+
+<div class="mt-3 max-h-[420px] overflow-auto rounded-md border border-slate-200">
+  <table class="min-w-full border-collapse text-sm">
+    <thead class="sticky top-0 bg-slate-100">
+      <tr>
+        {% for header in headers %}
+          <th class="border-b border-slate-200 px-2 py-1 text-left font-semibold">{{ header }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr class="odd:bg-white even:bg-slate-50">
+          {% for header in headers %}
+            <td class="border-b border-slate-200 px-2 py-1">{{ row|get_item:header }}</td>
+          {% endfor %}
+        </tr>
+      {% empty %}
+        <tr><td colspan="99" class="px-2 py-2">No rows found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
