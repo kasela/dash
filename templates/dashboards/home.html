@@ -4,20 +4,18 @@
 
 {% block content %}
   <div class="space-y-5">
-    <div class="rounded-xl bg-white p-5 shadow">
-      <h1 class="text-2xl font-bold">AI Dashboard Builder</h1>
-      <p class="mt-2 text-sm text-slate-600">Start by uploading a CSV, XLSX/XLSM, or JSON file.</p>
-      <a class="mt-4 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" href="{% url 'dataset-upload' %}">
-        Upload dataset
-      </a>
-    </div>
+    <section class="card">
+      <h1 class="text-2xl font-bold tracking-tight">AI Dashboard Builder</h1>
+      <p class="mt-2 max-w-2xl text-sm text-slate-600">Upload CSV/XLSX/XLSM/JSON and generate a dashboard with server-driven interactions powered by HTMX.</p>
+      <a class="btn-primary mt-4" href="{% url 'dataset-upload' %}">Upload dataset</a>
+    </section>
 
-    <div class="rounded-xl bg-white p-5 shadow">
+    <section class="card">
       <h2 class="text-xl font-semibold">Sample responsive chart</h2>
       {{ chart_config|json_script:"chart-config" }}
       <div class="mt-3 h-80">
         <canvas id="home-chart"></canvas>
       </div>
-    </div>
+    </section>
   </div>
 {% endblock %}

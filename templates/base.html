@@ -1,6 +1,6 @@
 {% load static %}
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,14 +10,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script defer src="{% static 'js/charts.js' %}"></script>
-    <style>
-      .spinner { display: none; }
-      .htmx-request .spinner { display: inline-block; }
-    </style>
   </head>
-  <body class="bg-slate-50 text-slate-800">
-    <div class="mx-auto max-w-6xl p-5">
+  <body class="h-full bg-slate-50 text-slate-800 antialiased">
+    <main class="mx-auto min-h-full w-full max-w-6xl p-5 md:p-8">
       {% block content %}{% endblock %}
-    </div>
+    </main>
   </body>
 </html>

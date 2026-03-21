@@ -9,7 +9,7 @@ A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-te
 - Pandas-based parser for `.csv`, `.xlsx`, `.xlsm`, `.json`
 - Preview rendering for first 100 rows through an HTMX partial
 - Example responsive Chart.js widget on the homepage
-- Tailwind build-pipeline scaffolding (CLI-based, no production CDN dependency)
+- Tailwind CSS via **build pipeline** (Tailwind CLI), not runtime CDN
 
 ## Project structure
 
@@ -36,11 +36,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Optional front-end build dependencies
+### 2) Tailwind CSS build setup
 
 ```bash
 npm install
 npm run tw:build
+# or npm run tw:watch during development
 ```
 
 ### 3) Run app
