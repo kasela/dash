@@ -1,10 +1,20 @@
 (function () {
   'use strict';
 
-  // ── Utilities ─────────────────────────────────────────────────────────────────
+  // ── Palettes (mirror of services.py PALETTES) ─────────────────────────────
+
+  var PALETTES = {
+    indigo:  ['#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#818cf8'],
+    blue:    ['#3b82f6','#60a5fa','#93c5fd','#1d4ed8','#2563eb'],
+    emerald: ['#10b981','#34d399','#6ee7b7','#059669','#065f46'],
+    rose:    ['#f43f5e','#fb7185','#fda4af','#e11d48','#9f1239'],
+    amber:   ['#f59e0b','#fbbf24','#fcd34d','#d97706','#92400e'],
+    slate:   ['#475569','#64748b','#94a3b8','#1e293b','#334155'],
+  };
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
 
   function getCsrfToken() {
-    // 1. Try the embedded JSON config (dashboard detail page)
     var el = document.getElementById('dashboard-api-urls');
     if (el) {
       try {
@@ -12,7 +22,6 @@
         if (cfg.csrfToken) return cfg.csrfToken;
       } catch (_) {}
     }
-    // 2. Fall back to reading the csrftoken cookie
     var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
     return match ? match[1] : '';
   }
@@ -23,7 +32,10 @@
     try { return JSON.parse(el.textContent); } catch (_) { return null; }
   }
 
-  // ── Chart rendering ──────────────────────────────────────────────────────────
+  // ── Chart rendering ──────────────────────────────────────────────────────
+
+  // Map widget-id → Chart instance for download / maximize
+  var widgetCharts = {};
 
   function renderHomeChart() {
     var el = document.getElementById('chart-config');
@@ -45,7 +57,9 @@
         if (!cfg.options) cfg.options = {};
         cfg.options.responsive = true;
         cfg.options.maintainAspectRatio = false;
-        new Chart(canvas, cfg);
+        var widgetId = wrap.dataset.widgetId;
+        var chart = new Chart(canvas, cfg);
+        if (widgetId) widgetCharts[widgetId] = { chart: chart, config: cfg, canvas: canvas };
       } catch (e) {
         console.warn('DashAI: widget chart error', e);
         var errEl = wrap.querySelector('.chart-error');
@@ -54,7 +68,7 @@
     });
   }
 
-  // ── Clipboard copy ────────────────────────────────────────────────────────────
+  // ── Clipboard copy ────────────────────────────────────────────────────────
 
   function initCopyButtons() {
     document.querySelectorAll('[data-copy]').forEach(function (btn) {
@@ -80,7 +94,7 @@
     });
   }
 
-  // ── Drag & Drop file upload ───────────────────────────────────────────────────
+  // ── Drag & Drop file upload ───────────────────────────────────────────────
 
   function initDragDrop() {
     var zone = document.getElementById('drop-zone');
@@ -119,7 +133,7 @@
     }
   }
 
-  // ── Mobile sidebar toggle ────────────────────────────────────────────────────
+  // ── Mobile sidebar toggle ────────────────────────────────────────────────
 
   function initSidebar() {
     var toggle = document.getElementById('sidebar-toggle');
@@ -140,7 +154,7 @@
     }
   }
 
-  // ── Toast notifications ──────────────────────────────────────────────────────
+  // ── Toast notifications ──────────────────────────────────────────────────
 
   window.showToast = function (message, type) {
     var container = document.getElementById('toast-container');
@@ -154,7 +168,7 @@
     setTimeout(function () { if (toast.parentElement) toast.remove(); }, 4000);
   };
 
-  // ── Widget deletion ──────────────────────────────────────────────────────────
+  // ── Widget deletion ──────────────────────────────────────────────────────
 
   function doDeleteWidget(btn) {
     var widgetId = btn.dataset.widgetId;
@@ -166,10 +180,7 @@
 
     fetch(deleteUrl, {
       method: 'POST',
-      headers: {
-        'X-CSRFToken': getCsrfToken(),
-        'Content-Type': 'application/json',
-      },
+      headers: { 'X-CSRFToken': getCsrfToken(), 'Content-Type': 'application/json' },
     })
       .then(function (r) {
         if (!r.ok) throw new Error('Server error ' + r.status);
@@ -191,7 +202,6 @@
         btn.disabled = false;
         btn.classList.remove('opacity-50');
         showToast('Could not delete widget: ' + err.message, 'error');
-        console.error('DashAI delete error:', err);
       });
   }
 
@@ -199,12 +209,9 @@
     document.querySelectorAll('.delete-widget-btn').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        // Inline confirm via a small overlay on the card itself
         var widgetId = btn.dataset.widgetId;
         var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
         if (!card) return;
-
-        // If a confirm row already exists on this card, skip
         if (card.querySelector('.delete-confirm-row')) return;
 
         var row = document.createElement('div');
@@ -242,20 +249,222 @@
     empty.classList.toggle('hidden', remaining > 0);
   }
 
-  // ── Chart Builder Modal ──────────────────────────────────────────────────────
+  // ── Widget Rename ────────────────────────────────────────────────────────
+
+  function initWidgetRename() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    document.querySelectorAll('.widget-title').forEach(function (titleEl) {
+      titleEl.addEventListener('click', function () {
+        var widgetId = titleEl.dataset.widgetId;
+        var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (!card) return;
+        var inputEl = card.querySelector('.widget-title-input[data-widget-id="' + widgetId + '"]');
+        if (!inputEl) return;
+
+        titleEl.classList.add('hidden');
+        inputEl.classList.remove('hidden');
+        inputEl.focus();
+        inputEl.select();
+
+        function commit() {
+          var newTitle = inputEl.value.trim();
+          if (!newTitle || newTitle === titleEl.textContent.trim()) {
+            cancel();
+            return;
+          }
+          var renameUrl = cfg.renameWidgetBaseUrl + widgetId + '/rename/';
+          fetch(renameUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ title: newTitle }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.success) {
+                titleEl.textContent = data.title;
+                showToast('Renamed to "' + data.title + '"', 'success');
+              } else {
+                showToast(data.error || 'Rename failed', 'error');
+                inputEl.value = titleEl.textContent.trim();
+              }
+              cancel();
+            })
+            .catch(function (err) {
+              showToast('Network error: ' + err.message, 'error');
+              cancel();
+            });
+        }
+
+        function cancel() {
+          inputEl.classList.add('hidden');
+          titleEl.classList.remove('hidden');
+          inputEl.removeEventListener('blur', onBlur);
+          inputEl.removeEventListener('keydown', onKey);
+        }
+
+        function onBlur() { commit(); }
+        function onKey(e) {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { cancel(); }
+        }
+
+        inputEl.addEventListener('blur', onBlur);
+        inputEl.addEventListener('keydown', onKey);
+      });
+    });
+  }
+
+  // ── Maximize Chart ───────────────────────────────────────────────────────
+
+  var maximizeChart = null;
+
+  function openMaximize(widgetId) {
+    var entry = widgetCharts[widgetId];
+    if (!entry) return;
+
+    var overlay = document.getElementById('maximize-overlay');
+    var modal = document.getElementById('maximize-modal');
+    var canvas = document.getElementById('maximize-canvas');
+    var titleEl = document.getElementById('maximize-title');
+    var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+
+    if (!modal || !canvas) return;
+
+    var title = card ? (card.querySelector('.widget-title') || {}).textContent || '' : '';
+    if (titleEl) titleEl.textContent = title;
+
+    modal.style.display = 'flex';
+    if (overlay) overlay.style.display = 'block';
+
+    // Destroy previous maximize chart
+    if (maximizeChart) { try { maximizeChart.destroy(); } catch (_) {} maximizeChart = null; }
+
+    // Clone config and render
+    var cfg = JSON.parse(JSON.stringify(entry.config));
+    if (!cfg.options) cfg.options = {};
+    cfg.options.responsive = true;
+    cfg.options.maintainAspectRatio = false;
+    try {
+      maximizeChart = new Chart(canvas, cfg);
+    } catch (e) {
+      console.warn('DashAI: maximize render error', e);
+    }
+
+    // Store widgetId for download
+    modal.dataset.widgetId = widgetId;
+  }
+
+  function closeMaximize() {
+    var overlay = document.getElementById('maximize-overlay');
+    var modal = document.getElementById('maximize-modal');
+    if (overlay) overlay.style.display = 'none';
+    if (modal) modal.style.display = 'none';
+    if (maximizeChart) { try { maximizeChart.destroy(); } catch (_) {} maximizeChart = null; }
+  }
+
+  function initMaximize() {
+    document.querySelectorAll('.maximize-widget-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openMaximize(btn.dataset.widgetId);
+      });
+    });
+
+    var closeBtn = document.getElementById('close-maximize-btn');
+    var overlay = document.getElementById('maximize-overlay');
+    if (closeBtn) closeBtn.addEventListener('click', closeMaximize);
+    if (overlay) overlay.addEventListener('click', closeMaximize);
+
+    var dlBtn = document.getElementById('maximize-download-btn');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', function () {
+        var modal = document.getElementById('maximize-modal');
+        var widgetId = modal ? modal.dataset.widgetId : null;
+        downloadChartCanvas(document.getElementById('maximize-canvas'), 'chart-fullscreen');
+      });
+    }
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        var modal = document.getElementById('maximize-modal');
+        if (modal && modal.style.display !== 'none') closeMaximize();
+      }
+    });
+  }
+
+  // ── Download Chart as PNG ─────────────────────────────────────────────────
+
+  function downloadChartCanvas(canvas, filename) {
+    if (!canvas) return;
+    // Draw white background before export
+    var tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = canvas.width;
+    tmpCanvas.height = canvas.height;
+    var ctx = tmpCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+    ctx.drawImage(canvas, 0, 0);
+    tmpCanvas.toBlob(function (blob) {
+      if (!blob) return;
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = (filename || 'chart') + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+    }, 'image/png');
+  }
+
+  function initDownloadButtons() {
+    document.querySelectorAll('.download-widget-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var widgetId = btn.dataset.widgetId;
+        var entry = widgetCharts[widgetId];
+        if (!entry) { showToast('No chart to download', 'error'); return; }
+        var filename = (btn.dataset.title || 'chart').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+        downloadChartCanvas(entry.canvas, filename);
+        showToast('Downloading PNG…', 'success');
+      });
+    });
+  }
+
+  // ── Palette dot rendering ─────────────────────────────────────────────────
+
+  function renderPaletteDots() {
+    document.querySelectorAll('.palette-dots').forEach(function (el) {
+      var pname = el.dataset.palette;
+      var colors = PALETTES[pname] || PALETTES.indigo;
+      el.innerHTML = '';
+      colors.slice(0, 4).forEach(function (color) {
+        var dot = document.createElement('span');
+        dot.style.cssText = 'display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color;
+        el.appendChild(dot);
+      });
+    });
+  }
+
+  // ── Chart Builder Modal ──────────────────────────────────────────────────
 
   var cbPreviewChart = null;
+
+  var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar']);
+  var MULTI_MEASURE_TYPES = new Set(['bar', 'line']);
+  var SCATTER_TYPES = new Set(['scatter']);
+  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar']);
+  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie']);
 
   function openChartBuilder() {
     var modal = document.getElementById('chart-builder-modal');
     var overlay = document.getElementById('chart-builder-overlay');
     if (!modal) return;
 
-    // Show modal
     modal.style.display = 'flex';
     if (overlay) overlay.style.display = 'block';
 
-    // Reset to loading state
     document.getElementById('cb-loading').style.display = 'flex';
     document.getElementById('cb-error').style.display = 'none';
     document.getElementById('cb-form').style.display = 'none';
@@ -265,7 +474,6 @@
     var valErr = document.getElementById('cb-validation-error');
     if (valErr) valErr.style.display = 'none';
 
-    // Reset form fields
     var titleInput = document.getElementById('cb-title');
     if (titleInput) titleInput.value = '';
     destroyCbPreview();
@@ -290,7 +498,6 @@
         updateCbFieldVisibility();
       })
       .catch(function (err) {
-        console.error('DashAI: columns fetch failed', err);
         showCbError('Could not load dataset columns (' + err.message + '). Make sure the dataset file is still accessible.');
       });
   }
@@ -317,30 +524,47 @@
 
     var dimSel = document.getElementById('cb-dimension');
     var measureSel = document.getElementById('cb-measure');
+    var measuresSel = document.getElementById('cb-measures');
+    var xMeasureSel = document.getElementById('cb-x-measure');
+    var yMeasureSel = document.getElementById('cb-y-measure');
 
     dimSel.innerHTML = '<option value="">— select column —</option>';
     measureSel.innerHTML = '<option value="">— select column —</option>';
+    if (measuresSel) measuresSel.innerHTML = '';
+    if (xMeasureSel) xMeasureSel.innerHTML = '<option value="">— select column —</option>';
+    if (yMeasureSel) yMeasureSel.innerHTML = '<option value="">— select column —</option>';
 
-    // Dimension: prefer categorical cols, fall back to all cols
     var dimCols = dimensions.length > 0 ? dimensions : allCols;
     dimCols.forEach(function (col) {
       var opt = document.createElement('option');
-      opt.value = col;
-      opt.textContent = col;
+      opt.value = col; opt.textContent = col;
       dimSel.appendChild(opt);
     });
 
-    // Measure: numeric cols only
     measures.forEach(function (col) {
-      var opt = document.createElement('option');
-      opt.value = col;
-      opt.textContent = col;
-      measureSel.appendChild(opt);
+      var opt1 = document.createElement('option'); opt1.value = col; opt1.textContent = col;
+      measureSel.appendChild(opt1);
+
+      if (measuresSel) {
+        var opt2 = document.createElement('option'); opt2.value = col; opt2.textContent = col;
+        measuresSel.appendChild(opt2);
+      }
+      if (xMeasureSel) {
+        var opt3 = document.createElement('option'); opt3.value = col; opt3.textContent = col;
+        xMeasureSel.appendChild(opt3);
+      }
+      if (yMeasureSel) {
+        var opt4 = document.createElement('option'); opt4.value = col; opt4.textContent = col;
+        yMeasureSel.appendChild(opt4);
+      }
     });
 
-    // Auto-select first available
     if (dimCols.length > 0) dimSel.value = dimCols[0];
-    if (measures.length > 0) measureSel.value = measures[0];
+    if (measures.length > 0) {
+      measureSel.value = measures[0];
+      if (xMeasureSel && measures.length > 0) xMeasureSel.value = measures[0];
+      if (yMeasureSel && measures.length > 1) yMeasureSel.value = measures[1];
+    }
 
     autoSetTitle();
 
@@ -354,14 +578,24 @@
     return checked ? checked.value : 'bar';
   }
 
+  function getSelectedPalette() {
+    var checked = document.querySelector('input[name="cb_palette"]:checked');
+    return checked ? checked.value : 'indigo';
+  }
+
   function autoSetTitle() {
     var titleInput = document.getElementById('cb-title');
     if (!titleInput || titleInput.value.trim()) return;
     var type = getSelectedChartType();
     var dim = (document.getElementById('cb-dimension') || {}).value || '';
     var measure = (document.getElementById('cb-measure') || {}).value || '';
+    var xm = (document.getElementById('cb-x-measure') || {}).value || '';
+    var ym = (document.getElementById('cb-y-measure') || {}).value || '';
     if (type === 'kpi' && measure) titleInput.value = 'Total ' + measure;
     else if (type === 'pie' && dim) titleInput.value = 'Distribution: ' + dim;
+    else if (type === 'doughnut' && dim) titleInput.value = 'Breakdown: ' + dim;
+    else if (type === 'scatter' && xm && ym) titleInput.value = xm + ' vs ' + ym;
+    else if (type === 'radar' && dim) titleInput.value = dim + ' Radar';
     else if (dim && measure) titleInput.value = measure + ' by ' + dim;
   }
 
@@ -369,14 +603,23 @@
     var type = getSelectedChartType();
     var dimWrap = document.getElementById('cb-dimension-wrap');
     var measureWrap = document.getElementById('cb-measure-wrap');
+    var measuresWrap = document.getElementById('cb-measures-wrap');
+    var xMeasureWrap = document.getElementById('cb-x-measure-wrap');
+    var yMeasureWrap = document.getElementById('cb-y-measure-wrap');
+    var axisWrap = document.getElementById('cb-axis-labels-wrap');
 
-    if (type === 'kpi') {
-      dimWrap.style.display = 'none';
-      measureWrap.style.display = '';
-    } else {
-      dimWrap.style.display = '';
-      measureWrap.style.display = '';
-    }
+    var showDim = DIMENSION_TYPES.has(type);
+    var showMeasure = MEASURE_TYPES.has(type) && !SCATTER_TYPES.has(type);
+    var showMulti = MULTI_MEASURE_TYPES.has(type);
+    var showScatter = SCATTER_TYPES.has(type);
+    var showAxis = AXIS_TYPES.has(type);
+
+    if (dimWrap) dimWrap.style.display = showDim ? '' : 'none';
+    if (measureWrap) measureWrap.style.display = (showMeasure && !showMulti) ? '' : 'none';
+    if (measuresWrap) measuresWrap.style.display = showMulti ? '' : 'none';
+    if (xMeasureWrap) xMeasureWrap.style.display = showScatter ? '' : 'none';
+    if (yMeasureWrap) yMeasureWrap.style.display = showScatter ? '' : 'none';
+    if (axisWrap) axisWrap.style.display = showAxis ? '' : 'none';
 
     // Update selected visual state on type pills
     document.querySelectorAll('.cb-type-option').forEach(function (lbl) {
@@ -409,21 +652,49 @@
     if (el) el.style.display = 'none';
   }
 
+  function getSelectedMeasures() {
+    var type = getSelectedChartType();
+    if (MULTI_MEASURE_TYPES.has(type)) {
+      var sel = document.getElementById('cb-measures');
+      if (sel) {
+        var selected = [];
+        for (var i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].selected) selected.push(sel.options[i].value);
+        }
+        if (selected.length > 0) return selected;
+      }
+    }
+    // Fallback: single measure
+    var single = (document.getElementById('cb-measure') || {}).value || '';
+    return single ? [single] : [];
+  }
+
   function validateCbForm() {
     var type = getSelectedChartType();
     var dim = (document.getElementById('cb-dimension') || {}).value || '';
-    var measure = (document.getElementById('cb-measure') || {}).value || '';
+    var measures = getSelectedMeasures();
+    var measure = measures[0] || '';
+    var xm = (document.getElementById('cb-x-measure') || {}).value || '';
+    var ym = (document.getElementById('cb-y-measure') || {}).value || '';
 
     if (type === 'kpi' && !measure) {
       showCbValidationError('Select a measure column for the KPI.');
       return false;
     }
-    if ((type === 'bar' || type === 'line') && (!dim || !measure)) {
+    if ((type === 'bar' || type === 'line') && (!dim || measures.length === 0)) {
+      showCbValidationError('Select a dimension and at least one measure column.');
+      return false;
+    }
+    if ((type === 'area' || type === 'hbar' || type === 'radar') && (!dim || !measure)) {
       showCbValidationError('Select both a dimension and a measure column.');
       return false;
     }
-    if (type === 'pie' && !dim) {
-      showCbValidationError('Select a dimension column for the pie chart.');
+    if ((type === 'pie' || type === 'doughnut') && !dim) {
+      showCbValidationError('Select a dimension column for this chart.');
+      return false;
+    }
+    if (type === 'scatter' && (!xm || !ym)) {
+      showCbValidationError('Select both X and Y numeric columns for the scatter chart.');
       return false;
     }
     hideCbValidationError();
@@ -437,21 +708,26 @@
     }
     var canvas = document.getElementById('cb-preview-canvas');
     if (canvas) {
-      try {
-        var ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      } catch (_) {}
+      try { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); } catch (_) {}
     }
     var kpiEl = document.getElementById('cb-preview-kpi');
     if (kpiEl) { kpiEl.style.display = 'none'; kpiEl.textContent = ''; }
   }
 
   function buildPayload(previewOnly) {
+    var type = getSelectedChartType();
+    var measures = getSelectedMeasures();
     return {
-      chart_type: getSelectedChartType(),
+      chart_type: type,
       title: (document.getElementById('cb-title').value || '').trim() || 'New Widget',
       dimension: (document.getElementById('cb-dimension') || {}).value || '',
-      measure: (document.getElementById('cb-measure') || {}).value || '',
+      measures: measures,
+      measure: measures[0] || '',
+      x_measure: (document.getElementById('cb-x-measure') || {}).value || '',
+      y_measure: (document.getElementById('cb-y-measure') || {}).value || '',
+      x_label: (document.getElementById('cb-x-label') || {}).value || '',
+      y_label: (document.getElementById('cb-y-label') || {}).value || '',
+      palette: getSelectedPalette(),
       preview_only: !!previewOnly,
     };
   }
@@ -486,7 +762,6 @@
         previewBtn.textContent = 'Preview';
         previewBtn.disabled = false;
         showCbValidationError('Preview failed: ' + err.message);
-        console.error('DashAI preview error:', err);
       });
   }
 
@@ -556,7 +831,6 @@
         submitBtn.textContent = 'Add to Dashboard';
         submitBtn.disabled = false;
         showCbValidationError('Network error: ' + err.message);
-        console.error('DashAI submit error:', err);
       });
   }
 
@@ -581,29 +855,42 @@
 
     var dimSel = document.getElementById('cb-dimension');
     var measureSel = document.getElementById('cb-measure');
-    if (dimSel) dimSel.addEventListener('change', function () {
+    var measuresSel = document.getElementById('cb-measures');
+    var xSel = document.getElementById('cb-x-measure');
+    var ySel = document.getElementById('cb-y-measure');
+
+    function resetTitle() {
       document.getElementById('cb-title').value = '';
       autoSetTitle();
-    });
-    if (measureSel) measureSel.addEventListener('change', function () {
-      document.getElementById('cb-title').value = '';
-      autoSetTitle();
-    });
+    }
+
+    if (dimSel) dimSel.addEventListener('change', resetTitle);
+    if (measureSel) measureSel.addEventListener('change', resetTitle);
+    if (measuresSel) measuresSel.addEventListener('change', resetTitle);
+    if (xSel) xSel.addEventListener('change', resetTitle);
+    if (ySel) ySel.addEventListener('change', resetTitle);
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeChartBuilder();
+      if (e.key === 'Escape') {
+        var modal = document.getElementById('chart-builder-modal');
+        if (modal && modal.style.display !== 'none') closeChartBuilder();
+      }
     });
   }
 
-  // ── Init ─────────────────────────────────────────────────────────────────────
+  // ── Init ─────────────────────────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', function () {
+    renderPaletteDots();
     renderHomeChart();
     renderWidgetCharts();
     initCopyButtons();
     initDragDrop();
     initSidebar();
     initWidgetDelete();
+    initWidgetRename();
+    initMaximize();
+    initDownloadButtons();
     initChartBuilder();
   });
 

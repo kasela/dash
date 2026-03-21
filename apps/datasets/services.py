@@ -139,16 +139,44 @@ def build_widget_suggestions(profile: ProfileSummary) -> list[WidgetSuggestion]:
     return suggestions[:6]
 
 
-# ── Chart palette ─────────────────────────────────────────────────────────────
+# ── Chart palettes ─────────────────────────────────────────────────────────────
 
-_PALETTE = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#9061f9", "#a855f7", "#d946ef"]
-_CHART_SCALE_OPTS = {
-    "x": {"grid": {"display": False}},
-    "y": {"grid": {"color": "rgba(0,0,0,0.05)"}, "ticks": {"color": "#94a3b8"}},
+PALETTES = {
+    "indigo": ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#9061f9", "#a855f7", "#d946ef"],
+    "blue":   ["#3b82f6", "#60a5fa", "#93c5fd", "#1d4ed8", "#2563eb", "#0ea5e9", "#38bdf8", "#7dd3fc", "#1e40af", "#172554"],
+    "emerald":["#10b981", "#34d399", "#6ee7b7", "#059669", "#065f46", "#14b8a6", "#2dd4bf", "#5eead4", "#0f766e", "#134e4a"],
+    "rose":   ["#f43f5e", "#fb7185", "#fda4af", "#e11d48", "#9f1239", "#f97316", "#fb923c", "#fdba74", "#ea580c", "#7c2d12"],
+    "amber":  ["#f59e0b", "#fbbf24", "#fcd34d", "#d97706", "#92400e", "#eab308", "#facc15", "#fde047", "#ca8a04", "#713f12"],
+    "slate":  ["#475569", "#64748b", "#94a3b8", "#1e293b", "#334155", "#6b7280", "#9ca3af", "#d1d5db", "#374151", "#111827"],
 }
 
+DEFAULT_PALETTE = PALETTES["indigo"]
 
-def _bar_config(labels: list, values: list, label: str) -> dict:
+_MULTI_COLORS = [
+    "#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#3b82f6", "#8b5cf6",
+    "#14b8a6", "#fb923c", "#e11d48", "#2563eb",
+]
+
+
+def _scale_opts(x_label: str = "", y_label: str = "") -> dict:
+    x = {"grid": {"display": False}}
+    y = {"grid": {"color": "rgba(0,0,0,0.05)"}, "ticks": {"color": "#94a3b8"}}
+    if x_label:
+        x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 12}}
+    if y_label:
+        y["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 12}}
+    return {"x": x, "y": y}
+
+
+def _resolve_palette(palette_name: str, n: int) -> list:
+    colors = PALETTES.get(palette_name, DEFAULT_PALETTE)
+    # cycle if needed
+    return [colors[i % len(colors)] for i in range(n)]
+
+
+def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",
+                x_label: str = "", y_label: str = "") -> dict:
+    colors = _resolve_palette(palette, len(labels))
     return {
         "type": "bar",
         "data": {
@@ -156,7 +184,7 @@ def _bar_config(labels: list, values: list, label: str) -> dict:
             "datasets": [{
                 "label": label,
                 "data": values,
-                "backgroundColor": _PALETTE[:len(labels)],
+                "backgroundColor": colors,
                 "borderRadius": 6,
             }],
         },
@@ -164,12 +192,40 @@ def _bar_config(labels: list, values: list, label: str) -> dict:
             "responsive": True,
             "maintainAspectRatio": False,
             "plugins": {"legend": {"display": False}},
-            "scales": _CHART_SCALE_OPTS,
+            "scales": _scale_opts(x_label, y_label),
         },
     }
 
 
-def _line_config(labels: list, values: list, label: str) -> dict:
+def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo",
+                      x_label: str = "", y_label: str = "") -> dict:
+    """Multi-series bar chart. datasets = [{"label": str, "data": list}, ...]"""
+    chart_datasets = []
+    for i, ds in enumerate(datasets):
+        color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
+        chart_datasets.append({
+            "label": ds["label"],
+            "data": ds["data"],
+            "backgroundColor": color,
+            "borderRadius": 4,
+        })
+    return {
+        "type": "bar",
+        "data": {"labels": labels, "datasets": chart_datasets},
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": True, "position": "top"}},
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _line_config(labels: list, values: list, label: str, palette: str = "indigo",
+                 x_label: str = "", y_label: str = "") -> dict:
+    colors = _resolve_palette(palette, 1)
+    border = colors[0]
+    bg = border.replace(")", ",0.1)").replace("rgb", "rgba") if border.startswith("rgb") else border + "1a"
     return {
         "type": "line",
         "data": {
@@ -177,8 +233,61 @@ def _line_config(labels: list, values: list, label: str) -> dict:
             "datasets": [{
                 "label": label,
                 "data": values,
-                "borderColor": "#6366f1",
+                "borderColor": border,
                 "backgroundColor": "rgba(99,102,241,0.1)",
+                "tension": 0.4,
+                "fill": False,
+                "pointRadius": 3,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": False}},
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indigo",
+                       x_label: str = "", y_label: str = "") -> dict:
+    chart_datasets = []
+    for i, ds in enumerate(datasets):
+        color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
+        chart_datasets.append({
+            "label": ds["label"],
+            "data": ds["data"],
+            "borderColor": color,
+            "backgroundColor": color + "1a",
+            "tension": 0.4,
+            "fill": False,
+            "pointRadius": 3,
+        })
+    return {
+        "type": "line",
+        "data": {"labels": labels, "datasets": chart_datasets},
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": True, "position": "top"}},
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _area_config(labels: list, values: list, label: str, palette: str = "indigo",
+                 x_label: str = "", y_label: str = "") -> dict:
+    colors = _resolve_palette(palette, 1)
+    border = colors[0]
+    return {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": label,
+                "data": values,
+                "borderColor": border,
+                "backgroundColor": border + "33",
                 "tension": 0.4,
                 "fill": True,
                 "pointRadius": 3,
@@ -188,19 +297,20 @@ def _line_config(labels: list, values: list, label: str) -> dict:
             "responsive": True,
             "maintainAspectRatio": False,
             "plugins": {"legend": {"display": False}},
-            "scales": _CHART_SCALE_OPTS,
+            "scales": _scale_opts(x_label, y_label),
         },
     }
 
 
-def _pie_config(labels: list, values: list) -> dict:
+def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
+    colors = _resolve_palette(palette, len(labels))
     return {
         "type": "pie",
         "data": {
             "labels": labels,
             "datasets": [{
                 "data": values,
-                "backgroundColor": _PALETTE[:len(labels)],
+                "backgroundColor": colors,
                 "hoverOffset": 6,
             }],
         },
@@ -208,6 +318,100 @@ def _pie_config(labels: list, values: list) -> dict:
             "responsive": True,
             "maintainAspectRatio": False,
             "plugins": {"legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b"}}},
+        },
+    }
+
+
+def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dict:
+    colors = _resolve_palette(palette, len(labels))
+    return {
+        "type": "doughnut",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "data": values,
+                "backgroundColor": colors,
+                "hoverOffset": 8,
+                "borderWidth": 2,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "cutout": "65%",
+            "plugins": {"legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b"}}},
+        },
+    }
+
+
+def _hbar_config(labels: list, values: list, label: str, palette: str = "indigo",
+                 x_label: str = "", y_label: str = "") -> dict:
+    colors = _resolve_palette(palette, len(labels))
+    return {
+        "type": "bar",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": label,
+                "data": values,
+                "backgroundColor": colors,
+                "borderRadius": 4,
+            }],
+        },
+        "options": {
+            "indexAxis": "y",
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": False}},
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _scatter_config(x_values: list, y_values: list, x_label: str = "", y_label: str = "",
+                    palette: str = "indigo", label: str = "Data") -> dict:
+    colors = _resolve_palette(palette, 1)
+    points = [{"x": x, "y": y} for x, y in zip(x_values, y_values)]
+    return {
+        "type": "scatter",
+        "data": {
+            "datasets": [{
+                "label": label,
+                "data": points,
+                "backgroundColor": colors[0] + "aa",
+                "borderColor": colors[0],
+                "pointRadius": 5,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": False}},
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _radar_config(labels: list, values: list, label: str, palette: str = "indigo") -> dict:
+    colors = _resolve_palette(palette, 1)
+    border = colors[0]
+    return {
+        "type": "radar",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": label,
+                "data": values,
+                "borderColor": border,
+                "backgroundColor": border + "33",
+                "pointRadius": 4,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "plugins": {"legend": {"display": False}},
+            "scales": {"r": {"ticks": {"color": "#94a3b8"}, "grid": {"color": "rgba(0,0,0,0.08)"}}},
         },
     }
 
