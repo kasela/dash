@@ -3,7 +3,7 @@
 {% block title %}Login · DashAI{% endblock %}
 
 {% block content %}
-  <section class="mx-auto max-w-md card">
+  <section class="mx-auto max-w-md rounded-xl bg-white p-5 shadow">
     <h1 class="text-2xl font-bold tracking-tight">Welcome back</h1>
     <p class="mt-1 text-sm text-slate-600">Login to continue building dashboards.</p>
 
@@ -18,7 +18,7 @@
         <label for="id_password" class="mb-1 block text-sm font-medium">Password</label>
         <input type="password" name="password" id="id_password" required class="w-full rounded-md border border-slate-300 px-3 py-2" />
       </div>
-      <button type="submit" class="btn-primary w-full justify-center">Login</button>
+      <button type="submit" class="inline-flex w-full justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Login</button>
     </form>
 
     <p class="mt-4 text-center text-sm text-slate-600">New here? <a class="font-medium text-blue-700" href="{% url 'signup' %}">Create account</a></p>

@@ -5,11 +5,12 @@ A Django + HTMX starter for an **AI-assisted dashboard builder** aimed at non-te
 ## What is implemented now
 
 - Minimal Django project skeleton (`core/` + modular `apps/` layout)
+- Email/password auth pages (login/signup/logout)
 - Dataset upload endpoint using `request.FILES`
 - Pandas-based parser for `.csv`, `.xlsx`, `.xlsm`, `.json`
 - Preview rendering for first 100 rows through an HTMX partial
 - Example responsive Chart.js widget on the homepage
-- Tailwind CSS via **build pipeline** (Tailwind CLI), not runtime CDN
+- Tailwind CSS via CDN for instant styling in constrained environments
 
 ## Project structure
 
@@ -22,8 +23,6 @@ apps/
 core/
 templates/
 static/
-  src/
-  dist/
 ```
 
 ## Quickstart
@@ -36,15 +35,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Tailwind CSS build setup
-
-```bash
-npm install
-npm run tw:build
-# or npm run tw:watch during development
-```
-
-### 3) Run app
+### 2) Run app
 
 ```bash
 python manage.py migrate
@@ -54,12 +45,10 @@ python manage.py runserver
 Open:
 
 - `/` for dashboard home
+- `/accounts/login/` and `/accounts/signup/` for auth
 - `/datasets/upload/` for HTMX upload + preview
 
-## Next implementation milestones
+## Notes
 
-1. Add Django auth + django-allauth for email/social login
-2. Persist uploads into `Dataset` / `DatasetVersion`
-3. Run profiling + schema detection and save column metadata
-4. Auto-generate starter dashboard widgets from inferred schema
-5. Add saved dashboards, sharing, and plan-limit enforcement
+- The base template currently uses `https://cdn.tailwindcss.com` for fast development.
+- You can switch back to a build pipeline later for production optimization.

@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}AI Dashboard Builder{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'dist/tailwind.css' %}" />
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -27,7 +27,7 @@
               </form>
             {% else %}
               <a href="{% url 'login' %}" class="hover:text-slate-900">Login</a>
-              <a href="{% url 'signup' %}" class="btn-primary">Get Started</a>
+              <a href="{% url 'signup' %}" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Get Started</a>
             {% endif %}
           </nav>
         </div>
