@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Home{% endblock %}
+
+{% block content %}
+  <div class="space-y-5">
+    <section class="card">
+      <h1 class="text-2xl font-bold tracking-tight">AI Dashboard Builder</h1>
+      <p class="mt-2 max-w-2xl text-sm text-slate-600">Upload CSV/XLSX/XLSM/JSON and generate a dashboard with server-driven interactions powered by HTMX.</p>
+      <a class="btn-primary mt-4" href="{% url 'dataset-upload' %}">Upload dataset</a>
+    </section>
+
+    <section class="card">
+      <h2 class="text-xl font-semibold">Sample responsive chart</h2>
+      {{ chart_config|json_script:"chart-config" }}
+      <div class="mt-3 h-80">
+        <canvas id="home-chart"></canvas>
+      </div>
+    </section>
+  </div>
+{% endblock %}
