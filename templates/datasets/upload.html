@@ -1,27 +1,93 @@
-{% extends "base.html" %}
+{% extends "app_base.html" %}
 
-{% block title %}Upload Dataset{% endblock %}
+{% block title %}Upload Dataset · DashAI{% endblock %}
+
+{% block nav_upload_class %}bg-slate-800 text-white{% endblock %}
+
+{% block breadcrumb %}Upload Dataset{% endblock %}
+
+{% block topbar_actions %}{% endblock %}
 
 {% block content %}
-  <div class="space-y-4">
-    <section class="rounded-xl bg-white p-5 shadow">
-      <h1 class="text-2xl font-bold tracking-tight">Upload Dataset</h1>
-      <p class="mt-1 text-sm text-slate-600">Supported types: CSV, XLSX, XLSM, JSON.</p>
-      <form
-        class="mt-4 flex flex-wrap items-center gap-3"
-        hx-post="{% url 'dataset-upload-result' %}"
-        hx-target="#upload-result"
-        hx-swap="innerHTML"
-        enctype="multipart/form-data"
-      >
-        {% csrf_token %}
-        <input class="block rounded-md border border-slate-300 bg-white px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium" type="file" name="dataset_file" accept=".csv,.xlsx,.xlsm,.json" required />
-        <button class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" type="submit">Parse file</button>
-      </form>
-    </section>
 
-    <section id="upload-result" class="rounded-xl bg-white p-5 shadow">
-      <em class="text-slate-500">No file parsed yet.</em>
-    </section>
+<div class="mx-auto max-w-2xl">
+
+  <!-- Page header -->
+  <div class="mb-8">
+    <h1 class="text-2xl font-extrabold text-slate-900">Upload a dataset</h1>
+    <p class="mt-1.5 text-sm text-slate-500">Drag and drop or browse a file. DashAI will parse, profile, and suggest visualisations instantly.</p>
   </div>
+
+  <!-- Upload card -->
+  <div class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+
+    <form
+      id="upload-form"
+      hx-post="{% url 'dataset-upload-result' %}"
+      hx-target="#upload-result"
+      hx-swap="innerHTML"
+      hx-indicator="#upload-spinner"
+      enctype="multipart/form-data"
+    >
+      {% csrf_token %}
+
+      <!-- Drop zone -->
+      <div
+        id="drop-zone"
+        class="group flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-8 py-14 text-center transition-all hover:border-indigo-400 hover:bg-indigo-50"
+      >
+        <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-200 mb-4">
+          <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+        </div>
+        <p id="drop-zone-label" class="text-base font-semibold text-slate-700">Drop your file here, or click to browse</p>
+        <p id="drop-zone-sub" class="mt-1.5 text-sm text-slate-400">CSV · XLSX · XLSM · JSON · up to 10 MB</p>
+
+        <!-- Hidden file input -->
+        <input
+          id="dataset-file-input"
+          class="hidden"
+          type="file"
+          name="dataset_file"
+          accept=".csv,.xlsx,.xlsm,.json"
+          required
+        />
+      </div>
+
+      <!-- Submit -->
+      <div class="mt-5 flex items-center justify-between">
+        <p class="text-xs text-slate-400">File stays in your workspace. Never shared without permission.</p>
+        <button
+          type="submit"
+          class="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-px"
+        >
+          <!-- Spinner (hidden until htmx request) -->
+          <svg id="upload-spinner" class="htmx-indicator h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Parse file
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Result area -->
+  <div id="upload-result" class="mt-6"></div>
+
+  <!-- Supported formats -->
+  <div class="mt-8 grid grid-cols-3 gap-4">
+    {% for fmt in file_formats %}
+    <div class="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm">
+      <div class="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-lg {{ fmt.color }} text-sm font-bold text-white">
+        {{ fmt.ext }}
+      </div>
+      <p class="text-xs font-semibold text-slate-700">{{ fmt.name }}</p>
+      <p class="mt-0.5 text-xs text-slate-400">{{ fmt.desc }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
 {% endblock %}

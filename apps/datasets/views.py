@@ -19,7 +19,12 @@ from .services import (
 
 @require_GET
 def dataset_upload(request: HttpRequest) -> HttpResponse:
-    return render(request, "datasets/upload.html")
+    file_formats = [
+        {"ext": "CSV", "name": "CSV files", "desc": "Comma-separated values", "color": "bg-emerald-500"},
+        {"ext": "XLS", "name": "Excel files", "desc": ".xlsx and .xlsm", "color": "bg-blue-500"},
+        {"ext": "JSON", "name": "JSON files", "desc": "Flat or nested arrays", "color": "bg-amber-500"},
+    ]
+    return render(request, "datasets/upload.html", {"file_formats": file_formats})
 
 
 @require_POST

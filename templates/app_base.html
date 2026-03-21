@@ -1,0 +1,150 @@
+{% load static %}
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}DashAI{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe',
+                500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3'
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="h-full bg-slate-50 text-slate-900 antialiased">
+
+    <div class="flex h-full overflow-hidden">
+
+      <!-- Mobile sidebar backdrop -->
+      <div id="sidebar-overlay" class="fixed inset-0 z-20 hidden bg-slate-900/60 lg:hidden" aria-hidden="true"></div>
+
+      <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+      <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-30 flex w-64 -translate-x-full flex-col bg-slate-900 transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0">
+
+        <!-- Logo -->
+        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-slate-700/60 px-5">
+          <a href="{% url 'app-home' %}" class="flex items-center gap-2.5">
+            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500 text-sm font-bold text-white shadow">D</span>
+            <span class="text-lg font-bold text-white">DashAI</span>
+          </a>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto px-3 py-5 space-y-1">
+          <p class="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Workspace</p>
+
+          <a href="{% url 'app-home' %}"
+            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_home_class %}text-slate-300 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+            </svg>
+            Dashboards
+          </a>
+
+          <a href="{% url 'dataset-upload' %}"
+            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_upload_class %}text-slate-300 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Upload Data
+          </a>
+
+          <div class="my-4 border-t border-slate-700/60"></div>
+          <p class="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Account</p>
+
+          <a href="{% url 'pricing' %}"
+            class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
+            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            Upgrade Plan
+          </a>
+
+          <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
+              <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              Sign out
+            </button>
+          </form>
+        </nav>
+
+        <!-- User info at bottom -->
+        <div class="shrink-0 border-t border-slate-700/60 px-4 py-4">
+          <div class="flex items-center gap-3">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-sm font-semibold text-white">
+              {{ user.username|slice:":1"|upper }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-semibold text-white">{{ user.username }}</p>
+              <p class="truncate text-xs text-slate-400">Free plan</p>
+            </div>
+            <a href="{% url 'pricing' %}" class="shrink-0 rounded-md bg-indigo-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-500 transition-colors">
+              Upgrade
+            </a>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ── Main area ────────────────────────────────────────────────────── -->
+      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+
+        <!-- Top bar -->
+        <header class="flex h-16 shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-5 md:px-8">
+          <!-- Mobile sidebar toggle -->
+          <button id="sidebar-toggle" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors lg:hidden">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+
+          <!-- Breadcrumb / page title -->
+          <div class="flex-1 min-w-0 text-sm font-medium text-slate-500">
+            {% block breadcrumb %}{% endblock %}
+          </div>
+
+          <!-- Top-right actions -->
+          <div class="flex items-center gap-3">
+            {% block topbar_actions %}
+            <a href="{% url 'dataset-upload' %}"
+              class="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span class="hidden sm:inline">New dashboard</span>
+            </a>
+            {% endblock %}
+          </div>
+        </header>
+
+        <!-- Page content -->
+        <main class="flex-1 overflow-y-auto px-5 py-8 md:px-8">
+          {% block content %}{% endblock %}
+        </main>
+
+      </div>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm"></div>
+
+    <script src="{% static 'js/app.js' %}"></script>
+    {% block extra_scripts %}{% endblock %}
+  </body>
+</html>

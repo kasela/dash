@@ -1,50 +1,123 @@
-{% extends "base.html" %}
+{% extends "app_base.html" %}
 
-{% block title %}Dashboard Home{% endblock %}
+{% block title %}Dashboards · DashAI{% endblock %}
+
+{% block nav_home_class %}bg-slate-800 text-white{% endblock %}
+
+{% block breadcrumb %}Dashboards{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'dataset-upload' %}"
+  class="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+  </svg>
+  <span class="hidden sm:inline">New dashboard</span>
+</a>
+{% endblock %}
 
 {% block content %}
-  <div class="space-y-5">
-    <section class="rounded-xl bg-white p-5 shadow">
-      <h1 class="text-2xl font-bold tracking-tight">AI Dashboard Builder</h1>
-      <p class="mt-2 max-w-2xl text-sm text-slate-600">Upload CSV/XLSX/XLSM/JSON and generate a dashboard with server-driven interactions powered by HTMX.</p>
-      <a class="mt-4 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" href="{% url 'dataset-upload' %}">Upload dataset</a>
-    </section>
 
-    <section class="rounded-xl bg-white p-5 shadow">
-      <h2 class="text-xl font-semibold">Sample responsive chart</h2>
-      {{ chart_config|json_script:"chart-config" }}
-      <div class="mt-3 h-80">
-        <canvas id="home-chart"></canvas>
-      </div>
-    </section>
-
-    {% if user.is_authenticated %}
-      <section class="rounded-xl bg-white p-5 shadow">
-        <h2 class="text-xl font-semibold">Recent dashboards</h2>
-        {% if recent_dashboards %}
-          <ul class="mt-3 space-y-2 text-sm">
-            {% for d in recent_dashboards %}
-              <li class="rounded border border-slate-200 px-3 py-2">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <strong>{{ d.title }}</strong>
-                    <span class="text-slate-500">· {{ d.created_at }}</span>
-                  </div>
-                  <form method="post" action="{% url 'dashboard-create-share' d.id %}">
-                    {% csrf_token %}
-                    <button type="submit" class="rounded bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-700">Create share link</button>
-                  </form>
-                </div>
-                {% if d.share_url %}
-                  <p class="mt-2 break-all text-xs text-indigo-700">{{ d.share_url }}</p>
-                {% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <p class="mt-2 text-sm text-slate-500">No dashboards yet. Upload a dataset and create one.</p>
-        {% endif %}
-      </section>
-    {% endif %}
+<!-- Stats row -->
+<div class="mb-8 grid gap-5 sm:grid-cols-3">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p class="text-sm font-medium text-slate-500">Total dashboards</p>
+    <p class="mt-2 text-4xl font-extrabold text-slate-900">{{ stats.total_dashboards }}</p>
+    <p class="mt-1 text-xs text-slate-400">in your workspace</p>
   </div>
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p class="text-sm font-medium text-slate-500">Datasets uploaded</p>
+    <p class="mt-2 text-4xl font-extrabold text-slate-900">{{ stats.total_datasets }}</p>
+    <p class="mt-1 text-xs text-slate-400">CSV, Excel, JSON</p>
+  </div>
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p class="text-sm font-medium text-slate-500">Active share links</p>
+    <p class="mt-2 text-4xl font-extrabold text-slate-900">{{ stats.active_shares }}</p>
+    <p class="mt-1 text-xs text-slate-400">publicly accessible</p>
+  </div>
+</div>
+
+<!-- Dashboard list -->
+<div class="mb-5 flex items-center justify-between">
+  <h2 class="text-lg font-bold text-slate-900">Your dashboards</h2>
+</div>
+
+{% if recent_dashboards %}
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+    {% for d in recent_dashboards %}
+    <div class="group relative flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:shadow-md hover:border-indigo-200">
+
+      <!-- Chart preview area -->
+      <div class="h-36 overflow-hidden rounded-t-2xl bg-gradient-to-br from-indigo-50 to-violet-50 flex items-center justify-center">
+        <div class="text-center">
+          <div class="flex justify-center gap-1 mb-2">
+            {% for bar in d.preview_bars %}
+            <div class="w-5 rounded-t bg-indigo-400 opacity-70" style="height: {{ bar }}px"></div>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-indigo-400 font-medium">{{ d.widget_count }} widget{{ d.widget_count|pluralize }}</p>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="flex flex-1 flex-col p-5">
+        <h3 class="font-semibold text-slate-900 line-clamp-1">{{ d.title }}</h3>
+        <p class="mt-1 text-xs text-slate-400">Created {{ d.created_at|date:"M j, Y" }}</p>
+
+        {% if d.share_url %}
+          <div class="mt-3 flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2">
+            <svg class="h-3.5 w-3.5 shrink-0 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <span class="flex-1 truncate text-xs font-medium text-indigo-700">{{ d.share_url }}</span>
+            <button
+              data-copy="{{ d.share_url }}"
+              class="shrink-0 rounded bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-indigo-700 transition-colors">
+              Copy
+            </button>
+          </div>
+        {% endif %}
+
+        <!-- Actions -->
+        <div class="mt-4 flex items-center gap-2 pt-3 border-t border-slate-100">
+          <a href="{% url 'dashboard-detail' d.id %}"
+            class="flex-1 rounded-lg border border-slate-200 bg-slate-50 py-2 text-center text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100">
+            View dashboard
+          </a>
+          <form method="post" action="{% url 'dashboard-create-share' d.id %}">
+            {% csrf_token %}
+            <button type="submit"
+              class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700"
+              title="Generate share link">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+{% else %}
+  <!-- Empty state -->
+  <div class="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-20 text-center">
+    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-400 mb-5">
+      <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+    </div>
+    <h3 class="text-lg font-semibold text-slate-900">No dashboards yet</h3>
+    <p class="mt-2 max-w-sm text-sm text-slate-500">Upload a spreadsheet and DashAI will profile your data and generate a starter dashboard in seconds.</p>
+    <a href="{% url 'dataset-upload' %}"
+      class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-0.5">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+      </svg>
+      Upload your first dataset
+    </a>
+  </div>
+{% endif %}
+
 {% endblock %}
