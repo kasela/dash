@@ -1,0 +1,26 @@
+{% load dataset_extras %}
+<h2 class="text-lg font-semibold">{{ filename }}</h2>
+<p class="mt-1 text-sm text-slate-600"><strong>Total rows:</strong> {{ shape.0 }} | <strong>Total columns:</strong> {{ shape.1 }}</p>
+
+<div class="mt-3 max-h-[420px] overflow-auto">
+  <table class="min-w-full border-collapse text-sm">
+    <thead>
+      <tr>
+        {% for header in headers %}
+          <th class="border-b px-2 py-1 text-left font-semibold">{{ header }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for header in headers %}
+            <td class="border-b px-2 py-1">{{ row|get_item:header }}</td>
+          {% endfor %}
+        </tr>
+      {% empty %}
+        <tr><td colspan="99">No rows found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
