@@ -6,13 +6,17 @@ from django.http import HttpResponse
 from apps.dashboards.views import (
     app_home,
     dashboard_add_widget,
+    dashboard_add_heading,
     dashboard_create_from_version,
     dashboard_create_share_link,
     dashboard_delete_widget,
     dashboard_detail,
     dashboard_get_columns,
     dashboard_public_view,
+    dashboard_rename,
+    dashboard_resize_widget,
     dashboard_rename_widget,
+    dashboard_update_widget,
     landing_page,
     pricing_page,
 )
@@ -59,8 +63,12 @@ urlpatterns = [
     path("dashboards/share/<uuid:token>/", dashboard_public_view, name="dashboard-public-view"),
     path("dashboards/<int:dashboard_id>/columns/", dashboard_get_columns, name="dashboard-get-columns"),
     path("dashboards/<int:dashboard_id>/widgets/add/", dashboard_add_widget, name="dashboard-add-widget"),
+    path("dashboards/<int:dashboard_id>/widgets/add-heading/", dashboard_add_heading, name="dashboard-add-heading"),
+    path("dashboards/<int:dashboard_id>/rename/", dashboard_rename, name="dashboard-rename"),
     path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/delete/", dashboard_delete_widget, name="dashboard-delete-widget"),
     path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/rename/", dashboard_rename_widget, name="dashboard-rename-widget"),
+    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update/", dashboard_update_widget, name="dashboard-update-widget"),
+    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/resize/", dashboard_resize_widget, name="dashboard-resize-widget"),
 
     # Dataset actions
     path("datasets/upload/", dataset_upload, name="dataset-upload"),

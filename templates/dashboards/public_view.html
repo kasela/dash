@@ -45,7 +45,41 @@
 
         {% elif widget.widget_type == 'table' %}
           <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
+            {% if widget.chart_config.rows %}
+            <table class="min-w-full text-xs">
+              <thead class="bg-slate-50 text-slate-600">
+                <tr>
+                  {% for column in widget.chart_config.columns %}
+                    <th class="px-3 py-2 text-left font-semibold">{{ column }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in widget.chart_config.rows %}
+                <tr class="border-t border-slate-100">
+                  {% for cell in row %}
+                    <td class="px-3 py-2 text-slate-700">{{ cell }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
             <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
+            {% endif %}
+          </div>
+
+        {% elif widget.widget_type == 'heading' %}
+          <div class="mt-3 py-2">
+            <h2
+              class="
+              {% if widget.chart_config.font_size == 'lg' %}text-lg{% elif widget.chart_config.font_size == 'xl' %}text-xl{% elif widget.chart_config.font_size == '3xl' %}text-3xl{% else %}text-2xl{% endif %}
+              {% if widget.chart_config.color == 'slate' %}text-slate-700{% elif widget.chart_config.color == 'emerald' %}text-emerald-700{% elif widget.chart_config.color == 'rose' %}text-rose-700{% elif widget.chart_config.color == 'amber' %}text-amber-700{% else %}text-indigo-700{% endif %}
+              {% if widget.chart_config.font_family == 'poppins' %}font-['Poppins']{% elif widget.chart_config.font_family == 'serif' %}font-serif{% elif widget.chart_config.font_family == 'mono' %}font-mono{% else %}font-semibold{% endif %}
+              {% if widget.chart_config.align == 'center' %}text-center{% elif widget.chart_config.align == 'right' %}text-right{% else %}text-left{% endif %}
+              ">
+              {{ widget.chart_config.text|default:widget.title }}
+            </h2>
           </div>
 
         {% else %}
