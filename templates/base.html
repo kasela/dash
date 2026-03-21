@@ -12,8 +12,41 @@
     <script defer src="{% static 'js/charts.js' %}"></script>
   </head>
   <body class="h-full bg-slate-50 text-slate-800 antialiased">
-    <main class="mx-auto min-h-full w-full max-w-6xl p-5 md:p-8">
-      {% block content %}{% endblock %}
-    </main>
+    <div class="flex min-h-full flex-col">
+      <header class="border-b border-slate-200 bg-white">
+        <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 md:px-8">
+          <a href="{% url 'dashboard-home' %}" class="text-lg font-bold tracking-tight text-slate-900">DashAI</a>
+          <nav class="flex items-center gap-5 text-sm text-slate-600">
+            <a href="{% url 'dashboard-home' %}" class="hover:text-slate-900">Home</a>
+            <a href="{% url 'dataset-upload' %}" class="hover:text-slate-900">Upload</a>
+            {% if user.is_authenticated %}
+              <span class="hidden text-slate-500 sm:inline">Hi, {{ user.username }}</span>
+              <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="rounded-md border border-slate-300 px-3 py-1.5 font-medium hover:bg-slate-100">Logout</button>
+              </form>
+            {% else %}
+              <a href="{% url 'login' %}" class="hover:text-slate-900">Login</a>
+              <a href="{% url 'signup' %}" class="btn-primary">Get Started</a>
+            {% endif %}
+          </nav>
+        </div>
+      </header>
+
+      <main class="mx-auto w-full max-w-6xl flex-1 p-5 md:p-8">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="border-t border-slate-200 bg-white">
+        <div class="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-6 text-xs text-slate-500 md:flex-row md:items-center md:justify-between md:px-8">
+          <p>© {% now "Y" %} DashAI. Built for business users who live in spreadsheets.</p>
+          <div class="flex items-center gap-4">
+            <a href="#" class="hover:text-slate-700">Privacy</a>
+            <a href="#" class="hover:text-slate-700">Terms</a>
+            <a href="#" class="hover:text-slate-700">Contact</a>
+          </div>
+        </div>
+      </footer>
+    </div>
   </body>
 </html>
