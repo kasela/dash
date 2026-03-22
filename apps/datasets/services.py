@@ -1092,6 +1092,35 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
     if client is not None:
         profile = build_profile_summary(df)
+
+        # Build richer statistical context for better AI recommendations
+        outlier_info: dict = {}
+        for col in profile.numeric_columns[:20]:
+            try:
+                q1 = float(df[col].quantile(0.25))
+                q3 = float(df[col].quantile(0.75))
+                iqr = q3 - q1
+                lower_fence = q1 - 1.5 * iqr
+                upper_fence = q3 + 1.5 * iqr
+                outlier_count = int(((df[col] < lower_fence) | (df[col] > upper_fence)).sum())
+                if outlier_count > 0:
+                    outlier_info[col] = {"outlier_count": outlier_count, "iqr_lower": round(lower_fence, 4), "iqr_upper": round(upper_fence, 4)}
+            except Exception:
+                pass
+
+        value_distributions: dict = {}
+        for col in profile.categorical_columns[:15]:
+            try:
+                vc = df[col].value_counts(dropna=False)
+                null_count = int(df[col].isna().sum())
+                value_distributions[col] = {
+                    "unique_values": int(df[col].nunique(dropna=True)),
+                    "top_3": vc.head(3).index.astype(str).tolist(),
+                    "missing": null_count,
+                }
+            except Exception:
+                pass
+
         sample_info = {
             "columns": list(df.columns[:50]),
             "dtypes": {str(c): str(df[c].dtype) for c in df.columns[:50]},
@@ -1100,9 +1129,22 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             "duplicate_rows": int(df.duplicated().sum()),
             "numeric_columns": profile.numeric_columns[:30],
             "categorical_columns": profile.categorical_columns[:30],
+            "numeric_stats": {
+                str(c): {
+                    "mean": round(float(df[c].mean()), 4),
+                    "std": round(float(df[c].std()), 4),
+                    "min": round(float(df[c].min()), 4),
+                    "max": round(float(df[c].max()), 4),
+                    "missing": int(df[c].isna().sum()),
+                }
+                for c in profile.numeric_columns[:20]
+                if pd.api.types.is_numeric_dtype(df[c])
+            },
+            "outlier_analysis": outlier_info,
+            "categorical_distributions": value_distributions,
             "sample_values": {
-                str(c): df[c].dropna().head(3).astype(str).tolist()
-                for c in df.columns[:20]
+                str(c): df[c].dropna().head(5).astype(str).tolist()
+                for c in df.columns[:25]
             },
         }
         try:
@@ -1112,19 +1154,31 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                     {
                         "role": "system",
                         "content": (
-                            "You are a data cleaning expert. Analyze this dataset profile and return a JSON array of cleaning steps. "
-                            "Each step must have keys: action (one of: drop_duplicates, fill_missing, cap_outliers, fix_dtype, drop_column), "
-                            "column (string or null for dataset-wide), strategy (brief strategy string), reason (brief reason). "
-                            "For fill_missing: include fill_value ('mean', 'median', 'mode', or a literal value). "
-                            "For cap_outliers: include percentile_low (int) and percentile_high (int). "
-                            "Return ONLY valid JSON array, no explanation."
+                            "You are a senior data engineer specializing in production-grade dataset cleaning for business intelligence.\n\n"
+                            "TASK: Analyze the dataset profile and produce an optimal cleaning plan as a JSON array.\n\n"
+                            "RULES:\n"
+                            "- Each step must be actionable and justified by the actual data statistics provided.\n"
+                            "- Prioritize steps by impact: data integrity issues first (duplicates, type fixes), then missing values, then outliers.\n"
+                            "- Only recommend dropping columns if null_ratio > 0.7 OR if column has only 1 unique non-null value (zero variance).\n"
+                            "- For fill_missing on numeric: prefer 'median' when std/mean > 0.5 (skewed data), else 'mean'.\n"
+                            "- For cap_outliers: only apply when outlier_count > 2% of total rows; use 1-99 percentiles for heavy tails, 5-95 for moderate.\n"
+                            "- For fix_dtype: detect date strings (ISO, MM/DD/YYYY, etc.) and numeric strings.\n"
+                            "- Do NOT suggest cleaning for columns with 0 issues.\n\n"
+                            "OUTPUT FORMAT — return ONLY a valid JSON array, no markdown, no explanation:\n"
+                            '[\n'
+                            '  {"action": "drop_duplicates", "column": null, "strategy": "exact match across all columns", "reason": "N exact duplicate rows inflate metrics"},\n'
+                            '  {"action": "fill_missing", "column": "revenue", "strategy": "median", "fill_value": "median", "reason": "23 nulls; right-skewed distribution (std/mean=1.2) so median is robust"},\n'
+                            '  {"action": "cap_outliers", "column": "price", "strategy": "IQR winsorizing", "percentile_low": 1, "percentile_high": 99, "reason": "47 outliers (3.1% of rows) beyond IQR fences"},\n'
+                            '  {"action": "fix_dtype", "column": "order_date", "strategy": "parse as datetime", "reason": "column contains ISO date strings stored as object"},\n'
+                            '  {"action": "drop_column", "column": "internal_id", "strategy": "remove zero-variance column", "reason": "only 1 unique value — no analytical value"}\n'
+                            "]"
                         ),
                     },
                     {"role": "user", "content": _json.dumps(sample_info)},
                 ],
-                temperature=0.1,
+                temperature=0.05,
                 stream=False,
-                timeout=15,
+                timeout=20,
             )
             content = ((response.choices[0].message.content) or "").strip()
             match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
@@ -1239,17 +1293,26 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
                     {
                         "role": "system",
                         "content": (
-                            "You are a BI expert. Recommend the best dashboard slicers/filters for this dataset. "
-                            "Return a JSON array (max 6 items) where each item has: "
-                            "column (string), filter_type (one of: dropdown, multiselect, range), "
-                            "label (friendly display name), reason (1 sentence why this slicer is useful). "
-                            "Prefer low-cardinality categorical columns for dropdown/multiselect, "
-                            "and numeric columns for range. Return ONLY valid JSON array."
+                            "You are a senior BI engineer designing interactive dashboard filters for business users.\n\n"
+                            "TASK: Recommend the best slicers/filters for this dataset. Return a JSON array of max 6 items.\n\n"
+                            "SELECTION RULES:\n"
+                            "- dropdown: categorical columns with 2–15 unique values (single-select, fast lookup)\n"
+                            "- multiselect: categorical columns with 6–50 unique values (multi-value comparison)\n"
+                            "- range: numeric/date columns for continuous narrowing\n"
+                            "- Avoid ID columns (uuid, primary keys, row numbers) — they have no filter utility\n"
+                            "- Prioritize columns that business users filter by most: time periods, regions, categories, status, segments\n"
+                            "- Infer the business domain from column names to name slicers naturally\n\n"
+                            "OUTPUT FORMAT — return ONLY a valid JSON array:\n"
+                            '[\n'
+                            '  {"column": "region", "filter_type": "dropdown", "label": "Region", "reason": "5 regions allow fast segment drill-down for executives"},\n'
+                            '  {"column": "product_category", "filter_type": "multiselect", "label": "Product Category", "reason": "12 categories support cross-category comparison"},\n'
+                            '  {"column": "revenue", "filter_type": "range", "label": "Revenue Range ($)", "reason": "Filter by revenue band to focus on high-value customers"}\n'
+                            "]"
                         ),
                     },
                     {"role": "user", "content": _json.dumps(payload)},
                 ],
-                temperature=0.2,
+                temperature=0.15,
                 stream=False,
                 timeout=12,
             )
@@ -1306,11 +1369,40 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
     if client is None:
         return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
+    import statistics as _stats
+    numeric_vals = []
+    for v in values[:30]:
+        try:
+            numeric_vals.append(float(v))
+        except (TypeError, ValueError):
+            pass
+
+    stat_context: dict = {}
+    if numeric_vals:
+        total = sum(numeric_vals)
+        avg = total / len(numeric_vals)
+        stat_context = {
+            "total": round(total, 2),
+            "average": round(avg, 2),
+            "max": round(max(numeric_vals), 2),
+            "min": round(min(numeric_vals), 2),
+            "max_label": labels[numeric_vals.index(max(numeric_vals))] if labels else "",
+            "top_3_labels": [labels[i] for i in sorted(range(len(numeric_vals)), key=lambda x: -numeric_vals[x])[:3]] if labels else [],
+            "data_points": len(numeric_vals),
+        }
+        if len(numeric_vals) >= 2:
+            stat_context["trend_direction"] = "upward" if numeric_vals[-1] > numeric_vals[0] else "downward"
+            pct_change = round((numeric_vals[-1] - numeric_vals[0]) / abs(numeric_vals[0]) * 100, 1) if numeric_vals[0] != 0 else 0
+            stat_context["start_to_end_pct_change"] = pct_change
+        if total > 0 and chart_type in ("pie", "doughnut"):
+            stat_context["top_pct_of_total"] = round(max(numeric_vals) / total * 100, 1)
+
     payload = {
         "chart_type": chart_type,
         "title": title,
         "labels": labels[:30],
         "values": values[:30],
+        "statistics": stat_context,
     }
     try:
         response = client.chat.completions.create(
@@ -1319,14 +1411,22 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
                 {
                     "role": "system",
                     "content": (
-                        "You are a concise data analyst. Given chart data, provide 2-4 key insights in plain text "
-                        "(no markdown). Focus on top performers, trends, anomalies, or distributions. "
-                        "Keep your response under 120 words."
+                        "You are a sharp business data analyst writing executive-level chart commentary.\n\n"
+                        "TASK: Write 2-3 punchy, specific insights for the chart data provided. "
+                        "Use the pre-computed statistics to be numerically precise — cite specific values, labels, and percentages.\n\n"
+                        "RULES:\n"
+                        "- Write in plain text, no markdown, no bullet points, no headers.\n"
+                        "- Each sentence must contain at least one specific number or label from the data.\n"
+                        "- For bar/hbar: highlight top performer, bottom performer, and spread.\n"
+                        "- For line/area: identify trend direction, peak period, and magnitude of change.\n"
+                        "- For pie/doughnut: state the dominant segment's share and compare top 2.\n"
+                        "- For scatter: comment on correlation direction and any clusters.\n"
+                        "- Keep total response under 100 words. Be direct and confident."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
-            temperature=0.3,
+            temperature=0.2,
             stream=False,
             timeout=12,
         )
@@ -1422,29 +1522,45 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 {
                     "role": "system",
                     "content": (
-                        "You are an expert BI dashboard designer. Design a COMPREHENSIVE, advanced dashboard. "
-                        "Return a JSON array of EXACTLY 11 widget specs in this order:\n"
-                        "1. THREE KPI widgets (chart_type='kpi', size='sm') for the 3 most impactful numeric metrics.\n"
-                        "2. EIGHT chart widgets using VARIED types from: bar, line, area, pie, doughnut, hbar, scatter, radar, table.\n"
-                        "   - Must include: at least 1 line or area (time-series/trend), 1 pie or doughnut (distribution), "
-                        "     1 hbar (ranking), 1 scatter (correlation), 1 bar (comparison), 1 radar or table.\n"
-                        "Each widget spec MUST have ALL these keys:\n"
-                        "  title (string), chart_type (from allowed_chart_types), "
-                        "  dimension (column name string or null), measures (array of column name strings, can be []), "
-                        "  x_measure (column name or null), y_measure (column name or null), "
-                        "  size ('sm' for KPIs, 'md' for standard, 'lg' for main/wide charts), "
-                        "  palette (one of allowed_palettes), "
-                        "  ai_insight (1-2 sentence insight about what this chart reveals about the data — be specific).\n"
-                        "Rules: Use different palettes for variety. For KPIs pick numeric columns with meaningful sums. "
-                        "For charts, always set dimension and/or measures to valid column names from the dataset. "
-                        "Return ONLY a valid JSON array with no explanation, comments or markdown."
+                        "You are a world-class BI dashboard designer at a top-tier analytics consultancy. "
+                        "Your dashboards are praised for being insightful, visually diverse, and immediately actionable.\n\n"
+                        "TASK: Design a comprehensive executive dashboard for the dataset profile provided.\n\n"
+                        "OUTPUT: Return a JSON array of EXACTLY 11 widget specs in this strict order:\n"
+                        "  Position 1-3: THREE KPI cards (chart_type='kpi', size='sm') — pick the 3 most business-critical numeric metrics "
+                        "  (prefer revenue/sales/profit/count; use sum as the KPI value, not average).\n"
+                        "  Position 4-11: EIGHT chart widgets with MAXIMUM variety:\n"
+                        "    - At least 1 'line' or 'area' for time-series trends (use a date column as dimension)\n"
+                        "    - At least 1 'pie' or 'doughnut' for category distribution\n"
+                        "    - At least 1 'hbar' for ranked comparison (top N)\n"
+                        "    - At least 1 'scatter' for correlation analysis (two numeric columns)\n"
+                        "    - At least 1 'bar' for group comparison\n"
+                        "    - At least 1 'radar' or 'table' for multi-dimensional view\n"
+                        "    - The remaining 2 can be any type — choose what best reveals the data story\n\n"
+                        "REQUIRED KEYS for every widget:\n"
+                        "  title: concise, business-friendly title (e.g. 'Monthly Revenue Trend', 'Top 10 Products by Sales')\n"
+                        "  chart_type: from allowed_chart_types\n"
+                        "  dimension: exact column name for x-axis/grouping (null only for scatter KPI)\n"
+                        "  measures: array of exact numeric column names ([] only for pure distribution charts)\n"
+                        "  x_measure: exact numeric column name for scatter x-axis (null otherwise)\n"
+                        "  y_measure: exact numeric column name for scatter y-axis (null otherwise)\n"
+                        "  size: 'sm' for KPIs, 'lg' for time-series/main charts, 'md' for standard charts\n"
+                        "  palette: from allowed_palettes — VARY palettes across widgets, no two consecutive same\n"
+                        "  ai_insight: 1-2 sentences of specific, data-grounded insight. "
+                        "  Reference actual column names and what the chart will reveal (e.g. 'This chart exposes which product "
+                        "  category drives the highest revenue — expect Electronics or similar high-ASP categories to dominate.')\n\n"
+                        "STRICT RULES:\n"
+                        "- dimension and measures MUST use EXACT column names from the 'columns' list in the dataset profile.\n"
+                        "- Never invent column names that do not exist in the dataset.\n"
+                        "- For scatter: set x_measure and y_measure to two different numeric columns; dimension=null.\n"
+                        "- For table: set measures to the 3-5 most informative columns (mix categorical + numeric).\n"
+                        "- Return ONLY a valid JSON array. No markdown fences, no explanation, no comments."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
-            temperature=0.2,
+            temperature=0.15,
             stream=False,
-            timeout=30,
+            timeout=35,
         )
         content = ((response.choices[0].message.content) or "").strip()
         match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
