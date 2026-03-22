@@ -103,6 +103,7 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
         "dimensions": [str(c) for c in profile.categorical_columns[:80]],
         "measures": [str(c) for c in profile.numeric_columns[:80]],
         "allowed_chart_types": sorted(list(_VALID_CHART_TYPES - {"smart"})),
+        "sample_rows": min(int(len(df.index)), 50000),
     }
     api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
     if not api_key:
@@ -118,9 +119,21 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
                 {
                     "role": "system",
                     "content": (
-                        "You are a BI assistant. Return ONLY JSON with keys: "
-                        "chart_type, title, dimension, measures, x_measure, y_measure. "
-                        "chart_type must be one of allowed_chart_types."
+                        "You are an expert BI visualization assistant. Your goal is to recommend the most "
+                        "informative chart for the user's analysis intent, not just any valid chart.\n"
+                        "Return ONLY valid JSON (no markdown, no prose) with keys: "
+                        "chart_type, title, dimension, measures, x_measure, y_measure, suggestions.\n"
+                        "Rules:\n"
+                        "1) chart_type must be one of allowed_chart_types.\n"
+                        "2) Use only provided column names.\n"
+                        "3) Match chart to analytical intent (trend/comparison/distribution/composition/relationship).\n"
+                        "4) Prefer line/area for time trends, bar/hbar for ranked comparisons, "
+                        "scatter/bubble for relationships, pie/doughnut/polararea for simple part-to-whole with "
+                        "limited categories, KPI for single headline metrics, table for detail lookups.\n"
+                        "5) Avoid cluttered charts: if too many categories for pie-style views, choose bar or table.\n"
+                        "6) If prompt is vague, choose the most broadly useful and interpretable chart from available fields.\n"
+                        "7) Build a concise action-oriented title (<= 70 chars).\n"
+                        "8) suggestions should be a short list (max 3) of practical follow-up chart ideas as strings."
                     ),
                 },
                 {"role": "user", "content": json.dumps(payload)},
