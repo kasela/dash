@@ -381,7 +381,7 @@
 </div>
 
 <!-- Pass filter config to JS -->
-<script id="dashboard-filter-config" type="application/json">{{ filter_config|to_json }}</script>
+{{ filter_config|json_script:"dashboard-filter-config" }}
 
 <!-- Widgets grid -->
 <div class="mb-3 flex items-center gap-2">
