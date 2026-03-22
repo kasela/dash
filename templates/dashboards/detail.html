@@ -1629,6 +1629,38 @@
           class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
       </div>
 
+      <!-- Smart AI prompt -->
+      <div id="cb-ai-prompt-wrap" style="display:none;" class="rounded-xl border border-violet-200 bg-violet-50/70 p-4">
+        <div class="mb-2.5 flex items-start justify-between gap-3">
+          <div>
+            <label for="cb-ai-prompt" class="block text-sm font-semibold text-violet-900">Prompt for Smart AI</label>
+            <p class="mt-0.5 text-xs text-violet-700">Be specific about business goal, metric, and audience to get better chart recommendations.</p>
+          </div>
+          <span class="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">Prompting</span>
+        </div>
+        <textarea id="cb-ai-prompt" rows="4" maxlength="600"
+          placeholder="Example: Compare monthly revenue trend by region for the last 12 months and highlight where growth slowed the most."
+          class="w-full rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400"></textarea>
+        <div class="mt-2 flex items-center justify-between gap-2">
+          <p class="text-[11px] text-violet-700">Tip: include timeframe + metric + split/group + decision question.</p>
+          <span id="cb-ai-prompt-count" class="text-[11px] font-semibold text-violet-700">0 / 600</span>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button type="button" class="cb-prompt-chip rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100"
+            data-prompt="Build a waterfall chart that explains month-over-month revenue variance by major drivers and highlights what improved or worsened margin.">
+            Variance bridge
+          </button>
+          <button type="button" class="cb-prompt-chip rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100"
+            data-prompt="Create a funnel analysis of lead-to-close stages, quantify drop-offs by stage, and identify the stage with the highest improvement opportunity.">
+            Funnel drop-off
+          </button>
+          <button type="button" class="cb-prompt-chip rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100"
+            data-prompt="Use a bubble-style relationship view to compare customer segments by average deal size, conversion rate, and segment volume, then call out high-potential clusters.">
+            Segment bubble
+          </button>
+        </div>
+      </div>
+
       <!-- Dimension -->
       <div id="cb-dimension-wrap">
         <label for="cb-dimension" class="mb-1.5 block text-sm font-semibold text-slate-700">
@@ -1804,6 +1836,7 @@
   "applyFiltersUrl": "{% url 'dashboard-apply-filters' dashboard.id %}",
   "filterColumnsUrl": "{% url 'dashboard-filter-columns' dashboard.id %}",
   "executiveSummaryUrl": "{% url 'dashboard-ai-executive-summary' dashboard.id %}",
+  "enhancePresentationTextUrl": "{% url 'dashboard-ai-enhance-presentation-text' dashboard.id %}",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>
@@ -1990,12 +2023,43 @@
       <span id="presentation-counter" class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-300">– / –</span>
     </div>
     <h2 id="presentation-widget-title" class="text-base font-semibold text-white truncate max-w-md text-center"></h2>
-    <button id="presentation-close-btn"
-      class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
-      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
+    <div class="flex items-center gap-2">
+      <select id="presentation-theme-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+        <option value="dark">Dark</option>
+        <option value="indigo">Indigo</option>
+        <option value="emerald">Emerald</option>
+        <option value="light">Light</option>
+      </select>
+      <input id="presentation-bg-color" type="color" value="#020617" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+      <button id="presentation-close-btn"
+        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Builder controls -->
+  <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-6 py-3">
+    <button id="presentation-add-text-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Text Slide</button>
+    <select id="presentation-chart-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white">
+      <option value="">Select chart widget</option>
+    </select>
+    <button id="presentation-add-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Chart Slide</button>
+    <button id="presentation-ai-slide-btn" class="rounded-lg bg-indigo-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Generate AI Slide</button>
+    <span class="mx-1 h-5 w-px bg-white/20"></span>
+    <button id="presentation-text-bold-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">B</button>
+    <button id="presentation-text-italic-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs italic text-white hover:bg-white/20">I</button>
+    <select id="presentation-font-size-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+      <option value="14px">14</option>
+      <option value="16px" selected>16</option>
+      <option value="18px">18</option>
+      <option value="22px">22</option>
+      <option value="28px">28</option>
+    </select>
+    <input id="presentation-text-color" type="color" value="#ffffff" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+    <button id="presentation-enhance-text-btn" class="rounded-lg bg-violet-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500">AI Enhance Text</button>
   </div>
 
   <!-- Chart area -->
@@ -2004,6 +2068,7 @@
     <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
     <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
     <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
+    <div id="presentation-insight-wrap" style="display:none;" class="absolute bottom-10 left-10 max-w-xl rounded-xl border border-violet-300/40 bg-slate-900/70 px-4 py-3 text-xs text-violet-100 backdrop-blur-sm"></div>
   </div>
 
   <!-- Navigation bar -->
