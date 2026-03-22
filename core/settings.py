@@ -105,7 +105,7 @@ LEMONSQUEEZY_STORE_SLUG = os.environ.get("LEMONSQUEEZY_STORE_SLUG", "")
 
 # ── AI settings (DeepSeek) ─────────────────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-reasoner")
 # Timeout (seconds) for the TCP/TLS handshake phase — fail fast when the API endpoint is unreachable
 DEEPSEEK_CONNECT_TIMEOUT = int(os.environ.get("DEEPSEEK_CONNECT_TIMEOUT", 10))
 # Timeout (seconds) for receiving the full dashboard-specs response (large prompt → longer budget)

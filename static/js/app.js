@@ -123,13 +123,47 @@
   function initDragDrop() {
     var zone = document.getElementById('drop-zone');
     var input = document.getElementById('dataset-file-input');
+    var form = document.getElementById('upload-form');
     if (!zone || !input) return;
 
-    zone.addEventListener('click', function () { input.click(); });
+    var MAX_SIZE = 10 * 1024 * 1024;
+    var ALLOWED_EXTS = ['csv', 'xlsx', 'xlsm', 'json'];
+    var TYPE_COLORS = { CSV: 'bg-emerald-500', XLSX: 'bg-blue-500', XLSM: 'bg-blue-500', JSON: 'bg-amber-500' };
+
+    // Click on zone opens file picker (unless clicking action buttons inside)
+    zone.addEventListener('click', function (e) {
+      if (e.target.closest('#change-file-btn') || e.target.closest('#retry-btn')) return;
+      if (zone.dataset.state === 'selected') return;
+      input.click();
+    });
+
+    // Change file button
+    var changeBtn = document.getElementById('change-file-btn');
+    if (changeBtn) {
+      changeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        input.value = '';
+        showEmpty();
+        input.click();
+      });
+    }
+
+    // Retry button
+    var retryBtn = document.getElementById('retry-btn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        input.value = '';
+        showEmpty();
+        input.click();
+      });
+    }
 
     zone.addEventListener('dragover', function (e) {
       e.preventDefault();
-      zone.classList.add('border-indigo-500', 'bg-indigo-50');
+      if (zone.dataset.state !== 'selected') {
+        zone.classList.add('border-indigo-500', 'bg-indigo-50');
+      }
     });
 
     zone.addEventListener('dragleave', function () {
@@ -141,19 +175,99 @@
       zone.classList.remove('border-indigo-500', 'bg-indigo-50');
       if (e.dataTransfer.files.length > 0) {
         input.files = e.dataTransfer.files;
-        updateDropLabel(e.dataTransfer.files[0].name);
+        handleFile(e.dataTransfer.files[0]);
       }
     });
 
     input.addEventListener('change', function () {
-      if (input.files.length > 0) updateDropLabel(input.files[0].name);
+      if (input.files.length > 0) handleFile(input.files[0]);
     });
 
-    function updateDropLabel(name) {
-      var label = document.getElementById('drop-zone-label');
-      var sub = document.getElementById('drop-zone-sub');
-      if (label) label.textContent = name;
-      if (sub) sub.textContent = 'File selected – click Parse to continue';
+    function handleFile(file) {
+      var ext = file.name.split('.').pop().toLowerCase();
+      if (!ALLOWED_EXTS.includes(ext)) {
+        showError('Invalid file type. Please upload CSV, XLSX, XLSM, or JSON.');
+        return;
+      }
+      if (file.size > MAX_SIZE) {
+        showError('File too large. Maximum size is 10 MB.');
+        return;
+      }
+      showSelected(file);
+      // Auto-submit: give user a moment to see the file card, then parse
+      if (form) {
+        setTimeout(function () {
+          htmx.trigger(form, 'submit');
+        }, 500);
+      }
+    }
+
+    function showSelected(file) {
+      var ext = file.name.split('.').pop().toUpperCase();
+      var color = TYPE_COLORS[ext] || 'bg-indigo-500';
+
+      var badge = document.getElementById('file-type-badge');
+      if (badge) {
+        badge.className = 'mb-3 flex h-14 w-14 items-center justify-center rounded-2xl text-sm font-bold text-white ' + color;
+        badge.textContent = ext;
+      }
+      var nameEl = document.getElementById('file-name-label');
+      if (nameEl) nameEl.textContent = file.name;
+      var sizeEl = document.getElementById('file-size-label');
+      if (sizeEl) sizeEl.textContent = formatBytes(file.size) + ' · Parsing automatically…';
+
+      setZoneState('selected');
+      zone.classList.remove('border-slate-300', 'bg-slate-50', 'hover:border-indigo-400', 'hover:bg-indigo-50', 'border-rose-300', 'bg-rose-50', 'cursor-pointer');
+      zone.classList.add('border-indigo-400', 'bg-indigo-50');
+
+      var parseBtn = document.getElementById('parse-btn');
+      var parseLbl = document.getElementById('parse-btn-label');
+      if (parseBtn) parseBtn.disabled = false;
+      if (parseLbl) parseLbl.textContent = 'Parse file';
+    }
+
+    function showEmpty() {
+      setZoneState('empty');
+      zone.classList.remove('border-indigo-400', 'border-rose-300', 'bg-rose-50', 'bg-indigo-50');
+      zone.classList.add('border-slate-300', 'bg-slate-50', 'hover:border-indigo-400', 'hover:bg-indigo-50', 'cursor-pointer');
+
+      var parseBtn = document.getElementById('parse-btn');
+      var parseLbl = document.getElementById('parse-btn-label');
+      if (parseBtn) parseBtn.disabled = true;
+      if (parseLbl) parseLbl.textContent = 'Select a file first';
+    }
+
+    function showError(msg) {
+      var errMsg = document.getElementById('drop-zone-error-msg');
+      if (errMsg) errMsg.textContent = msg;
+      setZoneState('error');
+      zone.classList.remove('border-slate-300', 'bg-slate-50', 'hover:border-indigo-400', 'hover:bg-indigo-50', 'border-indigo-400', 'bg-indigo-50');
+      zone.classList.add('border-rose-300', 'bg-rose-50');
+
+      var parseBtn = document.getElementById('parse-btn');
+      if (parseBtn) parseBtn.disabled = true;
+    }
+
+    function setZoneState(state) {
+      zone.dataset.state = state;
+      var emptyEl = document.getElementById('drop-zone-empty');
+      var selEl = document.getElementById('drop-zone-selected');
+      var errEl = document.getElementById('drop-zone-error');
+      if (emptyEl) emptyEl.classList.toggle('hidden', state !== 'empty');
+      if (selEl) {
+        selEl.classList.toggle('hidden', state !== 'selected');
+        selEl.classList.toggle('flex', state === 'selected');
+      }
+      if (errEl) {
+        errEl.classList.toggle('hidden', state !== 'error');
+        errEl.classList.toggle('flex', state === 'error');
+      }
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
   }
 
