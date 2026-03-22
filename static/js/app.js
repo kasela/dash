@@ -2251,9 +2251,94 @@
         if (titleEl) titleEl.textContent = slide.title || 'Text Slide';
         if (textWrap) {
           textWrap.style.display = 'block';
-          textWrap.style.background = 'rgba(255,255,255,0.08)';
+          textWrap.style.background = 'transparent';
           textWrap.contentEditable = 'true';
-          textWrap.innerHTML = '<div class="presentation-editable" style="max-width:920px;margin:0 auto;"><h3 style="font-size:1.6rem;font-weight:700;margin-bottom:0.75rem;">' + escapeHtml(slide.title || 'Notes') + '</h3><p style="white-space:pre-wrap;font-size:1.05rem;line-height:1.7;">' + escapeHtml(slide.content || '') + '</p></div>';
+          // Detect slide layout hints
+          var rawContent = slide.content || '';
+          var isAgenda = slide._layout === 'agenda' || slide._layout === 'toc';
+          var isTitle = slide._layout === 'title';
+          var isKpi = slide._layout === 'kpi';
+          var isThankYou = slide._layout === 'thankyou';
+          var isSection = slide._layout === 'section';
+          // Build professional HTML based on layout
+          var innerHtml = '';
+          if (isTitle) {
+            var subtitle = slide.subtitle || '';
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 60px;">'
+              + '<div style="width:60px;height:4px;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:2px;margin-bottom:32px;"></div>'
+              + '<h1 style="font-size:clamp(2rem,4vw,3.2rem);font-weight:800;color:#f1f5f9;line-height:1.15;letter-spacing:-0.02em;margin-bottom:20px;">' + escapeHtml(slide.title || '') + '</h1>'
+              + (subtitle ? '<p style="font-size:clamp(1rem,2vw,1.3rem);color:#94a3b8;font-weight:400;max-width:700px;line-height:1.6;">' + escapeHtml(subtitle) + '</p>' : '')
+              + '<div style="margin-top:48px;display:flex;align-items:center;gap:12px;">'
+              + '<div style="width:32px;height:1px;background:rgba(148,163,184,0.3);"></div>'
+              + '<span style="font-size:0.75rem;color:#475569;text-transform:uppercase;letter-spacing:0.12em;">Powered by DashAI</span>'
+              + '<div style="width:32px;height:1px;background:rgba(148,163,184,0.3);"></div></div>'
+              + '</div>';
+          } else if (isThankYou) {
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 60px;">'
+              + '<div style="font-size:clamp(2.5rem,5vw,4rem);font-weight:800;color:#f1f5f9;margin-bottom:16px;">' + escapeHtml(slide.title || 'Thank You') + '</div>'
+              + '<div style="width:80px;height:3px;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:2px;margin:24px auto;"></div>'
+              + (rawContent ? '<p style="font-size:1.1rem;color:#94a3b8;max-width:600px;line-height:1.7;">' + escapeHtml(rawContent) + '</p>' : '')
+              + '</div>';
+          } else if (isSection) {
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:0 80px;">'
+              + '<div style="width:5px;height:80px;background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:3px;margin-bottom:28px;"></div>'
+              + '<div style="font-size:clamp(1.8rem,3.5vw,2.8rem);font-weight:800;color:#f1f5f9;line-height:1.2;">' + escapeHtml(slide.title || '') + '</div>'
+              + (rawContent ? '<p style="font-size:1.1rem;color:#94a3b8;margin-top:16px;max-width:700px;line-height:1.65;">' + escapeHtml(rawContent) + '</p>' : '')
+              + '</div>';
+          } else if (isKpi) {
+            // KPI grid from content (lines like "Label: Value")
+            var kpiItems = rawContent.split('\n').filter(function (l) { return l.trim(); });
+            var kpiCards = kpiItems.map(function (line) {
+              var parts = line.replace(/^[•\-\*]\s*/, '').split(/:\s+/);
+              var label = parts[0] || line;
+              var val = parts.slice(1).join(': ') || '';
+              return '<div style="background:rgba(255,255,255,0.07);border:1px solid rgba(148,163,184,0.15);border-radius:16px;padding:24px 28px;">'
+                + '<div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:10px;">' + escapeHtml(label) + '</div>'
+                + '<div style="font-size:clamp(1.6rem,3vw,2.4rem);font-weight:800;color:#f1f5f9;">' + escapeHtml(val) + '</div>'
+                + '</div>';
+            }).join('');
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;padding:32px 48px;">'
+              + '<h2 style="font-size:1.4rem;font-weight:700;color:#f1f5f9;margin-bottom:32px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.1);">' + escapeHtml(slide.title || 'KPI Highlights') + '</h2>'
+              + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;flex:1;">' + kpiCards + '</div>'
+              + '</div>';
+          } else if (isAgenda) {
+            var agendaLines = rawContent.split('\n').filter(function (l) { return l.trim(); });
+            var agendaItems = agendaLines.map(function (line, i) {
+              var clean = line.replace(/^\d+[\)\.]\s*/, '').trim();
+              return '<div style="display:flex;align-items:center;gap:20px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                + '<span style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;color:#fff;">' + (i + 1) + '</span>'
+                + '<span style="font-size:1.05rem;color:#e2e8f0;font-weight:500;">' + escapeHtml(clean) + '</span>'
+                + '</div>';
+            }).join('');
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;padding:32px 64px;">'
+              + '<h2 style="font-size:1.5rem;font-weight:700;color:#f1f5f9;margin-bottom:28px;">' + escapeHtml(slide.title || 'Agenda') + '</h2>'
+              + '<div style="flex:1;">' + agendaItems + '</div>'
+              + '</div>';
+          } else {
+            // Default: standard content slide with bullet detection
+            var contentLines = rawContent.split('\n');
+            var hasBullets = contentLines.some(function (l) { return /^[\d]+[\)\.]\s|^[•\-\*]\s/.test(l.trim()); });
+            var contentHtml;
+            if (hasBullets) {
+              var listItems = contentLines.filter(function (l) { return l.trim(); }).map(function (line) {
+                var clean = line.replace(/^[\d]+[\)\.]\s*|^[•\-\*]\s*/, '').trim();
+                return '<li style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;align-items:flex-start;gap:12px;">'
+                  + '<span style="flex-shrink:0;margin-top:4px;width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);"></span>'
+                  + '<span style="color:#e2e8f0;line-height:1.65;font-size:1.05rem;">' + escapeHtml(clean) + '</span></li>';
+              }).join('');
+              contentHtml = '<ul style="list-style:none;padding:0;margin:0;">' + listItems + '</ul>';
+            } else {
+              contentHtml = '<p style="white-space:pre-wrap;font-size:1.1rem;line-height:1.8;color:#e2e8f0;">' + escapeHtml(rawContent) + '</p>';
+            }
+            innerHtml = '<div style="height:100%;display:flex;flex-direction:column;padding:32px 64px;">'
+              + '<div style="display:flex;align-items:center;gap:16px;margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.1);">'
+              + '<div style="width:4px;height:36px;background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:2px;flex-shrink:0;"></div>'
+              + '<h2 style="font-size:clamp(1.2rem,2.5vw,1.7rem);font-weight:700;color:#f1f5f9;margin:0;">' + escapeHtml(slide.title || '') + '</h2>'
+              + '</div>'
+              + '<div style="flex:1;overflow:auto;">' + contentHtml + '</div>'
+              + '</div>';
+          }
+          textWrap.innerHTML = '<div class="presentation-editable" style="height:100%;">' + innerHtml + '</div>';
         }
         renderAudioForSlide(slide);
         animateStage(transitionSelect ? transitionSelect.value : 'fade');
@@ -2292,23 +2377,34 @@
 
       if (slide.kind === 'multi_chart') {
         clearPresentationAreas();
-        if (titleEl) titleEl.textContent = slide.title || 'Multi-Chart Slide';
+        if (titleEl) titleEl.textContent = slide.title || 'Cross-Dataset Comparison';
         if (textWrap) {
           textWrap.style.display = 'block';
           textWrap.contentEditable = 'false';
-          var html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;">';
+          var mcTitle = slide.title || 'Cross-Dataset Comparison';
+          var mcCards = '';
           (slide.widgetIds || []).forEach(function (wid) {
             var entry2 = widgetCharts[wid];
+            var mcCard2 = document.querySelector('.widget-card[data-widget-id="' + wid + '"]');
+            var mcLabel = mcCard2 ? ((mcCard2.querySelector('.widget-title') || {}).textContent || '').trim() : '';
             if (entry2 && entry2.canvas) {
               var img = '';
               try { img = entry2.canvas.toDataURL('image/png'); } catch (_) {}
               if (img) {
-                html += '<div style="background:rgba(255,255,255,0.08);border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:10px;"><img src="' + img + '" style="width:100%;height:auto;border-radius:8px;"></div>';
+                mcCards += '<div style="background:rgba(255,255,255,0.07);border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;">'
+                  + (mcLabel ? '<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;">' + escapeHtml(mcLabel) + '</div>' : '')
+                  + '<img src="' + img + '" style="width:100%;height:auto;border-radius:8px;flex:1;object-fit:contain;"></div>';
               }
             }
           });
-          html += '</div>';
-          textWrap.innerHTML = html;
+          var cols = (slide.widgetIds || []).length <= 2 ? 'repeat(2,minmax(0,1fr))' : 'repeat(2,minmax(0,1fr))';
+          textWrap.innerHTML = '<div style="height:100%;display:flex;flex-direction:column;padding:20px 32px;">'
+            + '<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">'
+            + '<div style="width:4px;height:28px;background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:2px;"></div>'
+            + '<h2 style="font-size:1.2rem;font-weight:700;color:#f1f5f9;margin:0;">' + escapeHtml(mcTitle) + '</h2>'
+            + '</div>'
+            + '<div style="flex:1;display:grid;grid-template-columns:' + cols + ';gap:14px;min-height:0;">' + mcCards + '</div>'
+            + '</div>';
         }
         renderAudioForSlide(slide);
         animateStage(transitionSelect ? transitionSelect.value : 'fade');
@@ -2354,7 +2450,9 @@
           if (!insight) insight = String(card.getAttribute('data-ai-insight') || '').trim();
         }
         if (insight && insightWrap) {
-          insightWrap.textContent = 'AI Insight: ' + insight;
+          insightWrap.innerHTML = '<div style="display:flex;align-items:flex-start;gap:10px;">'
+            + '<span style="flex-shrink:0;font-size:0.9rem;line-height:1;">✦</span>'
+            + '<span style="line-height:1.55;">' + escapeHtml(insight) + '</span></div>';
           insightWrap.style.display = 'block';
         }
         renderAudioForSlide(slide);
@@ -2640,6 +2738,8 @@
         var cfg4 = getApiConfig();
         autoDeckBtn.disabled = true;
         autoDeckBtn.textContent = 'Building…';
+
+        // Fetch executive summary and widget-level insights in parallel
         var summaryPromise = Promise.resolve({ success: false, summary: '' });
         if (cfg4 && cfg4.executiveSummaryUrl) {
           summaryPromise = fetch(cfg4.executiveSummaryUrl, {
@@ -2649,11 +2749,15 @@
             body: '{}',
           }).then(function (r) { return r.json(); }).catch(function () { return { success: false, summary: '' }; });
         }
+
         summaryPromise.then(function (data) {
           buildWidgetList();
           var widgetSlides = presentationSlides.slice();
           var dashboardTitleEl = document.getElementById('dashboard-title');
           var dashboardTitle = dashboardTitleEl ? dashboardTitleEl.textContent.trim() : 'Dashboard Presentation';
+          var today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+          // Categorize widgets
           var widgetMeta = widgetSlides.map(function (s) {
             var card = document.querySelector('.widget-card[data-widget-id="' + s.widgetId + '"]');
             var wType = card ? (card.dataset.widgetType || '') : '';
@@ -2668,28 +2772,51 @@
             return m.type && ['table', 'kpi', 'heading', 'text_canvas', 'divider'].indexOf(m.type) === -1;
           });
           chartCandidates.sort(function (a, b) { return (b.insight || '').length - (a.insight || '').length; });
-          var selectedCharts = chartCandidates.slice(0, 4);
+          var selectedCharts = chartCandidates.slice(0, 5);
           var selectedChartIds = selectedCharts.map(function (m) { return m.slide.widgetId; });
 
-          var kpiCandidates = widgetMeta.filter(function (m) { return m.type === 'kpi'; }).slice(0, 4);
+          var kpiCandidates = widgetMeta.filter(function (m) { return m.type === 'kpi'; }).slice(0, 6);
           var tableCandidate = widgetMeta.find(function (m) { return m.type === 'table'; });
 
-          var deck = [
-            {
-              kind: 'text',
-              title: 'Welcome',
-              content: dashboardTitle + '\n\nProfessional executive presentation generated by AI.',
-            },
-            {
-              kind: 'text',
-              title: 'Content',
-              content: '1) Executive Summary\n2) KPI Highlights\n3) Key Charts & Insights\n4) Recommendations\n5) Closing',
-            },
-          ];
+          // ── Build agenda items dynamically ──────────────────────────────
+          var agendaItems = ['Executive Overview'];
+          if (kpiCandidates.length) agendaItems.push('Performance Metrics');
+          if (selectedCharts.length) agendaItems.push('Data Analysis & Insights');
+          if (tableCandidate) agendaItems.push('Detailed Data View');
+          if (selectedChartIds.length >= 2) agendaItems.push('Cross-Dataset Comparison');
+          agendaItems.push('Key Findings & Recommendations');
+          agendaItems.push('Next Steps & Discussion');
+
+          var deck = [];
+
+          // ── Slide 1: Title ───────────────────────────────────────────────
+          deck.push({
+            kind: 'text',
+            _layout: 'title',
+            title: dashboardTitle,
+            subtitle: 'Executive Data Presentation  ·  ' + today,
+            content: '',
+          });
+
+          // ── Slide 2: Agenda ──────────────────────────────────────────────
+          deck.push({
+            kind: 'text',
+            _layout: 'agenda',
+            title: 'Agenda',
+            content: agendaItems.map(function (item, i) { return (i + 1) + '. ' + item; }).join('\n'),
+          });
+
+          // ── Slide 3: Executive Summary ────────────────────────────────────
           if (data && data.success && data.summary) {
-            deck.push({ kind: 'text', title: 'Executive Summary', content: data.summary });
+            deck.push({
+              kind: 'text',
+              _layout: 'section',
+              title: 'Executive Overview',
+              content: data.summary,
+            });
           }
 
+          // ── Slide 4: KPI Highlights ───────────────────────────────────────
           if (kpiCandidates.length) {
             var kpiLines = [];
             kpiCandidates.forEach(function (m) {
@@ -2698,49 +2825,115 @@
               var value = valueEl ? valueEl.textContent.trim() : 'N/A';
               kpiLines.push('• ' + m.title + ': ' + value);
             });
-            if (kpiLines.length) deck.push({ kind: 'text', title: 'KPI Highlights (Top 4)', content: kpiLines.join('\n') });
+            if (kpiLines.length) {
+              deck.push({
+                kind: 'text',
+                _layout: 'kpi',
+                title: 'Performance Metrics at a Glance',
+                content: kpiLines.join('\n'),
+              });
+            }
           }
 
-          selectedCharts.forEach(function (m) {
+          // ── Slides 5–N: Charts with insights ─────────────────────────────
+          if (selectedCharts.length > 0) {
+            deck.push({
+              kind: 'text',
+              _layout: 'section',
+              title: 'Data Analysis & Insights',
+              content: 'The following charts provide a deep-dive into the key trends and patterns identified in the dataset.',
+            });
+          }
+          selectedCharts.forEach(function (m, idx) {
             deck.push(m.slide);
             if (m.insight) {
               deck.push({
                 kind: 'text',
-                title: m.title + ' Insight',
+                _layout: 'default',
+                title: m.title + ' — Key Findings',
                 content: m.insight,
               });
             }
           });
 
+          // ── Multi-chart comparison ────────────────────────────────────────
+          if (selectedChartIds.length >= 2) {
+            deck.push({
+              kind: 'multi_chart',
+              title: 'Cross-Dataset Comparison',
+              widgetIds: selectedChartIds.slice(0, 4),
+            });
+          }
+
+          // ── Table slide ───────────────────────────────────────────────────
           if (tableCandidate) {
             deck.push(tableCandidate.slide);
             if (tableCandidate.card) {
-              var rows = Array.from(tableCandidate.card.querySelectorAll('tbody tr')).slice(0, 3);
+              var headers = Array.from(tableCandidate.card.querySelectorAll('thead th')).slice(0, 5).map(function (th) { return th.textContent.trim(); });
+              var rows = Array.from(tableCandidate.card.querySelectorAll('tbody tr')).slice(0, 5);
               if (rows.length) {
-                var rowText = rows.map(function (r) { return Array.from(r.querySelectorAll('td')).slice(0, 4).map(function (td) { return td.textContent.trim(); }).join(' | '); }).join('\n');
-                deck.push({ kind: 'text', title: 'Table Findings', content: rowText });
+                var rowText = rows.map(function (r) {
+                  return Array.from(r.querySelectorAll('td')).slice(0, 5).map(function (td) { return td.textContent.trim(); }).join(' · ');
+                }).join('\n');
+                var tableNote = (headers.length ? 'Columns: ' + headers.join(', ') + '\n\n' : '') + rowText;
+                deck.push({
+                  kind: 'text',
+                  _layout: 'default',
+                  title: 'Data Summary — ' + (tableCandidate.title || 'Table'),
+                  content: tableNote,
+                });
               }
             }
           }
 
-          if (selectedChartIds.length >= 2) {
-            deck.push({ kind: 'multi_chart', title: 'Cross-Chart Comparison', widgetIds: selectedChartIds });
+          // ── Key Findings & Recommendations ────────────────────────────────
+          var allInsights = selectedCharts.filter(function (m) { return m.insight; }).map(function (m) { return m.insight; });
+          var recommendationsContent;
+          if (allInsights.length >= 2) {
+            recommendationsContent = '1. Focus on the highest-impact metrics identified in ' + selectedCharts[0].title + '.\n'
+              + '2. Cross-validate findings across multiple data dimensions before acting.\n'
+              + '3. Establish weekly KPI review cycles tied to the top metrics above.\n'
+              + '4. Engage domain owners to validate any detected anomalies or outliers.\n'
+              + '5. Build automated alerts for threshold breaches in critical indicators.';
+          } else {
+            recommendationsContent = '1. Prioritize the biggest variance drivers highlighted in the analysis.\n'
+              + '2. Validate outliers and anomalies with relevant domain experts.\n'
+              + '3. Implement weekly KPI tracking with clear ownership per metric.\n'
+              + '4. Use the data insights to inform strategic planning and budget allocation.\n'
+              + '5. Schedule follow-up analysis in 30 days to assess trend continuation.';
           }
           deck.push({
             kind: 'text',
-            title: 'Recommendations',
-            content: '1) Prioritize biggest variance drivers.\n2) Validate outliers with domain owners.\n3) Track the top 3 KPIs weekly and adjust strategy quickly.',
+            _layout: 'default',
+            title: 'Key Findings & Recommendations',
+            content: recommendationsContent,
           });
+
+          // ── Next Steps ────────────────────────────────────────────────────
           deck.push({
             kind: 'text',
-            title: 'Thank You',
-            content: 'Thank you.\n\nQuestions & discussion.',
+            _layout: 'default',
+            title: 'Next Steps',
+            content: '1. Share this report with all relevant stakeholders by end of week.\n'
+              + '2. Assign accountability for each recommended action item.\n'
+              + '3. Schedule a follow-up working session within 2 weeks.\n'
+              + '4. Update this dashboard with refreshed data on a recurring cadence.\n'
+              + '5. Track progress against recommendations in the next quarterly review.',
           });
+
+          // ── Thank You / Closing ───────────────────────────────────────────
+          deck.push({
+            kind: 'text',
+            _layout: 'thankyou',
+            title: 'Thank You',
+            content: 'Questions, comments, and discussion welcome.',
+          });
+
           presentationSlides = deck;
           renderSlide(0);
-          showToast('AI full presentation generated.', 'success');
+          showToast('Professional AI presentation generated — ' + deck.length + ' slides.', 'success');
           autoDeckBtn.disabled = false;
-          autoDeckBtn.textContent = 'AI Full Deck';
+          autoDeckBtn.textContent = '✦ AI Deck';
         });
       });
     }
@@ -2773,20 +2966,67 @@
     }
 
     // ── Fullscreen ────────────────────────────────────────────────────────
+    var headerBar = document.getElementById('presentation-header-bar');
+    var toolbar1 = document.getElementById('presentation-toolbar-1');
+    var toolbar2 = document.getElementById('presentation-toolbar-2');
+    var navBar = document.getElementById('presentation-nav-bar');
+    var fsHideTimer = null;
+    var fsControlsVisible = true;
+
+    function setPresentationControlsVisible(visible) {
+      fsControlsVisible = visible;
+      var els = [headerBar, toolbar1, toolbar2, navBar];
+      els.forEach(function (el) {
+        if (!el) return;
+        if (visible) {
+          el.style.opacity = '1';
+          el.style.pointerEvents = '';
+          el.style.userSelect = '';
+        } else {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+          el.style.userSelect = 'none';
+        }
+      });
+    }
+
+    function scheduleControlsHide() {
+      clearTimeout(fsHideTimer);
+      if (fsControlsVisible) setPresentationControlsVisible(true);
+      fsHideTimer = setTimeout(function () {
+        if (document.fullscreenElement) setPresentationControlsVisible(false);
+      }, 3000);
+    }
+
+    function onFullscreenMouseMove() {
+      if (!document.fullscreenElement) return;
+      setPresentationControlsVisible(true);
+      scheduleControlsHide();
+    }
+
+    function applyFullscreenControlState() {
+      if (document.fullscreenElement) {
+        fullscreenBtn.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M15 9h4.5M15 9V4.5M15 15v4.5M15 15h4.5M9 15H4.5M9 15v4.5"/></svg>';
+        overlay.addEventListener('mousemove', onFullscreenMouseMove);
+        scheduleControlsHide();
+      } else {
+        clearTimeout(fsHideTimer);
+        setPresentationControlsVisible(true);
+        fullscreenBtn.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>';
+        overlay.removeEventListener('mousemove', onFullscreenMouseMove);
+      }
+    }
+
     if (fullscreenBtn) {
       fullscreenBtn.addEventListener('click', function () {
         var inFs = !!document.fullscreenElement;
         if (!inFs) {
           if (overlay.requestFullscreen) overlay.requestFullscreen();
-          fullscreenBtn.textContent = '✕ Full';
         } else {
           if (document.exitFullscreen) document.exitFullscreen();
-          fullscreenBtn.textContent = '⛶ Full';
         }
       });
-      document.addEventListener('fullscreenchange', function () {
-        if (!document.fullscreenElement) fullscreenBtn.textContent = '⛶ Full';
-      });
+      document.addEventListener('fullscreenchange', applyFullscreenControlState);
     }
 
     // ── Theme ─────────────────────────────────────────────────────────────
