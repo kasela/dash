@@ -124,11 +124,17 @@ def parse_uploaded_file(file_obj) -> ParsedPreview:
 
 def infer_column_kind(series: pd.Series) -> str:
     lower_name = str(series.name).lower()
-    if "date" in lower_name or "month" in lower_name or "year" in lower_name:
+    if any(k in lower_name for k in ["date", "month", "year", "quarter", "period", "week", "time"]):
         return "date"
-    if "id" in lower_name or "code" in lower_name:
+    if any(k in lower_name for k in ["id", "code", "tin", "tax", "vat no", "vat_number", "identifier", "account"]):
         return "id"
     if pd.api.types.is_numeric_dtype(series):
+        non_null = series.dropna()
+        if len(non_null) >= 20:
+            unique_ratio = float(non_null.nunique(dropna=True)) / float(len(non_null))
+            if unique_ratio >= 0.9 and pd.api.types.is_integer_dtype(non_null):
+                # Numeric but likely a key-like field (e.g., TIN/account numbers).
+                return "id"
         return "measure"
     if series.nunique(dropna=True) <= 1:
         return "unknown"
@@ -136,8 +142,32 @@ def infer_column_kind(series: pd.Series) -> str:
 
 
 def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
-    numeric_columns = [str(c) for c in df.select_dtypes(include=["number"]).columns]
-    categorical_columns = [str(c) for c in df.select_dtypes(exclude=["number", "datetime"]).columns]
+    numeric_columns: list[str] = []
+    categorical_columns: list[str] = []
+
+    for col in df.columns:
+        s = df[col]
+        name = str(col)
+        lower_name = name.lower()
+
+        if pd.api.types.is_datetime64_any_dtype(s):
+            continue
+
+        is_temporal_label = any(k in lower_name for k in ["date", "month", "year", "quarter", "period", "week", "time"])
+        is_identifier_label = any(k in lower_name for k in ["id", "code", "tin", "tax", "vat no", "vat_number", "identifier", "account"])
+
+        if pd.api.types.is_numeric_dtype(s):
+            non_null = s.dropna()
+            unique_ratio = float(non_null.nunique(dropna=True)) / float(len(non_null)) if len(non_null) else 0.0
+            id_like_numeric = len(non_null) >= 20 and unique_ratio >= 0.9 and pd.api.types.is_integer_dtype(non_null)
+
+            if is_temporal_label or is_identifier_label or id_like_numeric:
+                categorical_columns.append(name)
+            else:
+                numeric_columns.append(name)
+            continue
+
+        categorical_columns.append(name)
 
     suggested_dimensions = categorical_columns[:6]
     suggested_measures = numeric_columns[:6]
@@ -1291,6 +1321,13 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
         "total_rows": int(profile.total_rows),
     }
 
+    def _parse_plan_content(content: str):
+        if content.startswith("["):
+            match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+            return _json.loads(match_arr.group(0) if match_arr else content)
+        match_obj = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        return _json.loads(match_obj.group(0) if match_obj else content)
+
     try:
         response = client.chat.completions.create(
             model=model,
@@ -2419,16 +2456,50 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
             timeout=specs_timeout,
         )
         content = ((response.choices[0].message.content) or "").strip()
-        if content.startswith("["):
-            match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
-            parsed = _json.loads(match_arr.group(0) if match_arr else content)
-        else:
-            match_obj = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
-            parsed = _json.loads(match_obj.group(0) if match_obj else content)
+        parsed = _parse_plan_content(content)
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             return specs
-        logger.warning("DeepSeek returned a response but produced no normalizable dashboard specs.")
+        logger.warning("DeepSeek returned a response but produced no normalizable dashboard specs; trying compact planner.")
+
+        # Second attempt with a compact prompt to improve JSON compliance.
+        compact_payload = {
+            "columns": payload["columns"],
+            "numeric_columns": payload["numeric_columns"],
+            "categorical_columns": payload["categorical_columns"],
+            "date_columns": payload["date_columns"],
+            "sample_stats": payload["sample_stats"],
+            "date_ranges": payload["date_ranges"],
+        }
+        retry_response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Create a practical dashboard plan.\n"
+                        "Use exact column names.\n"
+                        "Return ONLY valid JSON with keys: kpis, charts, tables, insights.\n"
+                        "kpis: 3-5 items with name, measure, agg, insight.\n"
+                        "charts: 5-8 items with type, title, x, y, x_measure, y_measure, size, palette, insight.\n"
+                        "tables: 1-2 items with title, columns, insight.\n"
+                        "insights: 3 short bullets.\n"
+                        "Chart titles and KPI names must be business-friendly."
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(compact_payload)},
+            ],
+            temperature=0.1,
+            stream=False,
+            timeout=max(10, min(specs_timeout, 20)),
+        )
+        retry_content = ((retry_response.choices[0].message.content) or "").strip()
+        retry_parsed = _parse_plan_content(retry_content)
+        retry_specs = _normalize_plan_to_specs(retry_parsed)
+        if retry_specs:
+            logger.info("DeepSeek compact planner succeeded after primary planner returned unusable output.")
+            return retry_specs
+        logger.warning("DeepSeek compact planner also failed to produce normalizable specs.")
     except Exception:
         logger.exception(
             "DeepSeek dashboard specs generation failed (timeout=%ss); falling back to heuristic specs.",
