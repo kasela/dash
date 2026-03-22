@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 
 import pandas as pd
 
@@ -30,6 +31,21 @@ class WidgetSuggestion:
     title: str
     chart_type: str  # "bar", "line", "pie", "kpi"
     description: str
+
+
+def _to_datetime_safe(values: pd.Series) -> pd.Series:
+    """Parse datetimes while avoiding noisy inference warnings across pandas versions."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Could not infer format, so each element will be parsed individually",
+            category=UserWarning,
+        )
+        try:
+            return pd.to_datetime(values, format="mixed", errors="coerce")
+        except TypeError:
+            # pandas<2.0 does not support format="mixed"
+            return pd.to_datetime(values, errors="coerce")
 
 
 def detect_and_clean_headers(df: pd.DataFrame) -> pd.DataFrame:
@@ -164,7 +180,7 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
     if date_cols:
         try:
             tmp = df[[date_cols[0], measure]].copy()
-            tmp[date_cols[0]] = pd.to_datetime(tmp[date_cols[0]], format="mixed", errors="coerce")
+            tmp[date_cols[0]] = _to_datetime_safe(tmp[date_cols[0]])
             tmp = tmp.dropna(subset=[date_cols[0]]).sort_values(date_cols[0])
             monthly = tmp.groupby(tmp[date_cols[0]].dt.to_period("M"))[measure].sum()
             if len(monthly) >= 2:
@@ -1184,7 +1200,12 @@ def _get_ai_client():
         return None, None
     openai_module = __import__("openai")
     model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 1))
+    client = openai_module.OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        max_retries=max_retries,
+    )
     return client, model
 
 
@@ -1375,7 +1396,7 @@ def ai_generate_comprehensive_insights(
     for col in df.columns:
         if any(k in str(col).lower() for k in ["date", "month", "year", "period", "quarter"]):
             try:
-                tmp = pd.to_datetime(df[col], format="mixed", errors="coerce").dropna()
+                tmp = _to_datetime_safe(df[col]).dropna()
                 if len(tmp) > 0:
                     date_range_info[str(col)] = {
                         "min": str(tmp.min().date()),
@@ -1598,7 +1619,7 @@ def ai_generate_executive_summary(
     date_range: dict = {}
     if date_cols:
         try:
-            tmp = pd.to_datetime(df[date_cols[0]], format="mixed", errors="coerce").dropna()
+            tmp = _to_datetime_safe(df[date_cols[0]]).dropna()
             if len(tmp) > 0:
                 date_range = {
                     "column": date_cols[0],
@@ -1837,7 +1858,7 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             elif action == "fix_dtype" and col and col in cleaned.columns:
                 strategy = str(step.get("strategy", "")).lower()
                 if "date" in strategy or "datetime" in strategy:
-                    cleaned[col] = pd.to_datetime(cleaned[col], format="mixed", errors="coerce")
+                    cleaned[col] = _to_datetime_safe(cleaned[col])
                     report["actions"].append(f"Converted '{col}' to datetime")
                 elif "numeric" in strategy or "float" in strategy or "int" in strategy:
                     cleaned[col] = pd.to_numeric(cleaned[col], errors="coerce")
@@ -2137,7 +2158,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     date_ranges: dict = {}
     for col in date_cols[:3]:
         try:
-            tmp = pd.to_datetime(df[col], format="mixed", errors="coerce").dropna()
+            tmp = _to_datetime_safe(df[col]).dropna()
             if len(tmp) > 0:
                 date_ranges[str(col)] = {
                     "min": str(tmp.min().date()),
@@ -2620,7 +2641,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             tmp = df[[date_col, measure]].copy()
-            tmp[date_col] = pd.to_datetime(tmp[date_col], format="mixed", errors="coerce")
+            tmp[date_col] = _to_datetime_safe(tmp[date_col])
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
@@ -2639,7 +2660,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[1]
         try:
             tmp = df[[date_col, measure]].copy()
-            tmp[date_col] = pd.to_datetime(tmp[date_col], format="mixed", errors="coerce")
+            tmp[date_col] = _to_datetime_safe(tmp[date_col])
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
