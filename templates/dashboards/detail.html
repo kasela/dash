@@ -66,6 +66,18 @@
     <span class="hidden md:inline">Present</span>
   </button>
 
+  <!-- Export Full Dashboard PDF -->
+  <button
+    id="export-dashboard-pdf-btn"
+    class="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50"
+    title="Export complete dashboard to PDF">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h8l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3v5h5M8 13h8M8 17h5"/>
+    </svg>
+    <span class="hidden md:inline">Export PDF</span>
+  </button>
+
   <!-- Share button -->
   <form method="post" action="{% url 'dashboard-create-share' dashboard.id %}">
     {% csrf_token %}

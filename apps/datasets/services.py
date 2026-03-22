@@ -1527,7 +1527,10 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         "sample_stats": sample_stats,
         "categorical_cardinality": categorical_cardinality,
         "null_rate_pct": null_rate,
-        "allowed_chart_types": ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"],
+        "allowed_chart_types": [
+            "kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table",
+            "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
+        ],
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
     }
@@ -1553,6 +1556,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "    - At least 1 'bar' for group comparison\n"
                         "    - At least 1 'radar' and at least 1 'table' for multi-dimensional and detailed views\n"
                         "    - Include at least 1 chart focused on anomalies/outliers and 1 on segment performance\n"
+                        "    - Include at least 2 advanced charts from: bubble, mixed, funnel, gauge, waterfall, polararea (when data supports them)\n"
                         "    - The remaining charts can be any type — choose what best reveals the data story\n"
                         "    - Prefer line/hbar/bar/table over pie when data is high-cardinality or long-tail.\n\n"
                         "REQUIRED KEYS for every widget:\n"
