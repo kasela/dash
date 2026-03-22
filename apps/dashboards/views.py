@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -465,6 +466,8 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
         try:
             mn = float(df[col].min())
             mx = float(df[col].max())
+            if not (math.isfinite(mn) and math.isfinite(mx)):
+                continue
             range_info[col] = {"min": round(mn, 4), "max": round(mx, 4)}
         except Exception:
             pass
@@ -1459,6 +1462,8 @@ def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> Jso
         try:
             mn = float(df[col].min())
             mx = float(df[col].max())
+            if not (math.isfinite(mn) and math.isfinite(mx)):
+                continue
             columns.append({
                 "column": col,
                 "type": "numeric",
