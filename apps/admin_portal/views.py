@@ -200,7 +200,7 @@ def admin_users(request):
 
     # Annotate with dashboard / dataset counts
     qs = qs.annotate(
-        dashboard_count=Count("profile__user__workspaces__dashboards", distinct=True),
+        dashboard_count=Count("owned_workspaces__dashboards", distinct=True),
     )
 
     context = {
@@ -269,7 +269,7 @@ def admin_user_detail(request, user_id):
 
     # Get user's workspaces and dashboards
     workspaces = Workspace.objects.filter(
-        Q(owner=target_user) | Q(members__user=target_user)
+        Q(owner=target_user) | Q(memberships__user=target_user)
     ).distinct().prefetch_related("dashboards")
 
     dashboards = Dashboard.objects.filter(
