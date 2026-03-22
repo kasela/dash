@@ -76,14 +76,36 @@ def _fallback_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     dims = [str(c) for c in profile.categorical_columns]
     nums = [str(c) for c in profile.numeric_columns]
     if dims and nums:
-        return {"chart_type": "bar", "dimension": dims[0], "measures": [nums[0]], "title": prompt or f"{nums[0]} by {dims[0]}"}
+        return {
+            "chart_type": "bar",
+            "dimension": dims[0],
+            "measures": [nums[0]],
+            "title": prompt or f"{nums[0]} by {dims[0]}",
+            "_ai_source": "fallback_heuristic",
+        }
     if len(nums) >= 2:
-        return {"chart_type": "scatter", "x_measure": nums[0], "y_measure": nums[1], "title": prompt or f"{nums[0]} vs {nums[1]}"}
+        return {
+            "chart_type": "scatter",
+            "x_measure": nums[0],
+            "y_measure": nums[1],
+            "title": prompt or f"{nums[0]} vs {nums[1]}",
+            "_ai_source": "fallback_heuristic",
+        }
     if nums:
-        return {"chart_type": "kpi", "measures": [nums[0]], "title": prompt or f"Total {nums[0]}"}
+        return {
+            "chart_type": "kpi",
+            "measures": [nums[0]],
+            "title": prompt or f"Total {nums[0]}",
+            "_ai_source": "fallback_heuristic",
+        }
     if dims:
-        return {"chart_type": "pie", "dimension": dims[0], "title": prompt or f"Distribution: {dims[0]}"}
-    return {"chart_type": "table", "title": prompt or "Smart Table"}
+        return {
+            "chart_type": "pie",
+            "dimension": dims[0],
+            "title": prompt or f"Distribution: {dims[0]}",
+            "_ai_source": "fallback_heuristic",
+        }
+    return {"chart_type": "table", "title": prompt or "Smart Table", "_ai_source": "fallback_heuristic"}
 
 
 def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
@@ -150,6 +172,7 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
         "x_measure": rec_x,
         "y_measure": rec_y,
         "title": rec_title,
+        "_ai_source": "deepseek",
     }
 
 
@@ -692,9 +715,10 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
     title = result["title"]
     config = result["config"]
     preview_only = result["preview_only"]
+    ai_source = result.get("ai_source", "")
 
     if preview_only:
-        return JsonResponse({"success": True, "chart_config": config})
+        return JsonResponse({"success": True, "chart_config": config, "ai_source": ai_source})
 
     max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
     widget = DashboardWidget.objects.create(
@@ -706,7 +730,7 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
         chart_config=config,
     )
 
-    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config})
+    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": config, "ai_source": ai_source})
 
 
 @login_required
@@ -829,6 +853,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     preview_only = bool(data.get("preview_only", False))
     # filters: list of {column, filter_type, value} to apply to df
     filters = data.get("filters", [])
+    ai_source = ""
 
     if chart_type not in _VALID_CHART_TYPES:
         return {"error": "Invalid chart type", "status": 400}
@@ -871,6 +896,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         if chart_type == "smart":
             ai_prompt = str(data.get("ai_prompt", "")).strip() or title
             rec = _deepseek_smart_chart(df, ai_prompt)
+            ai_source = str(rec.get("_ai_source", ""))
             chart_type = rec.get("chart_type", "bar")
             title = rec.get("title", title)
             if rec.get("dimension"):
@@ -1077,12 +1103,15 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
             "group_by": group_by,
             "dataset_version_id": dataset_version.id if dataset_version else None,
         }
+        if ai_source:
+            config["builder"]["ai_source"] = ai_source
     return {
         "chart_type": chart_type,
         "title": title,
         "config": config,
         "preview_only": preview_only,
         "dataset_version": dataset_version,
+        "ai_source": ai_source,
     }
 
 
@@ -1104,7 +1133,12 @@ def dashboard_update_widget(request: HttpRequest, dashboard_id: int, widget_id: 
     widget.chart_config = result["config"]
     widget.source_dataset_version = result.get("dataset_version")
     widget.save(update_fields=["title", "widget_type", "chart_config", "source_dataset_version"])
-    return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": widget.chart_config})
+    return JsonResponse({
+        "success": True,
+        "widget_id": widget.id,
+        "chart_config": widget.chart_config,
+        "ai_source": result.get("ai_source", ""),
+    })
 
 
 @login_required

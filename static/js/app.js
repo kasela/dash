@@ -948,6 +948,9 @@
         previewBtn.textContent = 'Preview';
         previewBtn.disabled = false;
         if (data.error) { showCbValidationError(data.error); return; }
+        if (data.ai_source) {
+          showToast('Smart source: ' + data.ai_source, 'info');
+        }
         renderCbPreview(data.chart_config, getSelectedChartType());
       })
       .catch(function (err) {
@@ -1046,6 +1049,9 @@
         submitBtn.textContent = cbEditingWidgetId ? 'Save Widget' : 'Add to Dashboard';
         submitBtn.disabled = false;
         if (data.success) {
+          if (data.ai_source) {
+            showToast('Smart source: ' + data.ai_source, 'info');
+          }
           closeChartBuilder();
           showToast(cbEditingWidgetId ? 'Widget updated — reloading…' : 'Chart added — reloading…', 'success');
           setTimeout(function () { window.location.reload(); }, 700);
