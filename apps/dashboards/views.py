@@ -128,13 +128,15 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
                         "1) chart_type must be one of allowed_chart_types.\n"
                         "2) Use only provided column names.\n"
                         "3) Match chart to analytical intent (trend/comparison/distribution/composition/relationship).\n"
+                        "3b) Prioritize decision utility: choose charts that make next actions obvious.\n"
                         "4) Prefer line/area for time trends, bar/hbar for ranked comparisons, "
                         "scatter/bubble for relationships, pie/doughnut/polararea for simple part-to-whole with "
                         "limited categories, KPI for single headline metrics, table for detail lookups.\n"
                         "5) Avoid cluttered charts: if too many categories for pie-style views, choose bar or table.\n"
                         "6) If prompt is vague, choose the most broadly useful and interpretable chart from available fields.\n"
                         "7) Build a concise action-oriented title (<= 70 chars).\n"
-                        "8) suggestions should be a short list (max 3) of practical follow-up chart ideas as strings."
+                        "8) suggestions should be a short list (max 3) of practical follow-up chart ideas as strings.\n"
+                        "9) If prompt mentions strategy/decision/action, bias toward variance, rank, and trend views."
                     ),
                 },
                 {"role": "user", "content": json.dumps(payload)},
