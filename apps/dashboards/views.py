@@ -505,10 +505,23 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
             return redirect("app-home")
 
     # Create the dashboard shell immediately (status=pending)
+    ai_title = None
+    try:
+        seed_df = _load_df_from_version(dataset_version)
+        if seed_df is not None and len(seed_df.columns) > 0:
+            seed_profile = build_profile_summary(seed_df)
+            ai_title = ai_generate_dashboard_title(
+                seed_df,
+                seed_profile,
+                dataset_name=dataset_version.dataset.name,
+            )
+    except Exception:
+        ai_title = None
+
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=_humanize_col(dataset_version.dataset.name),
+        title=(ai_title or _humanize_col(dataset_version.dataset.name)),
         build_status=Dashboard.BuildStatus.PENDING,
     )
     # Link as the primary dataset

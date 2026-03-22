@@ -37,7 +37,16 @@ from apps.dashboards.views import (
     landing_page,
     pricing_page,
 )
-from apps.datasets.views import dataset_ai_clean, dataset_clean_version, dataset_delete_rows, dataset_link, dataset_link_result, dataset_upload, dataset_upload_result
+from apps.datasets.views import (
+    dataset_ai_clean,
+    dataset_clean_version,
+    dataset_delete_rows,
+    dataset_link,
+    dataset_link_result,
+    dataset_transform_version,
+    dataset_upload,
+    dataset_upload_result,
+)
 from apps.seo.sitemaps import StaticViewSitemap
 
 
@@ -109,6 +118,7 @@ urlpatterns = [
     path("datasets/versions/<int:version_id>/clean/", dataset_clean_version, name="dataset-clean-version"),
     path("datasets/versions/<int:version_id>/ai-clean/", dataset_ai_clean, name="dataset-ai-clean"),
     path("datasets/versions/<int:version_id>/delete-rows/", dataset_delete_rows, name="dataset-delete-rows"),
+    path("datasets/versions/<int:version_id>/transform/", dataset_transform_version, name="dataset-transform-version"),
 
     # Dashboard multi-dataset management
     path("dashboards/<uuid:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
