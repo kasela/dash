@@ -5,6 +5,7 @@ from django.http import HttpResponse
 
 from apps.dashboards.views import (
     app_home,
+    dashboard_add_dataset,
     dashboard_add_widget,
     dashboard_add_heading,
     dashboard_create_from_version,
@@ -12,7 +13,9 @@ from apps.dashboards.views import (
     dashboard_delete_widget,
     dashboard_detail,
     dashboard_get_columns,
+    dashboard_list_datasets,
     dashboard_public_view,
+    dashboard_remove_dataset,
     dashboard_rename,
     dashboard_resize_widget,
     dashboard_rename_widget,
@@ -20,7 +23,7 @@ from apps.dashboards.views import (
     landing_page,
     pricing_page,
 )
-from apps.datasets.views import dataset_upload, dataset_upload_result
+from apps.datasets.views import dataset_link, dataset_link_result, dataset_upload, dataset_upload_result
 from apps.seo.sitemaps import StaticViewSitemap
 
 
@@ -73,4 +76,11 @@ urlpatterns = [
     # Dataset actions
     path("datasets/upload/", dataset_upload, name="dataset-upload"),
     path("datasets/upload/result/", dataset_upload_result, name="dataset-upload-result"),
+    path("datasets/link/", dataset_link, name="dataset-link"),
+    path("datasets/link/result/", dataset_link_result, name="dataset-link-result"),
+
+    # Dashboard multi-dataset management
+    path("dashboards/<int:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
+    path("dashboards/<int:dashboard_id>/datasets/add/", dashboard_add_dataset, name="dashboard-add-dataset"),
+    path("dashboards/<int:dashboard_id>/datasets/<int:version_id>/remove/", dashboard_remove_dataset, name="dashboard-remove-dataset"),
 ]

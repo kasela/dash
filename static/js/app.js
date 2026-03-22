@@ -490,7 +490,9 @@
       return;
     }
 
-    fetch(cfg.columnsUrl, { credentials: 'same-origin' })
+    var versionId = getSelectedDatasetVersionId();
+    var fetchUrl = cfg.columnsUrl + (versionId ? '?version_id=' + encodeURIComponent(versionId) : '');
+    fetch(fetchUrl, { credentials: 'same-origin' })
       .then(function (r) {
         if (!r.ok) throw new Error('Server returned ' + r.status);
         return r.json();
@@ -822,10 +824,15 @@
     if (tableEl) { tableEl.style.display = 'none'; tableEl.innerHTML = ''; }
   }
 
+  function getSelectedDatasetVersionId() {
+    var sel = document.getElementById('cb-dataset');
+    return sel ? (sel.value || '') : '';
+  }
+
   function buildPayload(previewOnly) {
     var type = getSelectedChartType();
     var measures = getSelectedMeasures();
-    return {
+    var payload = {
       chart_type: type,
       title: (document.getElementById('cb-title').value || '').trim() || 'New Widget',
       dimension: (document.getElementById('cb-dimension') || {}).value || '',
@@ -840,6 +847,9 @@
       palette: getSelectedPalette(),
       preview_only: !!previewOnly,
     };
+    var versionId = getSelectedDatasetVersionId();
+    if (versionId) payload.dataset_version_id = parseInt(versionId, 10);
+    return payload;
   }
 
   function previewChart() {
@@ -1192,6 +1202,36 @@
       radio.addEventListener('change', updateCbFieldVisibility);
     });
 
+    // When dataset selector changes, reload columns for the new dataset
+    var datasetSel = document.getElementById('cb-dataset');
+    if (datasetSel) {
+      datasetSel.addEventListener('change', function () {
+        var loadingEl = document.getElementById('cb-loading');
+        var formEl = document.getElementById('cb-form');
+        if (loadingEl) loadingEl.style.display = 'flex';
+        if (formEl) formEl.style.display = 'none';
+
+        var cfg2 = getApiConfig();
+        if (!cfg2) return;
+        var vId = datasetSel.value;
+        var url2 = cfg2.columnsUrl + (vId ? '?version_id=' + encodeURIComponent(vId) : '');
+        fetch(url2, { credentials: 'same-origin' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            populateCbForm(data);
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'block';
+            updateCbFieldVisibility(true);
+          })
+          .catch(function (err) {
+            showCbError('Could not load columns: ' + err.message);
+          });
+      });
+    }
+
     var dimSel = document.getElementById('cb-dimension');
     var measureSel = document.getElementById('cb-measure');
     var measuresSel = document.getElementById('cb-measures');
@@ -1217,6 +1257,117 @@
     });
   }
 
+  // ── Multi-Dataset Panel ──────────────────────────────────────────────────
+
+  function initDatasetsPanel() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    // "Use" button – select dataset in chart builder and open it
+    document.querySelectorAll('.select-dataset-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var versionId = btn.dataset.versionId;
+        var datasetSel = document.getElementById('cb-dataset');
+        if (datasetSel && versionId) {
+          datasetSel.value = versionId;
+        }
+        openChartBuilder();
+      });
+    });
+
+    // "Add dataset" panel toggle
+    var openAddBtn = document.getElementById('open-add-dataset-btn');
+    var addPanel = document.getElementById('add-dataset-panel');
+    var cancelAddBtn = document.getElementById('cancel-add-dataset-btn');
+    var confirmAddBtn = document.getElementById('confirm-add-dataset-btn');
+    var addSelect = document.getElementById('add-dataset-select');
+    var addError = document.getElementById('add-dataset-error');
+
+    if (openAddBtn && addPanel) {
+      openAddBtn.addEventListener('click', function () {
+        addPanel.style.display = addPanel.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+    if (cancelAddBtn && addPanel) {
+      cancelAddBtn.addEventListener('click', function () {
+        addPanel.style.display = 'none';
+      });
+    }
+
+    if (confirmAddBtn && addSelect) {
+      confirmAddBtn.addEventListener('click', function () {
+        var versionId = addSelect.value;
+        if (!versionId) {
+          if (addError) { addError.textContent = 'Please select a dataset.'; addError.style.display = 'block'; }
+          return;
+        }
+        if (addError) addError.style.display = 'none';
+        confirmAddBtn.disabled = true;
+        confirmAddBtn.textContent = 'Linking…';
+
+        fetch(cfg.addDatasetUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ version_id: parseInt(versionId, 10) }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            confirmAddBtn.disabled = false;
+            confirmAddBtn.textContent = 'Link';
+            if (data.success) {
+              showToast('Dataset linked — reloading…', 'success');
+              setTimeout(function () { window.location.reload(); }, 600);
+            } else {
+              if (addError) { addError.textContent = data.error || 'Could not link dataset.'; addError.style.display = 'block'; }
+            }
+          })
+          .catch(function (err) {
+            confirmAddBtn.disabled = false;
+            confirmAddBtn.textContent = 'Link';
+            if (addError) { addError.textContent = 'Network error: ' + err.message; addError.style.display = 'block'; }
+          });
+      });
+    }
+
+    // Remove dataset buttons
+    document.querySelectorAll('.remove-dataset-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var versionId = btn.dataset.versionId;
+        var removeUrl = btn.dataset.removeUrl;
+        if (!removeUrl) return;
+        if (!confirm('Remove this dataset from the dashboard?')) return;
+        btn.disabled = true;
+
+        fetch(removeUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: '{}',
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.success) {
+              var card = document.getElementById('dataset-card-' + versionId);
+              if (card) {
+                card.style.transition = 'opacity 0.2s';
+                card.style.opacity = '0';
+                setTimeout(function () { card.remove(); }, 200);
+              }
+              showToast('Dataset removed', 'success');
+            } else {
+              btn.disabled = false;
+              showToast(data.error || 'Could not remove dataset', 'error');
+            }
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            showToast('Network error: ' + err.message, 'error');
+          });
+      });
+    });
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -1236,6 +1387,7 @@
     initWidgetEdit();
     initDashboardRename();
     initHeadingBuilder();
+    initDatasetsPanel();
   });
 
 })();

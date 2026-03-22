@@ -24,7 +24,7 @@ from apps.datasets.services import (
     generate_widget_specs_from_version,
 )
 
-from .models import Dashboard, DashboardShareLink, DashboardWidget
+from .models import Dashboard, DashboardDataset, DashboardShareLink, DashboardWidget
 
 _FALLBACK_CHART = {
     "type": "bar",
@@ -223,6 +223,40 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
         ("kpi",      "🔢", "KPI"),
     ]
     palette_names = list(PALETTES.keys())
+    # Build list of all datasets linked to this dashboard (primary + extras)
+    linked_datasets = []
+    primary_id = dashboard.dataset_version_id
+    if dashboard.dataset_version:
+        dv = dashboard.dataset_version
+        linked_datasets.append({
+            "version_id": dv.id,
+            "label": dv.dataset.name,
+            "row_count": dv.row_count,
+            "column_count": dv.column_count,
+            "is_primary": True,
+        })
+    for link in dashboard.dataset_links.select_related("dataset_version__dataset").order_by("added_at"):
+        if link.dataset_version_id == primary_id:
+            continue
+        dv = link.dataset_version
+        linked_datasets.append({
+            "version_id": dv.id,
+            "label": link.label or dv.dataset.name,
+            "row_count": dv.row_count,
+            "column_count": dv.column_count,
+            "is_primary": False,
+        })
+
+    # Available workspace datasets (for "add dataset" picker)
+    from apps.datasets.models import DatasetVersion as DV
+    linked_version_ids = {d["version_id"] for d in linked_datasets}
+    available_versions = list(
+        DV.objects.filter(dataset__workspace=dashboard.workspace)
+        .select_related("dataset")
+        .order_by("-uploaded_at")[:50]
+    )
+    available_versions = [v for v in available_versions if v.id not in linked_version_ids]
+
     return render(
         request,
         "dashboards/detail.html",
@@ -232,6 +266,8 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
             "share_links": share_links,
             "chart_types": chart_types,
             "palette_names": palette_names,
+            "linked_datasets": linked_datasets,
+            "available_versions": available_versions,
         },
     )
 
@@ -265,6 +301,12 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
         title=f"{dataset_version.dataset.name} Overview",
+    )
+    # Link as the primary dataset in the multi-dataset list
+    DashboardDataset.objects.get_or_create(
+        dashboard=dashboard,
+        dataset_version=dataset_version,
+        defaults={"label": dataset_version.dataset.name},
     )
 
     widget_specs = generate_widget_specs_from_version(dataset_version)
@@ -340,15 +382,37 @@ def _load_df_from_version(dataset_version) -> pd.DataFrame | None:
 
 @login_required
 def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
-    """Return column metadata for the dataset linked to a dashboard."""
+    """Return column metadata for a dataset linked to a dashboard.
+
+    Optional query param ``version_id`` selects which linked DatasetVersion to use.
+    Falls back to the dashboard's primary dataset_version if not specified.
+    """
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
 
-    if not dashboard.dataset_version:
-        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": []})
+    version_id = request.GET.get("version_id")
+    if version_id:
+        try:
+            version_id = int(version_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid version_id"}, status=400)
+        # Verify the version is actually linked to this dashboard
+        linked_ids = list(
+            dashboard.dataset_links.values_list("dataset_version_id", flat=True)
+        )
+        if dashboard.dataset_version_id:
+            linked_ids.append(dashboard.dataset_version_id)
+        if version_id not in linked_ids:
+            return JsonResponse({"error": "Dataset not linked to this dashboard"}, status=403)
+        dataset_version = get_object_or_404(DatasetVersion, id=version_id)
+    else:
+        dataset_version = dashboard.dataset_version
 
-    df = _load_df_from_version(dashboard.dataset_version)
+    if not dataset_version:
+        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": [], "version_id": None})
+
+    df = _load_df_from_version(dataset_version)
     if df is None:
-        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": []})
+        return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": [], "version_id": dataset_version.id})
 
     profile = build_profile_summary(df)
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
@@ -358,7 +422,110 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
         "measures": profile.numeric_columns,
         "date_cols": date_cols,
         "all_cols": [str(c) for c in df.columns],
+        "version_id": dataset_version.id,
     })
+
+
+@login_required
+def dashboard_list_datasets(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Return all DatasetVersions linked to a dashboard (for multi-dataset UI)."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+
+    datasets = []
+    # Primary dataset_version (always first if set)
+    primary_id = dashboard.dataset_version_id
+    if primary_id:
+        dv = dashboard.dataset_version
+        datasets.append({
+            "version_id": dv.id,
+            "dataset_name": dv.dataset.name,
+            "label": dv.dataset.name,
+            "version": dv.version,
+            "row_count": dv.row_count,
+            "column_count": dv.column_count,
+            "is_primary": True,
+        })
+
+    for link in dashboard.dataset_links.select_related("dataset_version__dataset").order_by("added_at"):
+        if link.dataset_version_id == primary_id:
+            continue  # already listed
+        dv = link.dataset_version
+        datasets.append({
+            "version_id": dv.id,
+            "dataset_name": dv.dataset.name,
+            "label": link.label or dv.dataset.name,
+            "version": dv.version,
+            "row_count": dv.row_count,
+            "column_count": dv.column_count,
+            "is_primary": False,
+        })
+
+    return JsonResponse({"datasets": datasets})
+
+
+@login_required
+def dashboard_add_dataset(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Link an existing DatasetVersion (from the same workspace) to a dashboard."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    version_id = data.get("version_id")
+    label = str(data.get("label", "")).strip()[:100]
+
+    if not version_id:
+        return JsonResponse({"error": "version_id is required"}, status=400)
+
+    dataset_version = get_object_or_404(
+        DatasetVersion,
+        id=version_id,
+        dataset__workspace=dashboard.workspace,
+    )
+
+    link, created = DashboardDataset.objects.get_or_create(
+        dashboard=dashboard,
+        dataset_version=dataset_version,
+        defaults={"label": label or dataset_version.dataset.name},
+    )
+    if not created and label:
+        link.label = label
+        link.save(update_fields=["label"])
+
+    return JsonResponse({
+        "success": True,
+        "version_id": dataset_version.id,
+        "dataset_name": dataset_version.dataset.name,
+        "label": link.label,
+        "row_count": dataset_version.row_count,
+        "column_count": dataset_version.column_count,
+    })
+
+
+@login_required
+def dashboard_remove_dataset(request: HttpRequest, dashboard_id: int, version_id: int) -> JsonResponse:
+    """Unlink a DatasetVersion from a dashboard (cannot remove the primary dataset_version)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+
+    if dashboard.dataset_version_id == version_id:
+        return JsonResponse({"error": "Cannot remove the primary dataset. Change the primary dataset first."}, status=400)
+
+    deleted, _ = DashboardDataset.objects.filter(
+        dashboard=dashboard, dataset_version_id=version_id
+    ).delete()
+
+    if not deleted:
+        return JsonResponse({"error": "Dataset not linked to this dashboard"}, status=404)
+
+    return JsonResponse({"success": True})
 
 
 @login_required
@@ -386,12 +553,11 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
         return JsonResponse({"success": True, "chart_config": config})
 
     max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
-    # Map area -> line type for widget_type storage (area uses line Chart.js type)
-    stored_type = chart_type
     widget = DashboardWidget.objects.create(
         dashboard=dashboard,
+        source_dataset_version=result.get("dataset_version"),
         title=title,
-        widget_type=stored_type,
+        widget_type=chart_type,
         position=max_pos + 1,
         chart_config=config,
     )
@@ -461,6 +627,27 @@ def dashboard_add_heading(request: HttpRequest, dashboard_id: int) -> JsonRespon
     return JsonResponse({"success": True, "widget_id": widget.id})
 
 
+def _resolve_dataset_version(dashboard: Dashboard, data: dict):
+    """Return the DatasetVersion to use for a widget, based on data['dataset_version_id']."""
+    version_id = data.get("dataset_version_id")
+    if version_id:
+        try:
+            version_id = int(version_id)
+        except (TypeError, ValueError):
+            return None, "Invalid dataset_version_id"
+        # Must be linked to this dashboard
+        linked_ids = list(dashboard.dataset_links.values_list("dataset_version_id", flat=True))
+        if dashboard.dataset_version_id:
+            linked_ids.append(dashboard.dataset_version_id)
+        if version_id not in linked_ids:
+            return None, "Dataset not linked to this dashboard"
+        dv = DatasetVersion.objects.filter(id=version_id).first()
+        if not dv:
+            return None, "Dataset version not found"
+        return dv, None
+    return dashboard.dataset_version, None
+
+
 def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     chart_type = data.get("chart_type", "").strip()
     title = data.get("title", "").strip() or "New Widget"
@@ -497,10 +684,14 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     if chart_type not in _VALID_CHART_TYPES:
         return {"error": "Invalid chart type", "status": 400}
 
+    dataset_version, dv_error = _resolve_dataset_version(dashboard, data)
+    if dv_error:
+        return {"error": dv_error, "status": 400}
+
     config: dict = {}
     if chart_type == "kpi":
-        if measure and dashboard.dataset_version:
-            df = _load_df_from_version(dashboard.dataset_version)
+        if measure and dataset_version:
+            df = _load_df_from_version(dataset_version)
             if df is not None and measure in df.columns:
                 total = df[measure].sum()
                 config = {"kpi": measure, "value": f"{total:,.0f}"}
@@ -509,9 +700,9 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         else:
             config = {"kpi": "value", "value": "0"}
     else:
-        if not dashboard.dataset_version:
+        if not dataset_version:
             return {"error": "Dashboard has no dataset", "status": 400}
-        df = _load_df_from_version(dashboard.dataset_version)
+        df = _load_df_from_version(dataset_version)
         if df is None:
             return {"error": "Could not load dataset file", "status": 500}
         try:
@@ -639,8 +830,15 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
             "palette": palette,
             "table_columns": table_columns,
             "group_by": group_by,
+            "dataset_version_id": dataset_version.id if dataset_version else None,
         }
-    return {"chart_type": chart_type, "title": title, "config": config, "preview_only": preview_only}
+    return {
+        "chart_type": chart_type,
+        "title": title,
+        "config": config,
+        "preview_only": preview_only,
+        "dataset_version": dataset_version,
+    }
 
 
 @login_required
@@ -659,7 +857,8 @@ def dashboard_update_widget(request: HttpRequest, dashboard_id: int, widget_id: 
     widget.title = result["title"]
     widget.widget_type = result["chart_type"]
     widget.chart_config = result["config"]
-    widget.save(update_fields=["title", "widget_type", "chart_config"])
+    widget.source_dataset_version = result.get("dataset_version")
+    widget.save(update_fields=["title", "widget_type", "chart_config", "source_dataset_version"])
     return JsonResponse({"success": True, "widget_id": widget.id, "chart_config": widget.chart_config})
 
 
