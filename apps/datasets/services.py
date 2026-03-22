@@ -261,6 +261,67 @@ def build_widget_suggestions(profile: ProfileSummary) -> list[WidgetSuggestion]:
     return suggestions[:6]
 
 
+# ── Dataset cleaning ────────────────────────────────────────────────────────────
+
+@dataclass
+class CleanResult:
+    dataframe: pd.DataFrame
+    rows_before: int
+    rows_after: int
+    duplicates_removed: int
+    missing_filled: int
+    missing_rows_dropped: int
+
+
+def clean_dataframe(
+    df: pd.DataFrame,
+    drop_duplicates: bool = False,
+    missing_strategy: str = "keep",
+) -> CleanResult:
+    """Clean a DataFrame based on user-selected options.
+
+    missing_strategy choices:
+      - "keep"       – do nothing with missing values
+      - "drop_rows"  – drop rows that have any missing value
+      - "fill_zero"  – fill numeric NaN with 0, text NaN with empty string
+      - "fill_mean"  – fill numeric NaN with column mean, text NaN with empty string
+    """
+    rows_before = len(df)
+    duplicates_removed = 0
+    missing_filled = 0
+    missing_rows_dropped = 0
+
+    if drop_duplicates:
+        before = len(df)
+        df = df.drop_duplicates()
+        duplicates_removed = before - len(df)
+
+    if missing_strategy == "drop_rows":
+        before = len(df)
+        df = df.dropna()
+        missing_rows_dropped = before - len(df)
+    elif missing_strategy in ("fill_zero", "fill_mean"):
+        for col in df.columns:
+            null_count = int(df[col].isna().sum())
+            if null_count == 0:
+                continue
+            if pd.api.types.is_numeric_dtype(df[col]):
+                fill_val = df[col].mean() if missing_strategy == "fill_mean" else 0
+                df[col] = df[col].fillna(fill_val)
+            else:
+                df[col] = df[col].fillna("")
+            missing_filled += null_count
+
+    return CleanResult(
+        dataframe=df,
+        rows_before=rows_before,
+        rows_after=len(df),
+        duplicates_removed=duplicates_removed,
+        missing_filled=missing_filled,
+        missing_rows_dropped=missing_rows_dropped,
+    )
+
+
 # ── External URL import ─────────────────────────────────────────────────────────
 
 def detect_external_source_type(url: str) -> str:
