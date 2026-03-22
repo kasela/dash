@@ -183,11 +183,10 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
             if not profile.is_pro:
                 # Count uploads this calendar month
                 from apps.datasets.models import DatasetVersion as DV
-                from django.db.models.functions import TruncMonth
                 month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 monthly_count = DV.objects.filter(
                     dataset__workspace__owner=request.user,
-                    created_at__gte=month_start,
+                    uploaded_at__gte=month_start,
                 ).count()
                 if monthly_count >= profile.max_monthly_uploads:
                     plan_error = f"You've reached the {profile.max_monthly_uploads} upload/month limit on the Free plan."
