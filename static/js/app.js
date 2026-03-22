@@ -2231,22 +2231,29 @@
     try { return JSON.parse(el.textContent) || []; } catch (_) { return []; }
   }
 
-  function _getFilterApiCfg() {
-    return getApiConfig();
+  // Build _filterColumnMeta from the columnsUrl response (which already has unique_values + range_info)
+  function _buildMetaFromColumnsResponse(data) {
+    _filterColumnMeta = {};
+    var uv = data.unique_values || {};
+    var ri = data.range_info || {};
+    (data.dimensions || []).forEach(function (col) {
+      _filterColumnMeta[col] = { column: col, type: 'categorical', unique_values: uv[col] || [] };
+    });
+    (data.measures || []).forEach(function (col) {
+      var r = ri[col] || {};
+      _filterColumnMeta[col] = { column: col, type: 'numeric', min: r.min !== undefined ? r.min : 0, max: r.max !== undefined ? r.max : 100 };
+    });
   }
 
-  // Fetch column metadata (unique values + range) for filter dropdowns/radios
+  // Fetch column metadata using the existing columnsUrl (returns unique_values + range_info)
   function _fetchFilterColumns(callback) {
-    var cfg = _getFilterApiCfg();
-    if (!cfg || !cfg.filterColumnsUrl) return;
-    fetch(cfg.filterColumnsUrl, { credentials: 'same-origin' })
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.columnsUrl) return;
+    fetch(cfg.columnsUrl, { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data) return;
-        _filterColumnMeta = {};
-        (data.columns || []).forEach(function (col) {
-          _filterColumnMeta[col.column] = col;
-        });
+        _buildMetaFromColumnsResponse(data);
         if (typeof callback === 'function') callback(data);
       })
       .catch(function () {});
@@ -2255,26 +2262,31 @@
   // Populate the filter controls with options from column metadata
   function _populateFilterControls() {
     _filterConfig.forEach(function (f) {
-      var meta = _filterColumnMeta[f.column] || {};
-      var item = document.querySelector('.filter-control-item[data-filter-id="' + f.id + '"]');
+      var meta = _filterColumnMeta[f.column];
+      if (!meta) return;  // column not found in dataset
+      var item = document.querySelector('.filter-control-item[data-filter-id="' + CSS.escape(f.id) + '"]');
       if (!item) return;
+
+      var vals = meta.unique_values || [];
 
       if (f.filter_type === 'dropdown') {
         var sel = item.querySelector('.filter-dropdown');
-        if (!sel || !meta.unique_values) return;
-        // Preserve first "All" option
+        if (!sel) return;
         while (sel.options.length > 1) sel.remove(1);
-        meta.unique_values.forEach(function (v) {
+        vals.forEach(function (v) {
           var opt = document.createElement('option');
           opt.value = v; opt.textContent = v;
           sel.appendChild(opt);
         });
+        sel.addEventListener('change', function () {
+          _filterState[f.column] = sel.value;
+          _scheduleFilterApply();
+        });
       } else if (f.filter_type === 'radio') {
         var rg = item.querySelector('.filter-radio-group');
-        if (!rg || !meta.unique_values) return;
-        // Clear all but "All" option
+        if (!rg) return;
         rg.querySelectorAll('.filter-radio-option:not(:first-child)').forEach(function (el) { el.remove(); });
-        meta.unique_values.slice(0, 12).forEach(function (v) {
+        vals.slice(0, 12).forEach(function (v) {
           var lbl = document.createElement('label');
           lbl.className = 'filter-radio-option';
           var inp = document.createElement('input');
@@ -2289,7 +2301,6 @@
           lbl.appendChild(span);
           rg.appendChild(lbl);
         });
-        // Add change listeners for all radio inputs in this group
         rg.querySelectorAll('input[type="radio"]').forEach(function (radio) {
           radio.addEventListener('change', function () {
             _updateRadioVisuals(rg);
@@ -2299,23 +2310,38 @@
         });
       } else if (f.filter_type === 'multiselect') {
         var ms = item.querySelector('.filter-multiselect');
-        if (!ms || !meta.unique_values) return;
+        if (!ms) return;
         while (ms.options.length > 1) ms.remove(1);
-        meta.unique_values.forEach(function (v) {
+        vals.forEach(function (v) {
           var opt = document.createElement('option');
           opt.value = v; opt.textContent = v;
           ms.appendChild(opt);
         });
+        ms.addEventListener('change', function () {
+          var selected = [];
+          for (var i = 0; i < ms.options.length; i++) {
+            if (ms.options[i].selected && ms.options[i].value !== '__all__') selected.push(ms.options[i].value);
+          }
+          _filterState[f.column] = selected;
+          _scheduleFilterApply();
+        });
       } else if (f.filter_type === 'range') {
         var slider = item.querySelector('.filter-range-input');
         var valLabel = item.querySelector('.filter-range-value');
-        if (!slider || !meta.min !== undefined) return;
-        if (meta.min !== undefined) {
-          slider.min = meta.min;
-          slider.max = meta.max;
-          slider.value = meta.min;
-          if (valLabel) valLabel.textContent = Number(meta.min).toLocaleString() + ' – ' + Number(meta.max).toLocaleString();
-        }
+        if (!slider) return;
+        var lo = meta.min !== undefined ? meta.min : 0;
+        var hi = meta.max !== undefined ? meta.max : 100;
+        slider.min = lo;
+        slider.max = hi;
+        slider.step = hi > 1000 ? Math.round((hi - lo) / 100) || 1 : 1;
+        slider.value = hi;  // start at max (show all)
+        if (valLabel) valLabel.textContent = Number(lo).toLocaleString() + ' – ' + Number(hi).toLocaleString();
+        slider.addEventListener('input', function () {
+          var curHi = Number(slider.value);
+          if (valLabel) valLabel.textContent = Number(lo).toLocaleString() + ' – ' + Number(curHi).toLocaleString();
+          _filterState[f.column] = [lo, curHi];
+          _scheduleFilterApply();
+        });
       }
     });
   }
@@ -2371,7 +2397,7 @@
   }
 
   function _applyFilters() {
-    var cfg = _getFilterApiCfg();
+    var cfg = getApiConfig();
     if (!cfg || !cfg.applyFiltersUrl) return;
 
     var filters = _buildFilterPayload();
@@ -2515,33 +2541,33 @@
       // Load columns for the column picker
       if (fmColumn) {
         fmColumn.innerHTML = '<option value="">— loading… —</option>';
-        fetch(cfg.filterColumnsUrl, { credentials: 'same-origin' })
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (data) {
-            if (!data) return;
-            _filterColumnMeta = {};
-            (data.columns || []).forEach(function (col) { _filterColumnMeta[col.column] = col; });
-            fmColumn.innerHTML = '<option value="">— select column —</option>';
-            (data.columns || []).forEach(function (col) {
-              var opt = document.createElement('option');
-              opt.value = col.column;
-              opt.textContent = col.column + (col.type === 'categorical' ? ' (' + (col.unique_values || []).length + ' values)' : ' (numeric)');
-              fmColumn.appendChild(opt);
-            });
-            // Update type options based on column type
-            fmColumn.addEventListener('change', function () {
-              var meta = _filterColumnMeta[fmColumn.value] || {};
-              if (meta.type === 'numeric') {
-                fmType.value = 'range';
-              } else {
-                if (fmType.value === 'range') fmType.value = 'dropdown';
-              }
-              if (!fmLabel.value && fmColumn.value) fmLabel.value = fmColumn.value;
-            });
-          })
-          .catch(function () {
-            if (fmColumn) fmColumn.innerHTML = '<option value="">Failed to load</option>';
+        _fetchFilterColumns(function (data) {
+          fmColumn.innerHTML = '<option value="">— select column —</option>';
+          var allCols = (data.dimensions || []).concat(data.measures || []);
+          allCols.forEach(function (col) {
+            var meta = _filterColumnMeta[col] || {};
+            var opt = document.createElement('option');
+            opt.value = col;
+            opt.textContent = col + (meta.type === 'numeric' ? ' (numeric)' : ' (' + (meta.unique_values || []).length + ' values)');
+            fmColumn.appendChild(opt);
           });
+          if (allCols.length === 0) {
+            fmColumn.innerHTML = '<option value="">No columns available</option>';
+          }
+        });
+        // Update type options based on column type (bind once)
+        if (!fmColumn._changeListenerBound) {
+          fmColumn._changeListenerBound = true;
+          fmColumn.addEventListener('change', function () {
+            var meta = _filterColumnMeta[fmColumn.value] || {};
+            if (meta.type === 'numeric') {
+              fmType.value = 'range';
+            } else {
+              if (fmType.value === 'range') fmType.value = 'dropdown';
+            }
+            if (!fmLabel.value && fmColumn.value) fmLabel.value = fmColumn.value;
+          });
+        }
       }
     }
 
@@ -2665,7 +2691,6 @@
     if (_filterConfig.length > 0) {
       _fetchFilterColumns(function () {
         _populateFilterControls();
-        _bindFilterControlEvents();
       });
     }
   }
