@@ -597,10 +597,63 @@
     </div>
 
     {% if widget.widget_type == 'kpi' %}
-      <!-- KPI widget -->
-      <div class="mt-4 flex items-baseline gap-2">
-        <span class="widget-kpi-value text-5xl font-extrabold text-indigo-600">{{ widget.chart_config.value|default:"–" }}</span>
-        <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
+      <!-- Advanced KPI widget -->
+      <div class="mt-3 flex flex-col gap-2">
+        <!-- Primary value row -->
+        <div class="flex items-end justify-between gap-2">
+          <div>
+            <span class="widget-kpi-value block text-4xl font-extrabold tracking-tight
+              {% if widget.chart_config.trend.trend_dir == 'up' %}text-emerald-600
+              {% elif widget.chart_config.trend.trend_dir == 'down' %}text-rose-600
+              {% else %}text-indigo-600{% endif %}">
+              {{ widget.chart_config.value|default:"–" }}
+            </span>
+            <span class="block mt-0.5 text-xs font-medium text-slate-400 uppercase tracking-wider truncate max-w-[160px]">{{ widget.chart_config.kpi|default:"" }}</span>
+          </div>
+          <!-- Trend badge -->
+          {% if widget.chart_config.trend %}
+          <div class="shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm
+            {% if widget.chart_config.trend.trend_dir == 'up' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+            {% elif widget.chart_config.trend.trend_dir == 'down' %}bg-rose-50 text-rose-700 border border-rose-200
+            {% else %}bg-slate-50 text-slate-500 border border-slate-200{% endif %}">
+            {% if widget.chart_config.trend.trend_dir == 'up' %}
+              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"/></svg>
+            {% elif widget.chart_config.trend.trend_dir == 'down' %}
+              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"/></svg>
+            {% else %}
+              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 12h14"/></svg>
+            {% endif %}
+            {{ widget.chart_config.trend.trend_pct|default:"0" }}%
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Sparkline mini-bar chart -->
+        {% if widget.chart_config.trend.sparkline_pct %}
+        <div class="flex items-end gap-0.5 h-10" title="Trend sparkline">
+          {% for pct in widget.chart_config.trend.sparkline_pct %}
+          <div class="flex-1 rounded-t-sm
+            {% if widget.chart_config.trend.trend_dir == 'up' %}bg-emerald-400
+            {% elif widget.chart_config.trend.trend_dir == 'down' %}bg-rose-400
+            {% else %}bg-indigo-400{% endif %}"
+            style="height:{{ pct }}%;opacity:0.75;"
+          ></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Secondary comparison value -->
+        {% if widget.chart_config.trend.secondary_value %}
+        <div class="flex items-center gap-1.5 text-xs text-slate-500">
+          <span class="font-medium">{{ widget.chart_config.trend.secondary_label|default:"prev" }}:</span>
+          <span>{{ widget.chart_config.trend.secondary_value }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Inline AI insight (if pre-computed at creation) -->
+        {% if widget.chart_config.ai_insight %}
+        <p class="mt-1 text-xs text-slate-500 leading-relaxed italic border-t border-slate-100 pt-2">{{ widget.chart_config.ai_insight }}</p>
+        {% endif %}
       </div>
 
     {% elif widget.widget_type == 'table' %}
@@ -700,17 +753,25 @@
       </div>
     {% endif %}
 
-    <!-- AI Insights Panel (hidden by default, toggled by AI button) -->
-    <div class="ai-insights-panel hidden mt-3 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3" data-widget-id="{{ widget.id }}">
+    <!-- AI Insights Panel (pre-populated if ai_insight exists, otherwise toggled by AI button) -->
+    <div class="ai-insights-panel {% if not widget.chart_config.ai_insight %}hidden{% endif %} mt-3 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3" data-widget-id="{{ widget.id }}">
       <div class="flex items-center gap-2 mb-1.5">
         <svg class="h-4 w-4 text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
         </svg>
         <span class="text-xs font-semibold text-violet-700">AI Insights</span>
+        {% if widget.chart_config.ai_insight %}
+        <span class="ml-auto text-xs font-medium text-violet-400 bg-violet-100 px-1.5 py-0.5 rounded-full">✦ AI</span>
+        {% else %}
         <span class="ai-powered-badge hidden ml-auto text-xs font-medium text-violet-400 bg-violet-100 px-1.5 py-0.5 rounded-full">✦ AI</span>
+        {% endif %}
       </div>
       <p class="ai-insights-text text-xs text-slate-600 leading-relaxed">
-        <span class="ai-insights-loading text-slate-400 italic">Analysing…</span>
+        {% if widget.chart_config.ai_insight %}
+          {{ widget.chart_config.ai_insight }}
+        {% else %}
+          <span class="ai-insights-loading text-slate-400 italic">Analysing…</span>
+        {% endif %}
       </p>
     </div>
 
