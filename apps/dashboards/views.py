@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 import re
 import importlib.util
+import warnings
 
 import pandas as pd
 from django.conf import settings
@@ -81,6 +82,17 @@ _VALID_CHART_TYPES = {
 _PRO_CHART_TYPES = {"bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"}
 
 
+def _to_datetime_safely(series: pd.Series) -> pd.Series:
+    """Parse date-like series while avoiding noisy format-inference warnings."""
+    try:
+        return pd.to_datetime(series, errors="coerce", format="mixed")
+    except TypeError:
+        # Older pandas versions may not support format="mixed".
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Could not infer format", category=UserWarning)
+            return pd.to_datetime(series, errors="coerce")
+
+
 def _fallback_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     """Heuristic fallback used when DeepSeek is not configured/available."""
     profile = build_profile_summary(df)
@@ -97,6 +109,69 @@ def _fallback_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     return {"chart_type": "table", "title": prompt or "Smart Table"}
 
 
+def _infer_intent_hints(prompt: str) -> list[str]:
+    """Infer chart intent hints from prompt keywords to steer smart chart selection."""
+    text = (prompt or "").strip().lower()
+    if not text:
+        return []
+    hints: list[str] = []
+    keyword_map = [
+        ("trend", ["trend", "over time", "monthly", "weekly", "daily", "timeline", "seasonality"]),
+        ("comparison", ["compare", "comparison", "top", "rank", "ranking", "best", "worst"]),
+        ("composition", ["share", "breakdown", "mix", "composition", "part of whole"]),
+        ("relationship", ["correlation", "relationship", "impact", "influence", "driver"]),
+        ("variance", ["variance", "change", "delta", "difference", "vs", "versus"]),
+        ("conversion", ["funnel", "conversion", "drop-off", "dropoff", "pipeline", "stage"]),
+        ("forecast", ["forecast", "predict", "projection", "outlook", "plan"]),
+        ("anomaly", ["anomaly", "outlier", "spike", "dip", "unexpected", "abnormal"]),
+        ("performance", ["performance", "efficiency", "productivity", "target", "goal"]),
+    ]
+    for hint, keywords in keyword_map:
+        if any(k in text for k in keywords):
+            hints.append(hint)
+    return hints
+
+
+def _normalize_smart_recommendation(parsed: dict, profile, clean_prompt: str) -> dict:
+    """Fill missing chart fields using dataset profile so advanced chart recommendations remain valid."""
+    dims = [str(c) for c in profile.categorical_columns]
+    nums = [str(c) for c in profile.numeric_columns]
+
+    rec_type = str(parsed.get("chart_type", "bar")).strip().lower()
+    if rec_type not in _VALID_CHART_TYPES or rec_type == "smart":
+        rec_type = "bar"
+
+    rec_dimension = str(parsed.get("dimension", "")).strip()
+    rec_measures = parsed.get("measures", [])
+    if isinstance(rec_measures, str):
+        rec_measures = [rec_measures]
+    if not isinstance(rec_measures, list):
+        rec_measures = []
+    rec_measures = [str(m).strip() for m in rec_measures if str(m).strip()]
+    rec_x = str(parsed.get("x_measure", "")).strip()
+    rec_y = str(parsed.get("y_measure", "")).strip()
+    rec_title = str(parsed.get("title", "")).strip() or clean_prompt
+
+    if not rec_dimension and dims and rec_type in {"bar", "line", "area", "pie", "doughnut", "hbar", "radar", "table", "polararea", "funnel", "waterfall", "mixed"}:
+        rec_dimension = dims[0]
+    if not rec_measures and nums and rec_type in {"bar", "line", "area", "hbar", "radar", "kpi", "pie", "table", "polararea", "funnel", "gauge", "waterfall", "mixed"}:
+        rec_measures = [nums[0]]
+    if (not rec_x or not rec_y) and len(nums) >= 2 and rec_type in {"scatter", "bubble", "map"}:
+        rec_x = rec_x or nums[0]
+        rec_y = rec_y or nums[1]
+    if rec_type == "kpi" and not rec_measures and nums:
+        rec_measures = [nums[0]]
+
+    return {
+        "chart_type": rec_type,
+        "dimension": rec_dimension,
+        "measures": rec_measures,
+        "x_measure": rec_x,
+        "y_measure": rec_y,
+        "title": rec_title,
+    }
+
+
 def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     """Ask DeepSeek for best chart + fields; returns normalized recommendation."""
     clean_prompt = (prompt or "").strip()
@@ -105,6 +180,7 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     profile = build_profile_summary(df)
     payload = {
         "prompt": clean_prompt,
+        "intent_hints": _infer_intent_hints(clean_prompt),
         "columns": [str(c) for c in df.columns.tolist()[:200]],
         "dimensions": [str(c) for c in profile.categorical_columns[:80]],
         "measures": [str(c) for c in profile.numeric_columns[:80]],
@@ -141,7 +217,12 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
                         "6) If prompt is vague, choose the most broadly useful and interpretable chart from available fields.\n"
                         "7) Build a concise action-oriented title (<= 70 chars).\n"
                         "8) suggestions should be a short list (max 3) of practical follow-up chart ideas as strings.\n"
-                        "9) If prompt mentions strategy/decision/action, bias toward variance, rank, and trend views."
+                        "9) If prompt mentions strategy/decision/action, bias toward variance, rank, and trend views.\n"
+                        "10) Prefer advanced charts when intent matches: funnel (stage drop-offs), waterfall (variance bridge), "
+                        "mixed (combo trend+bars), bubble (segmentation by 3 variables), gauge (single KPI vs target).\n"
+                        "11) Never choose advanced charts unless required fields exist (e.g., funnel/waterfall need dimension+measure; "
+                        "bubble needs x+y numeric; gauge needs one numeric).\n"
+                        "12) Optimize for modern executive dashboards: concise titles, clear comparisons, actionable framing."
                     ),
                 },
                 {"role": "user", "content": json.dumps(payload)},
@@ -155,28 +236,7 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
         parsed = json.loads(match.group(0) if match else content)
     except Exception:
         return _fallback_smart_chart(df, clean_prompt)
-
-    rec_type = str(parsed.get("chart_type", "bar")).strip().lower()
-    if rec_type not in _VALID_CHART_TYPES or rec_type == "smart":
-        rec_type = "bar"
-    rec_dimension = str(parsed.get("dimension", "")).strip()
-    rec_measures = parsed.get("measures", [])
-    if isinstance(rec_measures, str):
-        rec_measures = [rec_measures]
-    if not isinstance(rec_measures, list):
-        rec_measures = []
-    rec_measures = [str(m).strip() for m in rec_measures if str(m).strip()]
-    rec_x = str(parsed.get("x_measure", "")).strip()
-    rec_y = str(parsed.get("y_measure", "")).strip()
-    rec_title = str(parsed.get("title", "")).strip() or clean_prompt
-    return {
-        "chart_type": rec_type,
-        "dimension": rec_dimension,
-        "measures": rec_measures,
-        "x_measure": rec_x,
-        "y_measure": rec_y,
-        "title": rec_title,
-    }
+    return _normalize_smart_recommendation(parsed, profile, clean_prompt)
 
 
 def landing_page(request: HttpRequest) -> HttpResponse:
@@ -445,10 +505,23 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
             return redirect("app-home")
 
     # Create the dashboard shell immediately (status=pending)
+    ai_title = None
+    try:
+        seed_df = _load_df_from_version(dataset_version)
+        if seed_df is not None and len(seed_df.columns) > 0:
+            seed_profile = build_profile_summary(seed_df)
+            ai_title = ai_generate_dashboard_title(
+                seed_df,
+                seed_profile,
+                dataset_name=dataset_version.dataset.name,
+            )
+    except Exception:
+        ai_title = None
+
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=_humanize_col(dataset_version.dataset.name),
+        title=(ai_title or _humanize_col(dataset_version.dataset.name)),
         build_status=Dashboard.BuildStatus.PENDING,
     )
     # Link as the primary dataset
@@ -631,7 +704,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
@@ -649,7 +722,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
@@ -1167,17 +1240,26 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                         "kpi_meta": {"format": "count", "icon": "people"},
                     }
                 elif measure in df.columns:
-                    total = df[measure].sum()
                     human_measure = _humanize_col(measure)
                     kpi_meta = _detect_kpi_meta(measure)
+                    numeric_series = pd.to_numeric(df[measure], errors="coerce")
+                    has_numeric = bool(numeric_series.notna().any())
+                    if has_numeric:
+                        total = float(numeric_series.fillna(0).sum())
+                        value_display = f"{total:,.0f}"
+                    else:
+                        # Non-numeric columns should still yield a stable KPI instead of a server error.
+                        value_display = f"{int(df[measure].astype(str).str.strip().ne('').sum()):,}"
+                        kpi_meta = {"format": "count", "icon": "people"}
                     config = {
                         "kpi": human_measure,
-                        "value": f"{total:,.0f}",
+                        "value": value_display,
                         "kpi_meta": kpi_meta,
                     }
-                    trend = _compute_kpi_trend(df, measure)
-                    if trend:
-                        config["trend"] = trend
+                    if has_numeric:
+                        trend = _compute_kpi_trend(df, measure)
+                        if trend:
+                            config["trend"] = trend
                 else:
                     config = {
                         "kpi": _humanize_col(measure),
@@ -1236,7 +1318,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                 if len(measures) == 1:
                     tmp = df[[dimension, measure]].copy()
                     try:
-                        tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                        tmp[dimension] = _to_datetime_safely(tmp[dimension])
                         tmp = tmp.dropna(subset=[dimension])
                         trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                     except Exception:
@@ -1250,7 +1332,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                             continue
                         tmp = df[[dimension, m]].copy()
                         try:
-                            tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                            tmp[dimension] = _to_datetime_safely(tmp[dimension])
                             tmp = tmp.dropna(subset=[dimension])
                             trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[m].sum()
                         except Exception:
@@ -1264,7 +1346,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                     return {"error": "dimension and measure are required for area charts", "status": 400}
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
@@ -2002,3 +2084,56 @@ def dashboard_ai_executive_summary(request: HttpRequest, dashboard_id) -> JsonRe
         widget_titles=widget_titles,
     )
     return JsonResponse({"success": True, "summary": summary})
+
+
+@login_required
+def dashboard_ai_enhance_presentation_text(request: HttpRequest, dashboard_id) -> JsonResponse:
+    """Enhance presentation slide text using AI (or deterministic fallback)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        payload = {}
+    raw_text = str(payload.get("text", "")).strip()
+    if not raw_text:
+        return JsonResponse({"error": "Text is required"}, status=400)
+
+    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if api_key and importlib.util.find_spec("openai") is not None:
+        try:
+            openai_module = __import__("openai")
+            client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model=getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a presentation writing assistant. Rewrite text to be concise, persuasive, "
+                            "and executive-friendly. Keep facts unchanged. Return JSON only: {\"enhanced_text\":\"...\"}."
+                        ),
+                    },
+                    {"role": "user", "content": raw_text},
+                ],
+                temperature=0.2,
+                timeout=10,
+            )
+            content = ((response.choices[0].message.content) or "").strip()
+            match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+            parsed = json.loads(match.group(0) if match else content)
+            enhanced = str(parsed.get("enhanced_text", "")).strip()
+            if enhanced:
+                return JsonResponse({"success": True, "enhanced_text": enhanced, "ai_powered": True})
+        except Exception:
+            pass
+
+    # Fallback: deterministic readability cleanup.
+    enhanced = " ".join(raw_text.split())
+    if len(enhanced) > 0:
+        enhanced = enhanced[0].upper() + enhanced[1:]
+    if not enhanced.endswith("."):
+        enhanced += "."
+    return JsonResponse({"success": True, "enhanced_text": enhanced, "ai_powered": False})
