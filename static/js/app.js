@@ -2439,6 +2439,25 @@
         return;
       }
 
+      // Handle table widget update
+      if (newConfig && Array.isArray(newConfig.columns) && Array.isArray(newConfig.rows)) {
+        var tableCard = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (tableCard) {
+          var tbody = tableCard.querySelector('.widget-table-wrap tbody');
+          if (tbody) {
+            tbody.innerHTML = newConfig.rows.map(function (row) {
+              return '<tr class="border-t border-slate-100 hover:bg-slate-50 transition-colors">' +
+                row.map(function (cell) {
+                  return '<td class="px-3 py-2 text-slate-700 whitespace-nowrap">' + escapeHtml(String(cell)) + '</td>';
+                }).join('') + '</tr>';
+            }).join('');
+            var si = tableCard.querySelector('.table-search-input');
+            if (si) si.value = '';
+          }
+        }
+        return;
+      }
+
       if (!entry || !entry.chart || !entry.canvas) return;
       if (!newConfig || !newConfig.data) return;
 
