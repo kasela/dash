@@ -50,6 +50,7 @@ class DashboardWidget(models.Model):
         FUNNEL = "funnel", "Funnel"
         GAUGE = "gauge", "Gauge"
         WATERFALL = "waterfall", "Waterfall"
+        MAP = "map", "Map"
 
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="widgets")
     source_dataset_version = models.ForeignKey(
