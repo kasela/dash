@@ -439,7 +439,7 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
     if ai_specs is not None and df is not None:
         widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile)
         # Save suggested slicers automatically
-        slicer_suggestions = ai_suggest_slicers(df, profile)
+        slicer_suggestions, _ = ai_suggest_slicers(df, profile)
         if slicer_suggestions:
             auto_filters = [
                 {
