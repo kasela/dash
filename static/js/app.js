@@ -2555,6 +2555,8 @@
           if (allCols.length === 0) {
             fmColumn.innerHTML = '<option value="">No columns available</option>';
           }
+          // Re-render once metadata is loaded so saved filters show accurate type options.
+          renderFmList();
         });
         // Update type options based on column type (bind once)
         if (!fmColumn._changeListenerBound) {
@@ -2577,7 +2579,11 @@
 
     function _allowedFilterTypesForColumn(column) {
       var meta = _filterColumnMeta[column] || {};
-      return meta.type === 'numeric' ? ['range'] : CATEGORICAL_TYPES.slice();
+      if (meta.type === 'numeric') return ['range'];
+      if (meta.type === 'categorical') return CATEGORICAL_TYPES.slice();
+      // Column metadata may not be loaded yet (e.g., when modal first opens).
+      // In that case keep all options visible and avoid coercing saved values.
+      return ['dropdown', 'radio', 'multiselect', 'range'];
     }
 
     function _renderFilterTypeSelectOptions(types, selected) {
