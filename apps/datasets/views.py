@@ -12,6 +12,7 @@ from .models import Dataset, DatasetColumn, DatasetVersion, ExternalDataSource
 from .services import (
     build_profile_summary,
     build_widget_suggestions,
+    clean_dataframe,
     detect_external_source_type,
     fetch_from_url,
     infer_column_kind,
@@ -208,6 +209,91 @@ def dataset_upload_result(request: HttpRequest) -> HttpResponse:
         "plan_error": plan_error,
         "profile": profile_summary,
         "widget_suggestions": widget_suggestions,
+    }
+    return render(request, "datasets/partials/upload_result.html", context)
+
+
+@require_POST
+def dataset_clean_version(request: HttpRequest, version_id: int) -> HttpResponse:
+    """Apply cleaning operations to an existing DatasetVersion and save a new version."""
+    import io
+    import pandas as pd
+    from django.core.files.uploadedfile import InMemoryUploadedFile
+    from django.shortcuts import get_object_or_404
+
+    version = get_object_or_404(DatasetVersion, pk=version_id)
+
+    # Load the DataFrame from the stored file
+    try:
+        file_name = version.source_file.name.lower()
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(version.source_file)
+        elif file_name.endswith((".xlsx", ".xlsm")):
+            df = pd.read_excel(version.source_file)
+        elif file_name.endswith(".json"):
+            df = pd.read_json(version.source_file)
+        else:
+            df = pd.read_csv(version.source_file)
+    except Exception as exc:
+        return HttpResponseBadRequest(f"Could not read dataset file: {exc}")
+
+    drop_duplicates = request.POST.get("drop_duplicates") == "on"
+    missing_strategy = request.POST.get("missing_strategy", "keep")
+    if missing_strategy not in ("keep", "drop_rows", "fill_zero", "fill_mean"):
+        missing_strategy = "keep"
+
+    clean_result = clean_dataframe(df, drop_duplicates=drop_duplicates, missing_strategy=missing_strategy)
+    cleaned_df = clean_result.dataframe
+
+    # Save new DatasetVersion with cleaned data
+    csv_bytes = cleaned_df.to_csv(index=False).encode("utf-8")
+    import os
+    original_name = os.path.basename(version.source_file.name)
+    stem = os.path.splitext(original_name)[0]
+    csv_file = InMemoryUploadedFile(
+        file=io.BytesIO(csv_bytes),
+        field_name="source_file",
+        name=f"{stem}_cleaned.csv",
+        content_type="text/csv",
+        size=len(csv_bytes),
+        charset="utf-8",
+    )
+
+    with transaction.atomic():
+        next_version = version.dataset.versions.count() + 1
+        new_version = DatasetVersion.objects.create(
+            dataset=version.dataset,
+            version=next_version,
+            source_file=csv_file,
+            row_count=int(cleaned_df.shape[0]),
+            column_count=int(cleaned_df.shape[1]),
+        )
+        for column_name in cleaned_df.columns:
+            series = cleaned_df[column_name]
+            DatasetColumn.objects.create(
+                dataset_version=new_version,
+                name=str(column_name),
+                kind=infer_column_kind(series),
+                dtype=str(series.dtype),
+                null_ratio=float(series.isna().mean()),
+            )
+
+    sample_df = cleaned_df.head(100)
+    records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
+    profile_summary = build_profile_summary(cleaned_df)
+    widget_suggestions = build_widget_suggestions(profile_summary)
+
+    context = {
+        "headers": [str(h) for h in cleaned_df.columns],
+        "rows": records,
+        "shape": cleaned_df.shape,
+        "filename": f"{stem}_cleaned.csv",
+        "dataset_version": new_version,
+        "persistence_error": None,
+        "plan_error": None,
+        "profile": profile_summary,
+        "widget_suggestions": widget_suggestions,
+        "clean_result": clean_result,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 

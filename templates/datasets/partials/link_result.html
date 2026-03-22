@@ -135,6 +135,105 @@
   </div>
 </div>
 
+{% if clean_result %}
+<!-- Clean summary banner -->
+<div class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+  <div class="flex items-start gap-3">
+    <svg class="h-5 w-5 shrink-0 text-emerald-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <div>
+      <p class="text-sm font-semibold text-emerald-800">Dataset cleaned successfully</p>
+      <ul class="mt-1 space-y-0.5 text-xs text-emerald-700">
+        {% if clean_result.duplicates_removed > 0 %}
+          <li>Removed {{ clean_result.duplicates_removed }} duplicate row{{ clean_result.duplicates_removed|pluralize }}</li>
+        {% endif %}
+        {% if clean_result.missing_rows_dropped > 0 %}
+          <li>Dropped {{ clean_result.missing_rows_dropped }} row{{ clean_result.missing_rows_dropped|pluralize }} with missing values</li>
+        {% endif %}
+        {% if clean_result.missing_filled > 0 %}
+          <li>Filled {{ clean_result.missing_filled }} missing cell{{ clean_result.missing_filled|pluralize }}</li>
+        {% endif %}
+        <li>{{ clean_result.rows_before }} → {{ clean_result.rows_after }} rows</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if dataset_version and not clean_result and profile.duplicate_rows or dataset_version and not clean_result and profile.missing_cells %}
+<!-- Data quality issues — cleaning panel -->
+<div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" id="clean-panel">
+  <div class="mb-4 flex items-center gap-2">
+    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-200 text-amber-700">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+      </svg>
+    </div>
+    <div>
+      <h3 class="text-sm font-bold text-amber-900">Data quality issues detected</h3>
+      <p class="text-xs text-amber-700 mt-0.5">Clean your dataset before creating the dashboard.</p>
+    </div>
+  </div>
+
+  <form
+    hx-post="{% url 'dataset-clean-version' dataset_version.id %}"
+    hx-target="#link-result"
+    hx-swap="innerHTML"
+    hx-indicator="#clean-spinner"
+  >
+    {% csrf_token %}
+
+    <div class="space-y-3 mb-4">
+      {% if profile.duplicate_rows > 0 %}
+      <label class="flex items-start gap-3 rounded-xl bg-white/80 px-4 py-3 cursor-pointer hover:bg-white transition-colors">
+        <input type="checkbox" name="drop_duplicates" class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" checked />
+        <div>
+          <p class="text-xs font-semibold text-slate-800">Remove duplicate rows</p>
+          <p class="text-xs text-slate-500 mt-0.5">{{ profile.duplicate_rows }} duplicate row{{ profile.duplicate_rows|pluralize }} will be removed</p>
+        </div>
+      </label>
+      {% endif %}
+
+      {% if profile.missing_cells > 0 %}
+      <div class="rounded-xl bg-white/80 px-4 py-3">
+        <p class="text-xs font-semibold text-slate-800 mb-2">Handle missing values <span class="font-normal text-slate-500">({{ profile.missing_cells }} missing cell{{ profile.missing_cells|pluralize }})</span></p>
+        <div class="space-y-1.5">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="missing_strategy" value="keep" class="h-3.5 w-3.5 text-amber-600" checked />
+            <span class="text-xs text-slate-600">Keep as-is</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="missing_strategy" value="drop_rows" class="h-3.5 w-3.5 text-amber-600" />
+            <span class="text-xs text-slate-600">Drop rows with any missing value</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="missing_strategy" value="fill_zero" class="h-3.5 w-3.5 text-amber-600" />
+            <span class="text-xs text-slate-600">Fill with zero / empty string</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="missing_strategy" value="fill_mean" class="h-3.5 w-3.5 text-amber-600" />
+            <span class="text-xs text-slate-600">Fill numerics with column mean</span>
+          </label>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <button
+      type="submit"
+      class="flex items-center gap-2 rounded-xl bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200 transition-all hover:bg-amber-700 hover:-translate-y-px"
+    >
+      <svg id="clean-spinner" class="htmx-indicator h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      Clean &amp; save new version
+    </button>
+  </form>
+</div>
+{% endif %}
+
 <!-- Data preview table -->
 <div class="mt-5 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
   <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">

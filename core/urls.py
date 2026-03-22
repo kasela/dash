@@ -35,7 +35,7 @@ from apps.dashboards.views import (
     landing_page,
     pricing_page,
 )
-from apps.datasets.views import dataset_link, dataset_link_result, dataset_upload, dataset_upload_result
+from apps.datasets.views import dataset_clean_version, dataset_link, dataset_link_result, dataset_upload, dataset_upload_result
 from apps.seo.sitemaps import StaticViewSitemap
 
 
@@ -97,6 +97,7 @@ urlpatterns = [
     path("datasets/upload/result/", dataset_upload_result, name="dataset-upload-result"),
     path("datasets/link/", dataset_link, name="dataset-link"),
     path("datasets/link/result/", dataset_link_result, name="dataset-link-result"),
+    path("datasets/versions/<int:version_id>/clean/", dataset_clean_version, name="dataset-clean-version"),
 
     # Dashboard multi-dataset management
     path("dashboards/<int:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
