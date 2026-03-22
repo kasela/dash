@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 import re
 import importlib.util
+import warnings
 
 import pandas as pd
 from django.conf import settings
@@ -79,6 +80,17 @@ _VALID_CHART_TYPES = {
 }
 
 _PRO_CHART_TYPES = {"bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"}
+
+
+def _to_datetime_safely(series: pd.Series) -> pd.Series:
+    """Parse date-like series while avoiding noisy format-inference warnings."""
+    try:
+        return pd.to_datetime(series, errors="coerce", format="mixed")
+    except TypeError:
+        # Older pandas versions may not support format="mixed".
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Could not infer format", category=UserWarning)
+            return pd.to_datetime(series, errors="coerce")
 
 
 def _fallback_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
@@ -679,7 +691,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
@@ -697,7 +709,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
@@ -1293,7 +1305,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                 if len(measures) == 1:
                     tmp = df[[dimension, measure]].copy()
                     try:
-                        tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                        tmp[dimension] = _to_datetime_safely(tmp[dimension])
                         tmp = tmp.dropna(subset=[dimension])
                         trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                     except Exception:
@@ -1307,7 +1319,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                             continue
                         tmp = df[[dimension, m]].copy()
                         try:
-                            tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                            tmp[dimension] = _to_datetime_safely(tmp[dimension])
                             tmp = tmp.dropna(subset=[dimension])
                             trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[m].sum()
                         except Exception:
@@ -1321,7 +1333,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                     return {"error": "dimension and measure are required for area charts", "status": 400}
                 tmp = df[[dimension, measure]].copy()
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp[dimension] = _to_datetime_safely(tmp[dimension])
                     tmp = tmp.dropna(subset=[dimension])
                     trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
                 except Exception:
