@@ -2022,12 +2022,31 @@
       <span id="presentation-counter" class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-300">– / –</span>
     </div>
     <h2 id="presentation-widget-title" class="text-base font-semibold text-white truncate max-w-md text-center"></h2>
-    <button id="presentation-close-btn"
-      class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
-      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
+    <div class="flex items-center gap-2">
+      <select id="presentation-theme-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+        <option value="dark">Dark</option>
+        <option value="indigo">Indigo</option>
+        <option value="emerald">Emerald</option>
+        <option value="light">Light</option>
+      </select>
+      <input id="presentation-bg-color" type="color" value="#020617" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+      <button id="presentation-close-btn"
+        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Builder controls -->
+  <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-6 py-3">
+    <button id="presentation-add-text-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Text Slide</button>
+    <select id="presentation-chart-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white">
+      <option value="">Select chart widget</option>
+    </select>
+    <button id="presentation-add-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Chart Slide</button>
+    <button id="presentation-ai-slide-btn" class="rounded-lg bg-indigo-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Generate AI Slide</button>
   </div>
 
   <!-- Chart area -->

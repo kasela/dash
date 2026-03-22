@@ -1952,7 +1952,7 @@
   // ── Presentation Mode ────────────────────────────────────────────────────
 
   var presentationChart = null;
-  var presentationWidgets = [];
+  var presentationSlides = [];
   var presentationIndex = 0;
 
   function initPresentationMode() {
@@ -1967,16 +1967,36 @@
     var tableWrap = document.getElementById('presentation-table-wrap');
     var kpiWrap = document.getElementById('presentation-kpi-wrap');
     var textWrap = document.getElementById('presentation-text-wrap');
+    var addTextBtn = document.getElementById('presentation-add-text-btn');
+    var chartSelect = document.getElementById('presentation-chart-select');
+    var addChartBtn = document.getElementById('presentation-add-chart-btn');
+    var aiSlideBtn = document.getElementById('presentation-ai-slide-btn');
+    var themeSelect = document.getElementById('presentation-theme-select');
+    var bgColorInput = document.getElementById('presentation-bg-color');
 
     if (!openBtn || !overlay) return;
 
     function buildWidgetList() {
       // Exclude divider widgets from presentation (they're visual separators only)
-      presentationWidgets = Array.from(document.querySelectorAll('.widget-card')).filter(function (card) {
+      var widgetIds = Array.from(document.querySelectorAll('.widget-card')).filter(function (card) {
         return card.dataset.widgetType !== 'divider';
       }).map(function (card) {
         return card.dataset.widgetId;
       }).filter(Boolean);
+      presentationSlides = widgetIds.map(function (id) { return { kind: 'widget', widgetId: id }; });
+      if (chartSelect) {
+        chartSelect.innerHTML = '<option value="">Select chart widget</option>';
+        widgetIds.forEach(function (id) {
+          var card = document.querySelector('.widget-card[data-widget-id="' + id + '"]');
+          if (!card) return;
+          if (card.dataset.widgetType === 'heading' || card.dataset.widgetType === 'text_canvas') return;
+          var titleNode = card.querySelector('.widget-title');
+          var opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = (titleNode ? titleNode.textContent.trim() : ('Widget ' + id)).slice(0, 60);
+          chartSelect.appendChild(opt);
+        });
+      }
     }
 
     function clearPresentationAreas() {
@@ -1998,14 +2018,27 @@
     }
 
     function renderSlide(index) {
-      if (!presentationWidgets.length) return;
-      presentationIndex = Math.max(0, Math.min(index, presentationWidgets.length - 1));
-      var widgetId = presentationWidgets[presentationIndex];
+      if (!presentationSlides.length) return;
+      presentationIndex = Math.max(0, Math.min(index, presentationSlides.length - 1));
+      var slide = presentationSlides[presentationIndex];
+      if (!slide) return;
+      var widgetId = slide.widgetId;
       var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
 
-      if (counterEl) counterEl.textContent = (presentationIndex + 1) + ' / ' + presentationWidgets.length;
+      if (counterEl) counterEl.textContent = (presentationIndex + 1) + ' / ' + presentationSlides.length;
       if (prevBtn) prevBtn.disabled = presentationIndex === 0;
-      if (nextBtn) nextBtn.disabled = presentationIndex === presentationWidgets.length - 1;
+      if (nextBtn) nextBtn.disabled = presentationIndex === presentationSlides.length - 1;
+
+      if (slide.kind === 'text') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Text Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.style.background = 'rgba(255,255,255,0.08)';
+          textWrap.innerHTML = '<div style="max-width:920px;margin:0 auto;"><h3 style="font-size:1.6rem;font-weight:700;margin-bottom:0.75rem;">' + escapeHtml(slide.title || 'Notes') + '</h3><p style="white-space:pre-wrap;font-size:1.05rem;line-height:1.7;">' + escapeHtml(slide.content || '') + '</p></div>';
+        }
+        return;
+      }
 
       // Get title
       var titleText = '';
@@ -2081,7 +2114,7 @@
 
     openBtn.addEventListener('click', function () {
       buildWidgetList();
-      if (!presentationWidgets.length) { showToast('No widgets to present', 'info'); return; }
+      if (!presentationSlides.length) { showToast('No widgets to present', 'info'); return; }
       overlay.style.display = 'flex';
       document.body.style.overflow = 'hidden';
       renderSlide(0);
@@ -2097,6 +2130,67 @@
     overlay.addEventListener('click', function (e) { if (e.target === overlay) closePresentation(); });
     if (prevBtn) prevBtn.addEventListener('click', function () { renderSlide(presentationIndex - 1); });
     if (nextBtn) nextBtn.addEventListener('click', function () { renderSlide(presentationIndex + 1); });
+
+    if (addTextBtn) {
+      addTextBtn.addEventListener('click', function () {
+        var title = window.prompt('Slide title', 'Executive Summary');
+        if (title === null) return;
+        var content = window.prompt('Slide content', 'Add your talking points here.');
+        if (content === null) return;
+        presentationSlides.push({ kind: 'text', title: title || 'Notes', content: content || '' });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+    if (addChartBtn && chartSelect) {
+      addChartBtn.addEventListener('click', function () {
+        var selectedId = chartSelect.value;
+        if (!selectedId) { showToast('Select a chart widget first', 'info'); return; }
+        presentationSlides.push({ kind: 'widget', widgetId: selectedId });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+    if (aiSlideBtn) {
+      aiSlideBtn.addEventListener('click', function () {
+        var cfg = getApiConfig();
+        if (!cfg || !cfg.executiveSummaryUrl) { showToast('AI summary endpoint is unavailable.', 'error'); return; }
+        aiSlideBtn.disabled = true;
+        aiSlideBtn.textContent = 'Generating…';
+        fetch(cfg.executiveSummaryUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: '{}',
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            aiSlideBtn.disabled = false;
+            aiSlideBtn.textContent = 'Generate AI Slide';
+            if (!data.success || !data.summary) { showToast('Could not generate AI slide.', 'error'); return; }
+            presentationSlides.push({ kind: 'text', title: 'AI Executive Summary', content: data.summary });
+            renderSlide(presentationSlides.length - 1);
+          })
+          .catch(function () {
+            aiSlideBtn.disabled = false;
+            aiSlideBtn.textContent = 'Generate AI Slide';
+            showToast('AI slide generation failed.', 'error');
+          });
+      });
+    }
+
+    function applyPresentationTheme(theme) {
+      if (!overlay) return;
+      if (theme === 'light') overlay.style.background = 'rgba(241,245,249,0.98)';
+      else if (theme === 'indigo') overlay.style.background = 'linear-gradient(135deg,#1e1b4b,#3730a3,#4338ca)';
+      else if (theme === 'emerald') overlay.style.background = 'linear-gradient(135deg,#052e2b,#065f46,#047857)';
+      else overlay.style.background = 'rgba(2,6,23,0.97)';
+    }
+    if (themeSelect) themeSelect.addEventListener('change', function () { applyPresentationTheme(themeSelect.value); });
+    if (bgColorInput) {
+      bgColorInput.addEventListener('input', function () {
+        if (!overlay) return;
+        overlay.style.background = bgColorInput.value;
+      });
+    }
 
     document.addEventListener('keydown', function (e) {
       if (overlay.style.display === 'none' || overlay.style.display === '') return;
