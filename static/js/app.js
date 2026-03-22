@@ -1069,6 +1069,11 @@
     if (Array.isArray(builder.measures)) setMultiSelectValues(document.getElementById('cb-measures'), builder.measures);
     if (Array.isArray(builder.table_columns)) setMultiSelectValues(document.getElementById('cb-table-columns'), builder.table_columns);
     if (Array.isArray(builder.group_by)) setMultiSelectValues(document.getElementById('cb-group-by'), builder.group_by);
+    var aiPromptEl = document.getElementById('cb-ai-prompt');
+    if (aiPromptEl && typeof builder.ai_prompt === 'string') {
+      aiPromptEl.value = builder.ai_prompt;
+      updateAiPromptCounter();
+    }
     if (builder.palette) {
       var paletteInput = document.querySelector('input[name="cb_palette"][value="' + builder.palette + '"]');
       if (paletteInput) {
@@ -1125,7 +1130,10 @@
     var measure = (document.getElementById('cb-measure') || {}).value || '';
     var xm = (document.getElementById('cb-x-measure') || {}).value || '';
     var ym = (document.getElementById('cb-y-measure') || {}).value || '';
+    var aiPrompt = (document.getElementById('cb-ai-prompt') || {}).value || '';
     if (type === 'kpi' && measure) titleInput.value = 'Total ' + measure;
+    else if (type === 'smart' && aiPrompt.trim()) titleInput.value = aiPrompt.trim().slice(0, 60);
+    else if (type === 'smart') titleInput.value = 'AI Smart Analysis';
     else if (type === 'pie' && dim) titleInput.value = 'Distribution: ' + dim;
     else if (type === 'doughnut' && dim) titleInput.value = 'Breakdown: ' + dim;
     else if ((type === 'scatter' || type === 'map' || type === 'bubble') && xm && ym) titleInput.value = xm + ' vs ' + ym;
@@ -1148,6 +1156,7 @@
     var axisWrap = document.getElementById('cb-axis-labels-wrap');
     var tableColsWrap = document.getElementById('cb-table-columns-wrap');
     var groupByWrap = document.getElementById('cb-group-by-wrap');
+    var promptWrap = document.getElementById('cb-ai-prompt-wrap');
 
     var showDim = DIMENSION_TYPES.has(type);
     var showMeasure = MEASURE_TYPES.has(type) && !SCATTER_TYPES.has(type);
@@ -1163,6 +1172,7 @@
     if (axisWrap) axisWrap.style.display = showAxis ? '' : 'none';
     if (tableColsWrap) tableColsWrap.style.display = type === 'table' ? '' : 'none';
     if (groupByWrap) groupByWrap.style.display = type === 'table' ? '' : 'none';
+    if (promptWrap) promptWrap.style.display = type === 'smart' ? '' : 'none';
 
     // Update selected visual state on type pills
     document.querySelectorAll('.cb-type-option').forEach(function (lbl) {
@@ -1238,6 +1248,13 @@
     return selected;
   }
 
+  function updateAiPromptCounter() {
+    var input = document.getElementById('cb-ai-prompt');
+    var count = document.getElementById('cb-ai-prompt-count');
+    if (!input || !count) return;
+    count.textContent = String(input.value.length) + ' / 600';
+  }
+
   function validateCbForm() {
     var type = getSelectedChartType();
     var dim = (document.getElementById('cb-dimension') || {}).value || '';
@@ -1245,6 +1262,12 @@
     var measure = measures[0] || '';
     var xm = (document.getElementById('cb-x-measure') || {}).value || '';
     var ym = (document.getElementById('cb-y-measure') || {}).value || '';
+    var aiPrompt = ((document.getElementById('cb-ai-prompt') || {}).value || '').trim();
+
+    if (type === 'smart' && aiPrompt.length > 0 && aiPrompt.length < 16) {
+      showCbValidationError('For Smart AI, use a more specific prompt (at least 16 characters).');
+      return false;
+    }
 
     if (type === 'kpi' && !measure) {
       showCbValidationError('Select a measure column for the KPI.');
@@ -1322,6 +1345,7 @@
       group_by: getSelectedMultiValues('cb-group-by'),
       palette: getSelectedPalette(),
       tooltip_enabled: (document.getElementById('cb-tooltip-enabled') || { checked: true }).checked,
+      ai_prompt: (document.getElementById('cb-ai-prompt') || {}).value || '',
       preview_only: !!previewOnly,
     };
     var versionId = getSelectedDatasetVersionId();
@@ -1814,7 +1838,8 @@
   // ── Presentation Mode ────────────────────────────────────────────────────
 
   var presentationChart = null;
-  var presentationWidgets = [];
+  var presentationAuxCharts = [];
+  var presentationSlides = [];
   var presentationIndex = 0;
 
   function initPresentationMode() {
@@ -1829,16 +1854,53 @@
     var tableWrap = document.getElementById('presentation-table-wrap');
     var kpiWrap = document.getElementById('presentation-kpi-wrap');
     var textWrap = document.getElementById('presentation-text-wrap');
+    var insightWrap = document.getElementById('presentation-insight-wrap');
+    var audioWrap = document.getElementById('presentation-audio-wrap');
+    var stageWrap = document.getElementById('presentation-stage');
+    var addTextBtn = document.getElementById('presentation-add-text-btn');
+    var chartSelect = document.getElementById('presentation-chart-select');
+    var addChartBtn = document.getElementById('presentation-add-chart-btn');
+    var aiSlideBtn = document.getElementById('presentation-ai-slide-btn');
+    var themeSelect = document.getElementById('presentation-theme-select');
+    var bgColorInput = document.getElementById('presentation-bg-color');
+    var boldBtn = document.getElementById('presentation-text-bold-btn');
+    var italicBtn = document.getElementById('presentation-text-italic-btn');
+    var fontSizeSelect = document.getElementById('presentation-font-size-select');
+    var textColorInput = document.getElementById('presentation-text-color');
+    var enhanceTextBtn = document.getElementById('presentation-enhance-text-btn');
+    var addImageBtn = document.getElementById('presentation-add-image-btn');
+    var addVideoBtn = document.getElementById('presentation-add-video-btn');
+    var addMultiChartBtn = document.getElementById('presentation-add-multi-chart-btn');
+    var addVoiceBtn = document.getElementById('presentation-add-voice-btn');
+    var autoDeckBtn = document.getElementById('presentation-auto-deck-btn');
+    var fullscreenBtn = document.getElementById('presentation-fullscreen-btn');
+    var transitionSelect = document.getElementById('presentation-transition-select');
+    var imageInput = document.getElementById('presentation-image-input');
+    var audioInput = document.getElementById('presentation-audio-input');
 
     if (!openBtn || !overlay) return;
 
     function buildWidgetList() {
       // Exclude divider widgets from presentation (they're visual separators only)
-      presentationWidgets = Array.from(document.querySelectorAll('.widget-card')).filter(function (card) {
+      var widgetIds = Array.from(document.querySelectorAll('.widget-card')).filter(function (card) {
         return card.dataset.widgetType !== 'divider';
       }).map(function (card) {
         return card.dataset.widgetId;
       }).filter(Boolean);
+      presentationSlides = widgetIds.map(function (id) { return { kind: 'widget', widgetId: id }; });
+      if (chartSelect) {
+        chartSelect.innerHTML = '<option value="">Select chart widget</option>';
+        widgetIds.forEach(function (id) {
+          var card = document.querySelector('.widget-card[data-widget-id="' + id + '"]');
+          if (!card) return;
+          if (card.dataset.widgetType === 'heading' || card.dataset.widgetType === 'text_canvas') return;
+          var titleNode = card.querySelector('.widget-title');
+          var opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = (titleNode ? titleNode.textContent.trim() : ('Widget ' + id)).slice(0, 60);
+          chartSelect.appendChild(opt);
+        });
+      }
     }
 
     function clearPresentationAreas() {
@@ -1846,6 +1908,8 @@
         try { presentationChart.destroy(); } catch (_) {}
         presentationChart = null;
       }
+      presentationAuxCharts.forEach(function (ch) { try { ch.destroy(); } catch (_) {} });
+      presentationAuxCharts = [];
       if (canvas) {
         canvas.style.display = 'none';
         // Clear canvas context to avoid Chart.js reuse issues
@@ -1856,18 +1920,105 @@
       }
       if (tableWrap) { tableWrap.style.display = 'none'; tableWrap.innerHTML = ''; }
       if (kpiWrap) { kpiWrap.style.display = 'none'; kpiWrap.innerHTML = ''; }
-      if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; }
+      if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; textWrap.contentEditable = 'false'; }
+      if (insightWrap) { insightWrap.style.display = 'none'; insightWrap.textContent = ''; }
+      if (audioWrap) { audioWrap.style.display = 'none'; audioWrap.innerHTML = ''; }
+    }
+
+    function animateStage(mode) {
+      if (!stageWrap || mode === 'none') return;
+      var keyframes = [{ opacity: 0, transform: 'translateY(0px) scale(1)' }, { opacity: 1, transform: 'translateY(0px) scale(1)' }];
+      if (mode === 'slide') keyframes = [{ opacity: 0, transform: 'translateX(18px)' }, { opacity: 1, transform: 'translateX(0)' }];
+      if (mode === 'zoom') keyframes = [{ opacity: 0, transform: 'scale(0.97)' }, { opacity: 1, transform: 'scale(1)' }];
+      stageWrap.animate(keyframes, { duration: 360, easing: 'ease-out' });
+    }
+
+    function renderAudioForSlide(slide) {
+      if (!audioWrap || !slide || !slide.audioSrc) return;
+      audioWrap.style.display = 'block';
+      audioWrap.innerHTML = '<audio controls src="' + slide.audioSrc + '" style="max-width:260px;"></audio>';
     }
 
     function renderSlide(index) {
-      if (!presentationWidgets.length) return;
-      presentationIndex = Math.max(0, Math.min(index, presentationWidgets.length - 1));
-      var widgetId = presentationWidgets[presentationIndex];
+      if (!presentationSlides.length) return;
+      presentationIndex = Math.max(0, Math.min(index, presentationSlides.length - 1));
+      var slide = presentationSlides[presentationIndex];
+      if (!slide) return;
+      var widgetId = slide.widgetId;
       var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
 
-      if (counterEl) counterEl.textContent = (presentationIndex + 1) + ' / ' + presentationWidgets.length;
+      if (counterEl) counterEl.textContent = (presentationIndex + 1) + ' / ' + presentationSlides.length;
       if (prevBtn) prevBtn.disabled = presentationIndex === 0;
-      if (nextBtn) nextBtn.disabled = presentationIndex === presentationWidgets.length - 1;
+      if (nextBtn) nextBtn.disabled = presentationIndex === presentationSlides.length - 1;
+
+      if (slide.kind === 'text') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Text Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.style.background = 'rgba(255,255,255,0.08)';
+          textWrap.contentEditable = 'true';
+          textWrap.innerHTML = '<div class="presentation-editable" style="max-width:920px;margin:0 auto;"><h3 style="font-size:1.6rem;font-weight:700;margin-bottom:0.75rem;">' + escapeHtml(slide.title || 'Notes') + '</h3><p style="white-space:pre-wrap;font-size:1.05rem;line-height:1.7;">' + escapeHtml(slide.content || '') + '</p></div>';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'image') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Image Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          textWrap.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;"><img src="' + slide.src + '" alt="Slide image" style="max-width:100%;max-height:70vh;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,0.35);"></div>';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'video') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Video Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          var url = slide.url || '';
+          var embed = url;
+          var yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+          if (yt && yt[1]) embed = 'https://www.youtube.com/embed/' + yt[1];
+          textWrap.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;"><iframe src="' + embed + '" allowfullscreen style="width:min(100%,960px);height:540px;border:0;border-radius:16px;background:#000;"></iframe></div>';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'multi_chart') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Multi-Chart Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          var html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;">';
+          (slide.widgetIds || []).forEach(function (wid) {
+            var entry2 = widgetCharts[wid];
+            if (entry2 && entry2.canvas) {
+              var img = '';
+              try { img = entry2.canvas.toDataURL('image/png'); } catch (_) {}
+              if (img) {
+                html += '<div style="background:rgba(255,255,255,0.08);border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:10px;"><img src="' + img + '" style="width:100%;height:auto;border-radius:8px;"></div>';
+              }
+            }
+          });
+          html += '</div>';
+          textWrap.innerHTML = html;
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
 
       // Get title
       var titleText = '';
@@ -1901,6 +2052,18 @@
             }
           }
         });
+        var insight = '';
+        if (card) {
+          var insightPanel = card.querySelector('.ai-insights-text');
+          if (insightPanel) insight = (insightPanel.textContent || '').trim();
+          if (!insight) insight = String(card.getAttribute('data-ai-insight') || '').trim();
+        }
+        if (insight && insightWrap) {
+          insightWrap.textContent = 'AI Insight: ' + insight;
+          insightWrap.style.display = 'block';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -1911,6 +2074,8 @@
       if (kpiEl && kpiWrap) {
         kpiWrap.style.display = 'flex';
         kpiWrap.innerHTML = kpiEl.parentElement.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -1919,6 +2084,8 @@
       if (tbl && tableWrap) {
         tableWrap.style.display = 'block';
         tableWrap.innerHTML = tbl.parentElement.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -1927,6 +2094,8 @@
       if (textContent && textWrap) {
         textWrap.style.display = 'block';
         textWrap.innerHTML = textContent.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -1937,13 +2106,15 @@
         textWrap.style.alignItems = 'center';
         textWrap.style.justifyContent = 'center';
         textWrap.innerHTML = '<div style="font-size:2.5rem;font-weight:800;color:#e2e8f0;text-align:center;">' + headingEl.textContent + '</div>';
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
     }
 
     openBtn.addEventListener('click', function () {
       buildWidgetList();
-      if (!presentationWidgets.length) { showToast('No widgets to present', 'info'); return; }
+      if (!presentationSlides.length) { showToast('No widgets to present', 'info'); return; }
       overlay.style.display = 'flex';
       document.body.style.overflow = 'hidden';
       renderSlide(0);
@@ -1959,6 +2130,330 @@
     overlay.addEventListener('click', function (e) { if (e.target === overlay) closePresentation(); });
     if (prevBtn) prevBtn.addEventListener('click', function () { renderSlide(presentationIndex - 1); });
     if (nextBtn) nextBtn.addEventListener('click', function () { renderSlide(presentationIndex + 1); });
+
+    if (addTextBtn) {
+      addTextBtn.addEventListener('click', function () {
+        var title = window.prompt('Slide title', 'Executive Summary');
+        if (title === null) return;
+        var content = window.prompt('Slide content', 'Add your talking points here.');
+        if (content === null) return;
+        presentationSlides.push({ kind: 'text', title: title || 'Notes', content: content || '' });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+    if (addChartBtn && chartSelect) {
+      addChartBtn.addEventListener('click', function () {
+        var selectedId = chartSelect.value;
+        if (!selectedId) { showToast('Select a chart widget first', 'info'); return; }
+        presentationSlides.push({ kind: 'widget', widgetId: selectedId });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+    if (aiSlideBtn) {
+      aiSlideBtn.addEventListener('click', function () {
+        var cfg = getApiConfig();
+        if (!cfg || !cfg.executiveSummaryUrl) { showToast('AI summary endpoint is unavailable.', 'error'); return; }
+        aiSlideBtn.disabled = true;
+        aiSlideBtn.textContent = 'Generating…';
+        fetch(cfg.executiveSummaryUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: '{}',
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            aiSlideBtn.disabled = false;
+            aiSlideBtn.textContent = 'Generate AI Slide';
+            if (!data.success || !data.summary) { showToast('Could not generate AI slide.', 'error'); return; }
+            presentationSlides.push({ kind: 'text', title: 'AI Executive Summary', content: data.summary });
+            renderSlide(presentationSlides.length - 1);
+          })
+          .catch(function () {
+            aiSlideBtn.disabled = false;
+            aiSlideBtn.textContent = 'Generate AI Slide';
+            showToast('AI slide generation failed.', 'error');
+          });
+      });
+    }
+
+    function applyCommand(cmd, value) {
+      if (!textWrap || textWrap.style.display === 'none') return;
+      try { document.execCommand(cmd, false, value || null); } catch (_) {}
+      textWrap.focus();
+    }
+    if (boldBtn) boldBtn.addEventListener('click', function () { applyCommand('bold'); });
+    if (italicBtn) italicBtn.addEventListener('click', function () { applyCommand('italic'); });
+    if (fontSizeSelect) {
+      fontSizeSelect.addEventListener('change', function () {
+        if (!textWrap || textWrap.style.display === 'none') return;
+        var sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        var span = document.createElement('span');
+        span.style.fontSize = fontSizeSelect.value;
+        try {
+          sel.getRangeAt(0).surroundContents(span);
+        } catch (_) {}
+      });
+    }
+    if (textColorInput) {
+      textColorInput.addEventListener('input', function () {
+        applyCommand('foreColor', textColorInput.value);
+      });
+    }
+    if (enhanceTextBtn) {
+      enhanceTextBtn.addEventListener('click', function () {
+        if (!textWrap || textWrap.style.display === 'none') { showToast('Open a text slide first', 'info'); return; }
+        var plainText = (textWrap.innerText || '').trim();
+        if (!plainText) { showToast('Text slide is empty', 'info'); return; }
+        var cfg3 = getApiConfig();
+        if (!cfg3 || !cfg3.enhancePresentationTextUrl) { showToast('AI enhance endpoint unavailable', 'error'); return; }
+        enhanceTextBtn.disabled = true;
+        enhanceTextBtn.textContent = 'Enhancing…';
+        fetch(cfg3.enhancePresentationTextUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ text: plainText }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            enhanceTextBtn.disabled = false;
+            enhanceTextBtn.textContent = 'AI Enhance Text';
+            if (!data.success || !data.enhanced_text) { showToast('Could not enhance text.', 'error'); return; }
+            textWrap.innerHTML = '<div class="presentation-editable" style="max-width:920px;margin:0 auto;white-space:pre-wrap;font-size:1.05rem;line-height:1.7;">' + escapeHtml(data.enhanced_text) + '</div>';
+            textWrap.contentEditable = 'true';
+            showToast(data.ai_powered ? 'Text enhanced with AI' : 'Text enhanced', 'success');
+          })
+          .catch(function () {
+            enhanceTextBtn.disabled = false;
+            enhanceTextBtn.textContent = 'AI Enhance Text';
+            showToast('Text enhancement failed', 'error');
+          });
+      });
+    }
+
+    if (addImageBtn && imageInput) {
+      addImageBtn.addEventListener('click', function () { imageInput.click(); });
+      imageInput.addEventListener('change', function () {
+        var file = imageInput.files && imageInput.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          presentationSlides.push({ kind: 'image', title: file.name, src: String(e.target.result || '') });
+          renderSlide(presentationSlides.length - 1);
+        };
+        reader.readAsDataURL(file);
+        imageInput.value = '';
+      });
+    }
+
+    if (addVideoBtn) {
+      addVideoBtn.addEventListener('click', function () {
+        var url = window.prompt('Video URL (YouTube or direct embed URL)');
+        if (!url) return;
+        presentationSlides.push({ kind: 'video', title: 'Video', url: url.trim() });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+
+    if (addMultiChartBtn && chartSelect) {
+      addMultiChartBtn.addEventListener('click', function () {
+        var ids = [];
+        for (var i = 0; i < chartSelect.options.length; i++) {
+          var opt = chartSelect.options[i];
+          if (opt.value) ids.push(opt.value);
+          if (ids.length >= 4) break;
+        }
+        if (!ids.length) { showToast('No chart widgets available.', 'info'); return; }
+        presentationSlides.push({ kind: 'multi_chart', title: 'Dashboard Highlights', widgetIds: ids });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+
+    if (addVoiceBtn && audioInput) {
+      addVoiceBtn.addEventListener('click', function () {
+        if (!presentationSlides[presentationIndex]) { showToast('Open a slide first', 'info'); return; }
+        audioInput.click();
+      });
+      audioInput.addEventListener('change', function () {
+        var file = audioInput.files && audioInput.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var slide = presentationSlides[presentationIndex];
+          if (!slide) return;
+          slide.audioSrc = String(e.target.result || '');
+          renderSlide(presentationIndex);
+        };
+        reader.readAsDataURL(file);
+        audioInput.value = '';
+      });
+    }
+
+    if (autoDeckBtn) {
+      autoDeckBtn.addEventListener('click', function () {
+        var cfg4 = getApiConfig();
+        autoDeckBtn.disabled = true;
+        autoDeckBtn.textContent = 'Building…';
+        var summaryPromise = Promise.resolve({ success: false, summary: '' });
+        if (cfg4 && cfg4.executiveSummaryUrl) {
+          summaryPromise = fetch(cfg4.executiveSummaryUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: '{}',
+          }).then(function (r) { return r.json(); }).catch(function () { return { success: false, summary: '' }; });
+        }
+        summaryPromise.then(function (data) {
+          buildWidgetList();
+          var widgetSlides = presentationSlides.slice();
+          var dashboardTitleEl = document.getElementById('dashboard-title');
+          var dashboardTitle = dashboardTitleEl ? dashboardTitleEl.textContent.trim() : 'Dashboard Presentation';
+          var widgetMeta = widgetSlides.map(function (s) {
+            var card = document.querySelector('.widget-card[data-widget-id="' + s.widgetId + '"]');
+            var wType = card ? (card.dataset.widgetType || '') : '';
+            var wTitleEl = card ? card.querySelector('.widget-title') : null;
+            var wTitle = wTitleEl ? wTitleEl.textContent.trim() : (s.widgetId || 'Widget');
+            var insightEl = card ? card.querySelector('.ai-insights-text') : null;
+            var insightText = insightEl ? (insightEl.textContent || '').trim() : '';
+            return { slide: s, type: wType, title: wTitle, insight: insightText, card: card };
+          });
+
+          var chartCandidates = widgetMeta.filter(function (m) {
+            return m.type && ['table', 'kpi', 'heading', 'text_canvas', 'divider'].indexOf(m.type) === -1;
+          });
+          chartCandidates.sort(function (a, b) { return (b.insight || '').length - (a.insight || '').length; });
+          var selectedCharts = chartCandidates.slice(0, 4);
+          var selectedChartIds = selectedCharts.map(function (m) { return m.slide.widgetId; });
+
+          var kpiCandidates = widgetMeta.filter(function (m) { return m.type === 'kpi'; }).slice(0, 4);
+          var tableCandidate = widgetMeta.find(function (m) { return m.type === 'table'; });
+
+          var deck = [
+            {
+              kind: 'text',
+              title: 'Welcome',
+              content: dashboardTitle + '\n\nProfessional executive presentation generated by AI.',
+            },
+            {
+              kind: 'text',
+              title: 'Content',
+              content: '1) Executive Summary\n2) KPI Highlights\n3) Key Charts & Insights\n4) Recommendations\n5) Closing',
+            },
+          ];
+          if (data && data.success && data.summary) {
+            deck.push({ kind: 'text', title: 'Executive Summary', content: data.summary });
+          }
+
+          if (kpiCandidates.length) {
+            var kpiLines = [];
+            kpiCandidates.forEach(function (m) {
+              if (!m.card) return;
+              var valueEl = m.card.querySelector('.widget-kpi-value');
+              var value = valueEl ? valueEl.textContent.trim() : 'N/A';
+              kpiLines.push('• ' + m.title + ': ' + value);
+            });
+            if (kpiLines.length) deck.push({ kind: 'text', title: 'KPI Highlights (Top 4)', content: kpiLines.join('\n') });
+          }
+
+          selectedCharts.forEach(function (m) {
+            deck.push(m.slide);
+            if (m.insight) {
+              deck.push({
+                kind: 'text',
+                title: m.title + ' Insight',
+                content: m.insight,
+              });
+            }
+          });
+
+          if (tableCandidate) {
+            deck.push(tableCandidate.slide);
+            if (tableCandidate.card) {
+              var rows = Array.from(tableCandidate.card.querySelectorAll('tbody tr')).slice(0, 3);
+              if (rows.length) {
+                var rowText = rows.map(function (r) { return Array.from(r.querySelectorAll('td')).slice(0, 4).map(function (td) { return td.textContent.trim(); }).join(' | '); }).join('\n');
+                deck.push({ kind: 'text', title: 'Table Findings', content: rowText });
+              }
+            }
+          }
+
+          if (selectedChartIds.length >= 2) {
+            deck.push({ kind: 'multi_chart', title: 'Cross-Chart Comparison', widgetIds: selectedChartIds });
+          }
+          deck.push({
+            kind: 'text',
+            title: 'Recommendations',
+            content: '1) Prioritize biggest variance drivers.\n2) Validate outliers with domain owners.\n3) Track the top 3 KPIs weekly and adjust strategy quickly.',
+          });
+          deck.push({
+            kind: 'text',
+            title: 'Thank You',
+            content: 'Thank you.\n\nQuestions & discussion.',
+          });
+          presentationSlides = deck;
+          renderSlide(0);
+          showToast('AI full presentation generated.', 'success');
+          autoDeckBtn.disabled = false;
+          autoDeckBtn.textContent = 'AI Full Deck';
+        });
+      });
+    }
+
+    if (fullscreenBtn) {
+      fullscreenBtn.addEventListener('click', function () {
+        var inFs = !!document.fullscreenElement;
+        if (!inFs) {
+          if (overlay.requestFullscreen) overlay.requestFullscreen();
+          fullscreenBtn.textContent = 'Exit Fullscreen';
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+          fullscreenBtn.textContent = 'Fullscreen';
+        }
+      });
+    }
+
+    function applyPresentationTheme(theme) {
+      if (!overlay) return;
+      if (theme === 'light') overlay.style.background = 'rgba(241,245,249,0.98)';
+      else if (theme === 'indigo') overlay.style.background = 'linear-gradient(135deg,#1e1b4b,#3730a3,#4338ca)';
+      else if (theme === 'emerald') overlay.style.background = 'linear-gradient(135deg,#052e2b,#065f46,#047857)';
+      else overlay.style.background = 'rgba(2,6,23,0.97)';
+    }
+    if (themeSelect) themeSelect.addEventListener('change', function () { applyPresentationTheme(themeSelect.value); });
+    if (bgColorInput) {
+      bgColorInput.addEventListener('input', function () {
+        if (!overlay) return;
+        overlay.style.background = bgColorInput.value;
+      });
+    }
+
+    // Right-click formatting menu for text slides
+    var textMenu = document.createElement('div');
+    textMenu.id = 'presentation-text-context-menu';
+    textMenu.style.cssText = 'display:none;position:fixed;z-index:150;background:#0f172a;border:1px solid rgba(148,163,184,.35);border-radius:10px;padding:6px;min-width:150px;';
+    textMenu.innerHTML =
+      '<button data-cmd="bold" style="display:block;width:100%;text-align:left;padding:6px 8px;font-size:12px;color:#e2e8f0;border:none;background:none;cursor:pointer;">Bold</button>' +
+      '<button data-cmd="italic" style="display:block;width:100%;text-align:left;padding:6px 8px;font-size:12px;color:#e2e8f0;border:none;background:none;cursor:pointer;">Italic</button>' +
+      '<button data-cmd="removeFormat" style="display:block;width:100%;text-align:left;padding:6px 8px;font-size:12px;color:#e2e8f0;border:none;background:none;cursor:pointer;">Clear Format</button>';
+    document.body.appendChild(textMenu);
+    if (textWrap) {
+      textWrap.addEventListener('contextmenu', function (e) {
+        if (textWrap.style.display === 'none') return;
+        e.preventDefault();
+        textMenu.style.left = e.pageX + 'px';
+        textMenu.style.top = e.pageY + 'px';
+        textMenu.style.display = 'block';
+      });
+    }
+    textMenu.querySelectorAll('button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        applyCommand(btn.dataset.cmd || 'bold');
+        textMenu.style.display = 'none';
+      });
+    });
+    document.addEventListener('click', function () { textMenu.style.display = 'none'; });
 
     document.addEventListener('keydown', function (e) {
       if (overlay.style.display === 'none' || overlay.style.display === '') return;
@@ -2503,6 +2998,34 @@
     if (measuresSel) measuresSel.addEventListener('change', resetTitle);
     if (xSel) xSel.addEventListener('change', resetTitle);
     if (ySel) ySel.addEventListener('change', resetTitle);
+
+    var aiPrompt = document.getElementById('cb-ai-prompt');
+    if (aiPrompt) {
+      aiPrompt.addEventListener('input', function () {
+        updateAiPromptCounter();
+        if (getSelectedChartType() === 'smart') {
+          document.getElementById('cb-title').value = '';
+          autoSetTitle();
+        }
+      });
+    }
+
+    document.querySelectorAll('.cb-prompt-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var text = chip.dataset.prompt || '';
+        var promptEl = document.getElementById('cb-ai-prompt');
+        if (!promptEl) return;
+        promptEl.value = text;
+        updateAiPromptCounter();
+        if (getSelectedChartType() === 'smart') {
+          document.getElementById('cb-title').value = '';
+          autoSetTitle();
+        }
+        promptEl.focus();
+      });
+    });
+
+    updateAiPromptCounter();
 
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
