@@ -122,3 +122,6 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_SOFT_TIME_LIMIT = 120  # 2 min soft limit per task
+CELERY_TASK_DEFAULT_QUEUE = "default"
+# Use solo pool on Windows (prefork/fork not supported); override via env for Linux prod
+CELERY_WORKER_POOL = os.environ.get("CELERY_WORKER_POOL", "solo")
