@@ -12,14 +12,20 @@ from apps.datasets.services import (
     PALETTES,
     _area_config,
     _bar_config,
+    _bubble_config,
     _doughnut_config,
+    _funnel_config,
+    _gauge_config,
     _hbar_config,
     _line_config,
+    _mixed_config,
     _multi_bar_config,
     _multi_line_config,
     _pie_config,
+    _polararea_config,
     _radar_config,
     _scatter_config,
+    _waterfall_config,
     build_profile_summary,
     generate_widget_specs_from_version,
 )
@@ -50,7 +56,13 @@ _FALLBACK_CHART = {
     },
 }
 
-_VALID_CHART_TYPES = {"bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table"}
+_VALID_CHART_TYPES = {
+    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table",
+    # Pro/Plus chart types
+    "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
+}
+
+_PRO_CHART_TYPES = {"bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"}
 
 
 def landing_page(request: HttpRequest) -> HttpResponse:
@@ -210,17 +222,29 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     widgets = dashboard.widgets.order_by("position")
     share_links = dashboard.share_links.filter(is_active=True).order_by("-created_at")
+
+    from apps.billing.models import UserProfile
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    is_pro = profile.is_pro
+
+    # (type_key, icon, label, pro_required)
     chart_types = [
-        ("bar",      "📊", "Bar"),
-        ("line",     "📈", "Line"),
-        ("area",     "🏔️", "Area"),
-        ("pie",      "🥧", "Pie"),
-        ("doughnut", "🍩", "Doughnut"),
-        ("hbar",     "↔️", "Horiz. Bar"),
-        ("scatter",  "✦",  "Scatter"),
-        ("radar",    "🕸️", "Radar"),
-        ("table",    "🧾", "Table"),
-        ("kpi",      "🔢", "KPI"),
+        ("bar",       "📊", "Bar",        False),
+        ("line",      "📈", "Line",       False),
+        ("area",      "🏔️", "Area",       False),
+        ("pie",       "🥧", "Pie",        False),
+        ("doughnut",  "🍩", "Doughnut",   False),
+        ("hbar",      "↔️", "Horiz. Bar", False),
+        ("scatter",   "✦",  "Scatter",    False),
+        ("radar",     "🕸️", "Radar",      False),
+        ("table",     "🧾", "Table",      False),
+        ("kpi",       "🔢", "KPI",        False),
+        ("bubble",    "🫧", "Bubble",     True),
+        ("polararea", "🎯", "Polar Area", True),
+        ("mixed",     "📉", "Mixed",      True),
+        ("funnel",    "🔽", "Funnel",     True),
+        ("gauge",     "⏱️", "Gauge",      True),
+        ("waterfall", "📶", "Waterfall",  True),
     ]
     palette_names = list(PALETTES.keys())
     # Build list of all datasets linked to this dashboard (primary + extras)
@@ -268,6 +292,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
             "palette_names": palette_names,
             "linked_datasets": linked_datasets,
             "available_versions": available_versions,
+            "is_pro": is_pro,
         },
     )
 
@@ -684,6 +709,15 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     if chart_type not in _VALID_CHART_TYPES:
         return {"error": "Invalid chart type", "status": 400}
 
+    # Pro/Plus gating – check caller's plan
+    if chart_type in _PRO_CHART_TYPES:
+        from apps.billing.models import UserProfile
+        caller = getattr(dashboard.workspace, "owner", None)
+        if caller:
+            up, _ = UserProfile.objects.get_or_create(user=caller)
+            if not up.is_pro:
+                return {"error": "This chart type requires a Pro or Enterprise plan.", "status": 403}
+
     dataset_version, dv_error = _resolve_dataset_version(dashboard, data)
     if dv_error:
         return {"error": dv_error, "status": 400}
@@ -816,6 +850,60 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                     "rows": rows,
                     "group_by": valid_group_by,
                 }
+            # ── Pro chart types ──────────────────────────────────────────────────
+            elif chart_type == "bubble":
+                if not x_measure or not y_measure:
+                    return {"error": "x_measure and y_measure are required for bubble charts", "status": 400}
+                r_col = measures[1] if len(measures) > 1 else None
+                tmp = df[[c for c in [x_measure, y_measure, r_col] if c and c in df.columns]].dropna().head(300)
+                if r_col and r_col in tmp.columns:
+                    r_vals = tmp[r_col].tolist()
+                    r_min, r_max = min(r_vals), max(r_vals)
+                    r_range = (r_max - r_min) or 1
+                    pts = [{"x": round(float(x), 4), "y": round(float(y), 4), "r": round(3 + 20 * (r - r_min) / r_range, 2)}
+                           for x, y, r in zip(tmp[x_measure], tmp[y_measure], tmp[r_col])]
+                else:
+                    pts = [{"x": round(float(x), 4), "y": round(float(y), 4), "r": 6}
+                           for x, y in zip(tmp[x_measure], tmp[y_measure])]
+                config = _bubble_config(pts, title, palette, x_measure, y_measure)
+            elif chart_type == "polararea":
+                if not dimension:
+                    return {"error": "dimension is required for polar area charts", "status": 400}
+                vc = df.groupby(dimension)[measure].sum().nlargest(8) if measure and measure in df.columns else df[dimension].value_counts().head(8)
+                config = _polararea_config([str(l) for l in vc.index.tolist()], [round(float(v), 2) for v in vc.values.tolist()], palette)
+            elif chart_type == "mixed":
+                if not dimension or not measures:
+                    return {"error": "dimension and measures are required for mixed charts", "status": 400}
+                all_cats = [str(c) for c in df[dimension].dropna().unique()[:15]]
+                bar_ds, line_ds = [], []
+                for i, m in enumerate(measures):
+                    if m not in df.columns:
+                        continue
+                    grp = df.groupby(dimension)[m].sum()
+                    vals = [round(float(grp.get(c, 0)), 2) for c in all_cats]
+                    if i == len(measures) - 1 and len(measures) > 1:
+                        line_ds.append({"label": m, "data": vals})
+                    else:
+                        bar_ds.append({"label": m, "data": vals})
+                config = _mixed_config(all_cats, bar_ds, line_ds, palette, x_label, y_label)
+            elif chart_type == "funnel":
+                if not dimension or not measure:
+                    return {"error": "dimension and measure are required for funnel charts", "status": 400}
+                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                config = _funnel_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette)
+            elif chart_type == "gauge":
+                if not measure:
+                    return {"error": "measure is required for gauge charts", "status": 400}
+                if measure not in df.columns:
+                    return {"error": "Selected measure not found in dataset", "status": 400}
+                val = float(df[measure].sum())
+                max_val = float(df[measure].max()) * len(df) if float(df[measure].max()) > 0 else val * 2
+                config = _gauge_config(val, 0, max_val or 1, measure, palette)
+            elif chart_type == "waterfall":
+                if not dimension or not measure:
+                    return {"error": "dimension and measure are required for waterfall charts", "status": 400}
+                top = df.groupby(dimension)[measure].sum().head(12)
+                config = _waterfall_config([str(l) for l in top.index.tolist()], [round(float(v), 2) for v in top.values.tolist()], measure, palette, x_label, y_label)
         except Exception as exc:
             return {"error": str(exc), "status": 500}
     if isinstance(config, dict):
@@ -951,3 +1039,94 @@ def dashboard_rename_widget(request: HttpRequest, dashboard_id: int, widget_id: 
     widget.save(update_fields=["title"])
 
     return JsonResponse({"success": True, "title": widget.title})
+
+
+@login_required
+def dashboard_reorder_widgets(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Reorder widgets by accepting an ordered list of widget IDs."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    ordered_ids = data.get("order", [])
+    if not isinstance(ordered_ids, list):
+        return JsonResponse({"error": "order must be a list of widget IDs"}, status=400)
+    widget_map = {w.id: w for w in dashboard.widgets.all()}
+    for pos, wid in enumerate(ordered_ids, start=1):
+        try:
+            wid = int(wid)
+        except (TypeError, ValueError):
+            continue
+        if wid in widget_map:
+            w = widget_map[wid]
+            w.position = pos
+            w.save(update_fields=["position"])
+    return JsonResponse({"success": True})
+
+
+@login_required
+def dashboard_add_text_canvas(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Create a freeform text canvas widget."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return JsonResponse({"error": "Content is required"}, status=400)
+    if len(content) > 4000:
+        return JsonResponse({"error": "Content too long (max 4000 chars)"}, status=400)
+
+    title = str(data.get("title", "Text Block")).strip()[:200] or "Text Block"
+    bg_color = str(data.get("bg_color", "white")).strip().lower()
+    if bg_color not in {"white", "slate", "indigo", "emerald", "rose", "amber", "yellow"}:
+        bg_color = "white"
+    text_size = str(data.get("text_size", "sm")).strip().lower()
+    if text_size not in {"xs", "sm", "base", "lg"}:
+        text_size = "sm"
+
+    max_pos = dashboard.widgets.order_by("-position").values_list("position", flat=True).first() or 0
+    config = {
+        "content": content,
+        "bg_color": bg_color,
+        "text_size": text_size,
+        "layout": {"size": "lg"},
+    }
+    widget = DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title=title,
+        widget_type="text_canvas",
+        position=max_pos + 1,
+        chart_config=config,
+    )
+    return JsonResponse({"success": True, "widget_id": widget.id})
+
+
+@login_required
+def dashboard_update_widget_span(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    """Update only the layout.size (column span) of a widget without page reload."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    size = data.get("size", "md").strip().lower()
+    if size not in {"sm", "md", "lg"}:
+        return JsonResponse({"error": "Invalid size"}, status=400)
+    cfg = widget.chart_config or {}
+    layout = cfg.get("layout", {})
+    layout["size"] = size
+    cfg["layout"] = layout
+    widget.chart_config = cfg
+    widget.save(update_fields=["chart_config"])
+    return JsonResponse({"success": True, "size": size})

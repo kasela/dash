@@ -453,11 +453,12 @@
   var cbEditingWidgetId = null;
   var cbPendingEdit = null;
 
-  var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar']);
-  var MULTI_MEASURE_TYPES = new Set(['bar', 'line']);
-  var SCATTER_TYPES = new Set(['scatter']);
-  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table']);
-  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table']);
+  var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar', 'bubble', 'mixed', 'waterfall', 'funnel']);
+  var MULTI_MEASURE_TYPES = new Set(['bar', 'line', 'mixed']);
+  var SCATTER_TYPES = new Set(['scatter', 'bubble']);
+  var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table', 'polararea', 'funnel', 'waterfall', 'mixed']);
+  var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table', 'polararea', 'funnel', 'gauge', 'waterfall', 'mixed']);
+  var PRO_TYPES = new Set(['bubble', 'polararea', 'mixed', 'funnel', 'gauge', 'waterfall']);
 
   function openChartBuilder(opts) {
     cbPendingEdit = opts || null;
@@ -675,8 +676,13 @@
     if (type === 'kpi' && measure) titleInput.value = 'Total ' + measure;
     else if (type === 'pie' && dim) titleInput.value = 'Distribution: ' + dim;
     else if (type === 'doughnut' && dim) titleInput.value = 'Breakdown: ' + dim;
-    else if (type === 'scatter' && xm && ym) titleInput.value = xm + ' vs ' + ym;
+    else if ((type === 'scatter' || type === 'bubble') && xm && ym) titleInput.value = xm + ' vs ' + ym;
     else if (type === 'radar' && dim) titleInput.value = dim + ' Radar';
+    else if (type === 'polararea' && dim) titleInput.value = 'Polar: ' + dim;
+    else if (type === 'funnel' && dim) titleInput.value = dim + ' Funnel';
+    else if (type === 'gauge' && measure) titleInput.value = measure + ' Gauge';
+    else if (type === 'waterfall' && dim) titleInput.value = dim + ' Waterfall';
+    else if (type === 'mixed' && dim) titleInput.value = dim + ' Overview';
     else if (dim && measure) titleInput.value = measure + ' by ' + dim;
   }
 
@@ -778,20 +784,24 @@
       showCbValidationError('Select a measure column for the KPI.');
       return false;
     }
-    if ((type === 'bar' || type === 'line') && (!dim || measures.length === 0)) {
+    if ((type === 'bar' || type === 'line' || type === 'mixed') && (!dim || measures.length === 0)) {
       showCbValidationError('Select a dimension and at least one measure column.');
       return false;
     }
-    if ((type === 'area' || type === 'hbar' || type === 'radar') && (!dim || !measure)) {
+    if ((type === 'area' || type === 'hbar' || type === 'radar' || type === 'funnel' || type === 'waterfall') && (!dim || !measure)) {
       showCbValidationError('Select both a dimension and a measure column.');
       return false;
     }
-    if ((type === 'pie' || type === 'doughnut') && !dim) {
+    if ((type === 'pie' || type === 'doughnut' || type === 'polararea') && !dim) {
       showCbValidationError('Select a dimension column for this chart.');
       return false;
     }
-    if (type === 'scatter' && (!xm || !ym)) {
-      showCbValidationError('Select both X and Y numeric columns for the scatter chart.');
+    if ((type === 'scatter' || type === 'bubble') && (!xm || !ym)) {
+      showCbValidationError('Select both X and Y numeric columns for the scatter/bubble chart.');
+      return false;
+    }
+    if (type === 'gauge' && !measure) {
+      showCbValidationError('Select a measure column for the gauge.');
       return false;
     }
     if (type === 'table' && !dim && measures.length === 0) {
@@ -987,67 +997,446 @@
       });
   }
 
-  function initWidgetResize() {
-    var cfg = getApiConfig();
-    if (!cfg) return;
-    document.querySelectorAll('.widget-size-select').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        var widgetId = sel.dataset.widgetId;
-        fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-          body: JSON.stringify({ size: sel.value }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (!data.success) throw new Error(data.error || 'Resize failed');
-            showToast('Card resized — reloading…', 'success');
-            setTimeout(function () { window.location.reload(); }, 400);
-          })
-          .catch(function (err) { showToast(err.message, 'error'); });
-      });
-    });
-  }
+  // ── Dynamic Drag Resize (height) ─────────────────────────────────────────
 
   function initWidgetDragResize() {
     var cfg = getApiConfig();
     if (!cfg) return;
+
     document.querySelectorAll('.widget-resize-handle').forEach(function (handle) {
-      handle.addEventListener('mousedown', function (e) {
-        e.preventDefault();
-        var widgetId = handle.dataset.widgetId;
+      var widgetId = handle.dataset.widgetId;
+
+      function startResize(startY) {
         var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
         if (!card) return;
         var wrap = card.querySelector('.widget-chart-wrap');
-        var startY = e.clientY;
-        var startHeight = wrap ? wrap.offsetHeight : card.offsetHeight;
-        function onMove(ev) {
-          var next = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
+        var startHeight = wrap ? wrap.offsetHeight : (card.offsetHeight || 260);
+        card.style.userSelect = 'none';
+
+        // Live resize indicator
+        var indicator = document.createElement('div');
+        indicator.className = 'resize-indicator';
+        indicator.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#a78bfa);border-radius:0 0 1rem 1rem;opacity:0.8;pointer-events:none;z-index:5;transition:none;';
+        card.appendChild(indicator);
+
+        function doResize(currentY) {
+          var next = Math.max(140, Math.min(1200, startHeight + (currentY - startY)));
           if (wrap) wrap.style.height = next + 'px';
-          card.style.minHeight = next + 'px';
+          card.style.minHeight = (next + 60) + 'px';
+          // Update chart if exists
+          var entry = widgetCharts[widgetId];
+          if (entry && entry.chart) {
+            try { entry.chart.resize(); } catch (_) {}
+          }
         }
-        function onUp(ev) {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-          var finalHeight = Math.max(180, Math.min(900, startHeight + (ev.clientY - startY)));
-          var sizeSel = card.querySelector('.widget-size-select');
-          var size = sizeSel ? sizeSel.value : 'md';
+
+        function endResize(finalY) {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          document.removeEventListener('touchmove', onTouchMove);
+          document.removeEventListener('touchend', onTouchEnd);
+          card.style.userSelect = '';
+          if (indicator.parentElement) indicator.remove();
+          var finalHeight = Math.max(140, Math.min(1200, startHeight + (finalY - startY)));
+          var currentSize = card.dataset.widgetSize || 'md';
           fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-            body: JSON.stringify({ size: size, height: finalHeight }),
+            body: JSON.stringify({ size: currentSize, height: finalHeight }),
           })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-              if (!data.success) throw new Error(data.error || 'Could not save resize');
-              showToast('Widget size saved', 'success');
+              if (!data.success) showToast(data.error || 'Resize failed', 'error');
             })
-            .catch(function (err) { showToast(err.message, 'error'); });
+            .catch(function () {});
         }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+
+        function onMouseMove(e) { doResize(e.clientY); }
+        function onMouseUp(e) { endResize(e.clientY); }
+        function onTouchMove(e) { if (e.touches[0]) doResize(e.touches[0].clientY); }
+        function onTouchEnd(e) {
+          var y = e.changedTouches[0] ? e.changedTouches[0].clientY : startY;
+          endResize(y);
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('touchmove', onTouchMove, { passive: true });
+        document.addEventListener('touchend', onTouchEnd);
+      }
+
+      handle.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        startResize(e.clientY);
+      });
+
+      handle.addEventListener('touchstart', function (e) {
+        if (e.touches[0]) startResize(e.touches[0].clientY);
+      }, { passive: true });
+    });
+  }
+
+  // ── Widget Width Toggle (sm / md / lg) ────────────────────────────────────
+
+  function initWidgetWidthToggle() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    document.querySelectorAll('.widget-width-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var widgetId = btn.dataset.widgetId;
+        var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (!card) return;
+
+        var current = card.dataset.widgetSize || 'md';
+        var next = current === 'sm' ? 'md' : (current === 'md' ? 'lg' : 'sm');
+
+        // Update CSS classes
+        card.classList.remove('sm:col-span-1', 'sm:col-span-2', 'col-span-full');
+        if (next === 'lg') card.classList.add('sm:col-span-2');
+        else card.classList.add('sm:col-span-1');
+
+        card.dataset.widgetSize = next;
+        btn.title = 'Width: ' + next.toUpperCase();
+        btn.querySelector('.width-label') && (btn.querySelector('.width-label').textContent = next.toUpperCase());
+
+        // Save to backend
+        fetch(cfg.widgetSpanBaseUrl + widgetId + '/span/', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ size: next }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.success) {
+              var entry = widgetCharts[widgetId];
+              if (entry && entry.chart) setTimeout(function () { try { entry.chart.resize(); } catch (_) {} }, 100);
+            }
+          })
+          .catch(function () {});
+      });
+    });
+  }
+
+  // ── Drag-and-Drop Widget Reorder ─────────────────────────────────────────
+
+  function initWidgetDragOrder() {
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.reorderWidgetsUrl) return;
+
+    var grid = document.getElementById('widgets-grid');
+    if (!grid) return;
+
+    var dragSrc = null;
+
+    function getCards() { return Array.from(grid.querySelectorAll('.widget-card')); }
+
+    function saveOrder() {
+      var ids = getCards().map(function (c) { return parseInt(c.dataset.widgetId, 10); });
+      fetch(cfg.reorderWidgetsUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ order: ids }),
+      }).catch(function () {});
+    }
+
+    grid.addEventListener('dragstart', function (e) {
+      var card = e.target.closest('.widget-card');
+      if (!card) return;
+      dragSrc = card;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.widgetId);
+    });
+
+    grid.addEventListener('dragend', function (e) {
+      var card = e.target.closest('.widget-card');
+      if (card) card.style.opacity = '';
+      grid.querySelectorAll('.widget-card').forEach(function (c) {
+        c.classList.remove('drag-over');
+      });
+      dragSrc = null;
+      saveOrder();
+    });
+
+    grid.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var card = e.target.closest('.widget-card');
+      if (!card || card === dragSrc) return;
+      grid.querySelectorAll('.widget-card').forEach(function (c) { c.classList.remove('drag-over'); });
+      card.classList.add('drag-over');
+    });
+
+    grid.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var card = e.target.closest('.widget-card');
+      if (!card || !dragSrc || card === dragSrc) return;
+      var cards = getCards();
+      var srcIdx = cards.indexOf(dragSrc);
+      var dstIdx = cards.indexOf(card);
+      if (srcIdx < 0 || dstIdx < 0) return;
+      if (srcIdx < dstIdx) {
+        card.after(dragSrc);
+      } else {
+        card.before(dragSrc);
+      }
+      grid.querySelectorAll('.widget-card').forEach(function (c) { c.classList.remove('drag-over'); });
+    });
+
+    // Make cards draggable via drag handle
+    getCards().forEach(function (card) {
+      var handle = card.querySelector('.widget-drag-handle');
+      if (handle) {
+        handle.addEventListener('mouseenter', function () { card.setAttribute('draggable', 'true'); });
+        handle.addEventListener('mouseleave', function () { if (!dragSrc) card.setAttribute('draggable', 'false'); });
+      }
+    });
+  }
+
+  // ── Presentation Mode ────────────────────────────────────────────────────
+
+  var presentationChart = null;
+  var presentationWidgets = [];
+  var presentationIndex = 0;
+
+  function initPresentationMode() {
+    var openBtn = document.getElementById('open-presentation-btn');
+    var overlay = document.getElementById('presentation-overlay');
+    var closeBtn = document.getElementById('presentation-close-btn');
+    var prevBtn = document.getElementById('presentation-prev-btn');
+    var nextBtn = document.getElementById('presentation-next-btn');
+    var counterEl = document.getElementById('presentation-counter');
+    var titleEl = document.getElementById('presentation-widget-title');
+    var canvas = document.getElementById('presentation-canvas');
+    var tableWrap = document.getElementById('presentation-table-wrap');
+    var kpiWrap = document.getElementById('presentation-kpi-wrap');
+    var textWrap = document.getElementById('presentation-text-wrap');
+
+    if (!openBtn || !overlay) return;
+
+    function buildWidgetList() {
+      presentationWidgets = Array.from(document.querySelectorAll('.widget-card')).map(function (card) {
+        return card.dataset.widgetId;
+      }).filter(Boolean);
+    }
+
+    function renderSlide(index) {
+      if (!presentationWidgets.length) return;
+      presentationIndex = Math.max(0, Math.min(index, presentationWidgets.length - 1));
+      var widgetId = presentationWidgets[presentationIndex];
+      var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+
+      if (counterEl) counterEl.textContent = (presentationIndex + 1) + ' / ' + presentationWidgets.length;
+      if (prevBtn) prevBtn.disabled = presentationIndex === 0;
+      if (nextBtn) nextBtn.disabled = presentationIndex === presentationWidgets.length - 1;
+
+      // Get title
+      var titleText = '';
+      if (card) {
+        var titleNode = card.querySelector('.widget-title');
+        if (titleNode) titleText = titleNode.textContent.trim();
+      }
+      if (titleEl) titleEl.textContent = titleText;
+
+      // Destroy previous chart
+      if (presentationChart) { try { presentationChart.destroy(); } catch (_) {} presentationChart = null; }
+      if (canvas) canvas.style.display = 'none';
+      if (tableWrap) { tableWrap.style.display = 'none'; tableWrap.innerHTML = ''; }
+      if (kpiWrap) { kpiWrap.style.display = 'none'; kpiWrap.innerHTML = ''; }
+      if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; }
+
+      var entry = widgetCharts[widgetId];
+      if (entry && entry.config && canvas) {
+        canvas.style.display = 'block';
+        var cfg = JSON.parse(JSON.stringify(entry.config));
+        if (!cfg.options) cfg.options = {};
+        cfg.options.responsive = true;
+        cfg.options.maintainAspectRatio = false;
+        cfg.options.animation = { duration: 400, easing: 'easeInOutQuart' };
+        try { presentationChart = new Chart(canvas, cfg); } catch (_) {}
+        return;
+      }
+
+      // KPI or table widget
+      if (card) {
+        var kpiEl = card.querySelector('.widget-kpi-value');
+        if (kpiEl && kpiWrap) {
+          kpiWrap.style.display = 'flex';
+          kpiWrap.innerHTML = kpiEl.parentElement.innerHTML;
+          return;
+        }
+        var tbl = card.querySelector('table');
+        if (tbl && tableWrap) {
+          tableWrap.style.display = 'block';
+          tableWrap.innerHTML = tbl.parentElement.innerHTML;
+          return;
+        }
+        var textContent = card.querySelector('.widget-text-canvas-content');
+        if (textContent && textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.innerHTML = textContent.innerHTML;
+          return;
+        }
+      }
+    }
+
+    openBtn.addEventListener('click', function () {
+      buildWidgetList();
+      if (!presentationWidgets.length) { showToast('No widgets to present', 'info'); return; }
+      overlay.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      renderSlide(0);
+    });
+
+    function closePresentation() {
+      overlay.style.display = 'none';
+      document.body.style.overflow = '';
+      if (presentationChart) { try { presentationChart.destroy(); } catch (_) {} presentationChart = null; }
+    }
+
+    if (closeBtn) closeBtn.addEventListener('click', closePresentation);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closePresentation(); });
+    if (prevBtn) prevBtn.addEventListener('click', function () { renderSlide(presentationIndex - 1); });
+    if (nextBtn) nextBtn.addEventListener('click', function () { renderSlide(presentationIndex + 1); });
+
+    document.addEventListener('keydown', function (e) {
+      if (overlay.style.display === 'none' || overlay.style.display === '') return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') renderSlide(presentationIndex - 1);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') renderSlide(presentationIndex + 1);
+      if (e.key === 'Escape') closePresentation();
+    });
+  }
+
+  // ── Text Canvas Builder ──────────────────────────────────────────────────
+
+  function initTextCanvasBuilder() {
+    var cfg = getApiConfig();
+    if (!cfg || !cfg.addTextCanvasUrl) return;
+
+    var openBtn = document.getElementById('open-text-canvas-btn');
+    var modal = document.getElementById('text-canvas-modal');
+    var overlay = document.getElementById('text-canvas-overlay');
+    var closeBtn = document.getElementById('close-text-canvas-btn');
+    var cancelBtn = document.getElementById('cancel-text-canvas-btn');
+    var submitBtn = document.getElementById('submit-text-canvas-btn');
+    var contentInput = document.getElementById('tc-content');
+    var titleInput = document.getElementById('tc-title');
+    var errorEl = document.getElementById('tc-error');
+
+    if (!openBtn || !modal) return;
+
+    function openModal() {
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+      if (contentInput) contentInput.value = '';
+      if (titleInput) titleInput.value = '';
+      modal.style.display = 'block';
+      if (overlay) overlay.style.display = 'block';
+      setTimeout(function () { if (contentInput) contentInput.focus(); }, 20);
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    openBtn.addEventListener('click', openModal);
+    if (overlay) overlay.addEventListener('click', closeModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function () {
+        var content = contentInput ? contentInput.value.trim() : '';
+        if (!content) {
+          if (errorEl) { errorEl.textContent = 'Content is required.'; errorEl.style.display = 'block'; }
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Adding…';
+
+        fetch(cfg.addTextCanvasUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({
+            title: (titleInput ? titleInput.value.trim() : '') || 'Text Block',
+            content: content,
+            bg_color: (document.getElementById('tc-bg-color') || {}).value || 'white',
+            text_size: (document.getElementById('tc-text-size') || {}).value || 'sm',
+          }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add Text Block';
+            if (data.success) {
+              closeModal();
+              showToast('Text block added — reloading…', 'success');
+              setTimeout(function () { window.location.reload(); }, 600);
+            } else {
+              if (errorEl) { errorEl.textContent = data.error || 'Could not add text block.'; errorEl.style.display = 'block'; }
+            }
+          })
+          .catch(function (err) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add Text Block';
+            if (errorEl) { errorEl.textContent = 'Network error: ' + err.message; errorEl.style.display = 'block'; }
+          });
+      });
+    }
+  }
+
+  // ── Table Sort & Search ──────────────────────────────────────────────────
+
+  function initTableInteractions() {
+    document.querySelectorAll('.widget-table-wrap').forEach(function (wrap) {
+      var table = wrap.querySelector('table');
+      if (!table) return;
+
+      // Search filter
+      var searchInput = wrap.querySelector('.table-search-input');
+      if (searchInput) {
+        searchInput.addEventListener('input', function () {
+          var query = searchInput.value.toLowerCase();
+          table.querySelectorAll('tbody tr').forEach(function (row) {
+            var text = row.textContent.toLowerCase();
+            row.style.display = text.includes(query) ? '' : 'none';
+          });
+        });
+      }
+
+      // Column sort
+      table.querySelectorAll('th[data-sort-col]').forEach(function (th) {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', function () {
+          var colIdx = parseInt(th.dataset.sortCol, 10);
+          var asc = th.dataset.sortDir !== 'asc';
+          th.dataset.sortDir = asc ? 'asc' : 'desc';
+
+          // Reset other headers
+          table.querySelectorAll('th[data-sort-col]').forEach(function (h) {
+            if (h !== th) { h.dataset.sortDir = ''; h.querySelector('.sort-icon') && (h.querySelector('.sort-icon').textContent = '↕'); }
+          });
+          th.querySelector('.sort-icon') && (th.querySelector('.sort-icon').textContent = asc ? '↑' : '↓');
+
+          var tbody = table.querySelector('tbody');
+          if (!tbody) return;
+          var rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort(function (a, b) {
+            var va = (a.cells[colIdx] || {}).textContent || '';
+            var vb = (b.cells[colIdx] || {}).textContent || '';
+            var na = parseFloat(va.replace(/,/g, ''));
+            var nb = parseFloat(vb.replace(/,/g, ''));
+            if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+          });
+          rows.forEach(function (row) { tbody.appendChild(row); });
+        });
       });
     });
   }
@@ -1382,12 +1771,16 @@
     initMaximize();
     initDownloadButtons();
     initChartBuilder();
-    initWidgetResize();
     initWidgetDragResize();
+    initWidgetWidthToggle();
+    initWidgetDragOrder();
     initWidgetEdit();
     initDashboardRename();
     initHeadingBuilder();
     initDatasetsPanel();
+    initPresentationMode();
+    initTextCanvasBuilder();
+    initTableInteractions();
   });
 
 })();

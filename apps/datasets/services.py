@@ -591,6 +591,245 @@ def _radar_config(labels: list, values: list, label: str, palette: str = "indigo
     }
 
 
+def _bubble_config(data_points: list[dict], label: str, palette: str = "indigo",
+                   x_label: str = "", y_label: str = "") -> dict:
+    """Bubble chart: data_points = [{"x": ..., "y": ..., "r": ...}, ...]"""
+    colors = _resolve_palette(palette, 1)
+    color = colors[0]
+    return {
+        "type": "bubble",
+        "data": {
+            "datasets": [{
+                "label": label,
+                "data": data_points,
+                "backgroundColor": color + "88",
+                "borderColor": color,
+                "borderWidth": 1.5,
+                "hoverBackgroundColor": color + "bb",
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _polararea_config(labels: list, values: list, palette: str = "indigo") -> dict:
+    """Polar area chart – like pie but segment radius encodes value."""
+    colors = _resolve_palette(palette, len(labels))
+    return {
+        "type": "polarArea",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "data": values,
+                "backgroundColor": [c + "cc" for c in colors],
+                "borderColor": colors,
+                "borderWidth": 2,
+                "hoverBackgroundColor": colors,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b", "padding": 14}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": {
+                "r": {
+                    "ticks": {"color": "#94a3b8", "backdropColor": "transparent", "font": {"size": 10}},
+                    "grid": {"color": "rgba(0,0,0,0.07)"},
+                }
+            },
+        },
+    }
+
+
+def _mixed_config(labels: list, bar_datasets: list[dict], line_datasets: list[dict],
+                  palette: str = "indigo", x_label: str = "", y_label: str = "") -> dict:
+    """Mixed bar + line chart."""
+    chart_datasets = []
+    bar_colors = _MULTI_COLORS
+    line_colors = ["#f43f5e", "#10b981", "#f59e0b", "#3b82f6"]
+    for i, ds in enumerate(bar_datasets):
+        color = bar_colors[i % len(bar_colors)]
+        chart_datasets.append({
+            "type": "bar",
+            "label": ds["label"],
+            "data": ds["data"],
+            "backgroundColor": color + "bb",
+            "borderColor": color,
+            "borderWidth": 1,
+            "borderRadius": 4,
+            "borderSkipped": False,
+        })
+    for i, ds in enumerate(line_datasets):
+        color = line_colors[i % len(line_colors)]
+        chart_datasets.append({
+            "type": "line",
+            "label": ds["label"],
+            "data": ds["data"],
+            "borderColor": color,
+            "backgroundColor": color + "22",
+            "tension": 0.4,
+            "fill": False,
+            "pointRadius": 4,
+            "pointHoverRadius": 6,
+            "pointBackgroundColor": color,
+            "pointBorderColor": "#ffffff",
+            "pointBorderWidth": 2,
+            "borderWidth": 2.5,
+            "yAxisID": "y1" if i > 0 else "y",
+        })
+    return {
+        "type": "bar",
+        "data": {"labels": labels, "datasets": chart_datasets},
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": True, "position": "top", "labels": {"color": "#475569", "font": {"size": 12}}},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": _scale_opts(x_label, y_label),
+        },
+    }
+
+
+def _funnel_config(labels: list, values: list, label: str, palette: str = "indigo") -> dict:
+    """Funnel chart – simulated using descending horizontal bars."""
+    pairs = sorted(zip(labels, values), key=lambda x: -x[1])
+    sorted_labels = [p[0] for p in pairs]
+    sorted_values = [p[1] for p in pairs]
+    colors = _resolve_palette(palette, len(sorted_labels))
+    return {
+        "type": "bar",
+        "data": {
+            "labels": sorted_labels,
+            "datasets": [{
+                "label": label,
+                "data": sorted_values,
+                "backgroundColor": colors,
+                "borderRadius": 4,
+                "borderSkipped": False,
+            }],
+        },
+        "options": {
+            "indexAxis": "y",
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": {
+                "x": {"grid": {"display": False}, "ticks": {"color": "#94a3b8"}},
+                "y": {"grid": {"display": False}, "ticks": {"color": "#475569", "font": {"weight": "600"}}},
+            },
+        },
+        "_widget_hint": "funnel",
+    }
+
+
+def _gauge_config(value: float, min_val: float, max_val: float, label: str, palette: str = "indigo") -> dict:
+    """Gauge chart – doughnut half showing a single value."""
+    colors = _resolve_palette(palette, 1)
+    color = colors[0]
+    pct = max(0.0, min(1.0, (value - min_val) / (max_val - min_val) if max_val != min_val else 0))
+    fill_val = round(pct * 100, 1)
+    return {
+        "type": "doughnut",
+        "data": {
+            "labels": [label, ""],
+            "datasets": [{
+                "data": [fill_val, 100 - fill_val],
+                "backgroundColor": [color, "#e2e8f0"],
+                "borderWidth": 0,
+                "cutout": "78%",
+                "circumference": 180,
+                "rotation": -90,
+            }],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": {"enabled": False},
+            },
+        },
+        "gauge_meta": {"value": value, "min": min_val, "max": max_val, "label": label},
+    }
+
+
+def _waterfall_config(labels: list, values: list, label: str, palette: str = "indigo",
+                      x_label: str = "", y_label: str = "") -> dict:
+    """Waterfall chart using stacked bars (transparent base + positive/negative bars)."""
+    colors = _resolve_palette(palette, 2)
+    pos_color = colors[0]
+    neg_color = "#f43f5e"
+    bar_colors = [pos_color if v >= 0 else neg_color for v in values]
+    running = 0.0
+    bases = []
+    for v in values:
+        if v >= 0:
+            bases.append(round(running, 4))
+        else:
+            bases.append(round(running + v, 4))
+        running += v
+    abs_values = [abs(v) for v in values]
+    return {
+        "type": "bar",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": "_base",
+                    "data": bases,
+                    "backgroundColor": "rgba(0,0,0,0)",
+                    "borderColor": "rgba(0,0,0,0)",
+                    "stack": "s",
+                    "borderSkipped": False,
+                },
+                {
+                    "label": label,
+                    "data": abs_values,
+                    "backgroundColor": bar_colors,
+                    "borderRadius": 4,
+                    "borderSkipped": False,
+                    "stack": "s",
+                },
+            ],
+        },
+        "options": {
+            "responsive": True,
+            "maintainAspectRatio": False,
+            "animation": _ANIMATION_OPTS,
+            "plugins": {
+                "legend": {"display": False},
+                "tooltip": _TOOLTIP_OPTS,
+            },
+            "scales": {
+                "x": {"grid": {"display": False}, "stacked": True, "ticks": {"color": "#94a3b8"}},
+                "y": {"stacked": True, "grid": {"color": "rgba(0,0,0,0.05)"}, "ticks": {"color": "#94a3b8"}},
+            },
+        },
+        "_widget_hint": "waterfall",
+    }
+
+
 def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     """Read the saved dataset file and generate real chart widget specs."""
     from pathlib import Path
