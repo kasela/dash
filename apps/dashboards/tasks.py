@@ -384,7 +384,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Bar chart ─────────────────────────────────────────────────────
             elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(10)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _bar_config(labels, values, measure, palette)
@@ -397,7 +397,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Horizontal bar ────────────────────────────────────────────────
             elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(10)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _hbar_config(labels, values, measure, palette)
@@ -449,7 +449,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Pie / Doughnut ────────────────────────────────────────────────
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
                 vc = (
-                    df.groupby(dimension)[measure].sum().nlargest(6)
+                    pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(6)
                     if measure and measure in df.columns
                     else df[dimension].value_counts().head(6)
                 )
@@ -480,7 +480,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Radar ─────────────────────────────────────────────────────────
             elif chart_type == "radar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = df.groupby(dimension)[measure].sum().nlargest(8)
+                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _radar_config(labels, values, measure, palette)
