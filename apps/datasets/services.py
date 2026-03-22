@@ -424,20 +424,23 @@ def fetch_from_url(url: str) -> "ParsedPreview":
 # ── Chart palettes ─────────────────────────────────────────────────────────────
 
 PALETTES = {
-    "indigo":  ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#9061f9", "#a855f7", "#d946ef"],
-    "blue":    ["#3b82f6", "#60a5fa", "#93c5fd", "#1d4ed8", "#2563eb", "#0ea5e9", "#38bdf8", "#7dd3fc", "#1e40af", "#172554"],
-    "emerald": ["#10b981", "#34d399", "#6ee7b7", "#059669", "#065f46", "#14b8a6", "#2dd4bf", "#5eead4", "#0f766e", "#134e4a"],
-    "rose":    ["#f43f5e", "#fb7185", "#fda4af", "#e11d48", "#9f1239", "#f97316", "#fb923c", "#fdba74", "#ea580c", "#7c2d12"],
-    "amber":   ["#f59e0b", "#fbbf24", "#fcd34d", "#d97706", "#92400e", "#eab308", "#facc15", "#fde047", "#ca8a04", "#713f12"],
-    "slate":   ["#475569", "#64748b", "#94a3b8", "#1e293b", "#334155", "#6b7280", "#9ca3af", "#d1d5db", "#374151", "#111827"],
-    "vibrant": ["#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#3b82f6", "#8b5cf6", "#14b8a6", "#fb923c", "#84cc16", "#ec4899"],
-    "ocean":   ["#0ea5e9", "#06b6d4", "#22d3ee", "#0284c7", "#0369a1", "#38bdf8", "#67e8f9", "#0891b2", "#155e75", "#164e63"],
-    "sunset":  ["#f97316", "#ef4444", "#ec4899", "#a855f7", "#f59e0b", "#fb923c", "#f43f5e", "#d946ef", "#e11d48", "#9333ea"],
-    "mono":    ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#334155", "#0f172a", "#475569"],
-    "neon":    ["#22d3ee", "#a3e635", "#fb923c", "#f472b6", "#c084fc", "#34d399", "#fbbf24", "#f87171", "#60a5fa", "#4ade80"],
+    "indigo":   ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#9061f9", "#a855f7", "#d946ef"],
+    "blue":     ["#3b82f6", "#60a5fa", "#93c5fd", "#1d4ed8", "#2563eb", "#0ea5e9", "#38bdf8", "#7dd3fc", "#1e40af", "#172554"],
+    "emerald":  ["#10b981", "#34d399", "#6ee7b7", "#059669", "#065f46", "#14b8a6", "#2dd4bf", "#5eead4", "#0f766e", "#134e4a"],
+    "rose":     ["#f43f5e", "#fb7185", "#fda4af", "#e11d48", "#9f1239", "#f97316", "#fb923c", "#fdba74", "#ea580c", "#7c2d12"],
+    "amber":    ["#f59e0b", "#fbbf24", "#fcd34d", "#d97706", "#92400e", "#eab308", "#facc15", "#fde047", "#ca8a04", "#713f12"],
+    "slate":    ["#475569", "#64748b", "#94a3b8", "#1e293b", "#334155", "#6b7280", "#9ca3af", "#d1d5db", "#374151", "#111827"],
+    "vibrant":  ["#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#3b82f6", "#8b5cf6", "#14b8a6", "#fb923c", "#84cc16", "#ec4899"],
+    "ocean":    ["#0ea5e9", "#06b6d4", "#22d3ee", "#0284c7", "#0369a1", "#38bdf8", "#67e8f9", "#0891b2", "#155e75", "#164e63"],
+    "sunset":   ["#f97316", "#ef4444", "#ec4899", "#a855f7", "#f59e0b", "#fb923c", "#f43f5e", "#d946ef", "#e11d48", "#9333ea"],
+    "mono":     ["#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#334155", "#0f172a", "#475569"],
+    "neon":     ["#22d3ee", "#a3e635", "#fb923c", "#f472b6", "#c084fc", "#34d399", "#fbbf24", "#f87171", "#60a5fa", "#4ade80"],
+    "tropical": ["#06d6a0", "#118ab2", "#ffd166", "#ef476f", "#073b4c", "#00b4d8", "#90e0ef", "#f72585", "#7209b7", "#3a0ca3"],
+    "candy":    ["#ff6b9d", "#c44dff", "#48c9b0", "#f7dc6f", "#ff8c42", "#6c5ce7", "#fd79a8", "#00cec9", "#fdcb6e", "#e17055"],
+    "aurora":   ["#7400b8", "#6930c3", "#5e60ce", "#5390d9", "#4ea8de", "#48bfe3", "#56cfe1", "#64dfdf", "#72efdd", "#80ffdb"],
 }
 
-DEFAULT_PALETTE = PALETTES["indigo"]
+DEFAULT_PALETTE = PALETTES["vibrant"]
 
 _MULTI_COLORS = [
     "#6366f1", "#10b981", "#f59e0b", "#f43f5e", "#3b82f6", "#8b5cf6",
@@ -446,24 +449,24 @@ _MULTI_COLORS = [
 
 
 _TOOLTIP_OPTS = {
-    "backgroundColor": "rgba(15,23,42,0.94)",
+    "backgroundColor": "rgba(10,10,20,0.92)",
     "titleColor": "#f8fafc",
-    "bodyColor": "#cbd5e1",
-    "borderColor": "rgba(99,102,241,0.35)",
+    "bodyColor": "#e2e8f0",
+    "borderColor": "rgba(99,102,241,0.5)",
     "borderWidth": 1,
-    "padding": 12,
-    "cornerRadius": 10,
+    "padding": 14,
+    "cornerRadius": 12,
     "displayColors": True,
     "boxWidth": 10,
     "boxHeight": 10,
     "caretSize": 6,
-    "titleFont": {"size": 12, "weight": "600"},
+    "titleFont": {"size": 12, "weight": "700"},
     "bodyFont": {"size": 12},
 }
 
 _ANIMATION_OPTS = {
-    "duration": 700,
-    "easing": "easeInOutCubic",
+    "duration": 900,
+    "easing": "easeOutQuart",
 }
 
 _LEGEND_OPTS = {
@@ -588,7 +591,7 @@ def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
     return result
 
 
-def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",
+def _bar_config(labels: list, values: list, label: str, palette: str = "vibrant",
                 x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
     human_label = _humanize_col(label)
@@ -600,11 +603,13 @@ def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",
                 "label": human_label,
                 "data": values,
                 "backgroundColor": colors,
-                "borderRadius": 8,
+                "borderRadius": 10,
                 "borderSkipped": False,
-                "hoverBackgroundColor": [c + "dd" for c in colors],
-                "hoverBorderColor": [c for c in colors],
-                "hoverBorderWidth": 2,
+                "borderWidth": 0,
+                "barPercentage": 0.72,
+                "categoryPercentage": 0.8,
+                "hoverBackgroundColor": [c + "cc" for c in colors],
+                "hoverBorderWidth": 0,
             }],
         },
         "options": {
@@ -652,7 +657,7 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
     }
 
 
-def _line_config(labels: list, values: list, label: str, palette: str = "indigo",
+def _line_config(labels: list, values: list, label: str, palette: str = "aurora",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
@@ -665,15 +670,15 @@ def _line_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "label": human_label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "18",
-                "tension": 0.45,
+                "backgroundColor": border + "22",
+                "tension": 0.42,
                 "fill": False,
                 "pointRadius": 4,
-                "pointHoverRadius": 7,
+                "pointHoverRadius": 8,
                 "pointBackgroundColor": border,
                 "pointBorderColor": "#ffffff",
                 "pointBorderWidth": 2.5,
-                "borderWidth": 2.5,
+                "borderWidth": 3,
                 "spanGaps": True,
             }],
         },
@@ -728,7 +733,7 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
     }
 
 
-def _area_config(labels: list, values: list, label: str, palette: str = "indigo",
+def _area_config(labels: list, values: list, label: str, palette: str = "tropical",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
@@ -745,18 +750,18 @@ def _area_config(labels: list, values: list, label: str, palette: str = "indigo"
                     "type": "linear",
                     "x": 0, "y": 0, "x2": 0, "y2": 1,
                     "colorStops": [
-                        {"offset": 0, "color": border + "55"},
-                        {"offset": 1, "color": border + "05"},
+                        {"offset": 0, "color": border + "66"},
+                        {"offset": 1, "color": border + "08"},
                     ],
                 },
-                "tension": 0.45,
+                "tension": 0.42,
                 "fill": True,
                 "pointRadius": 4,
-                "pointHoverRadius": 7,
+                "pointHoverRadius": 8,
                 "pointBackgroundColor": border,
                 "pointBorderColor": "#ffffff",
                 "pointBorderWidth": 2.5,
-                "borderWidth": 2.5,
+                "borderWidth": 3,
                 "spanGaps": True,
             }],
         },
@@ -774,7 +779,7 @@ def _area_config(labels: list, values: list, label: str, palette: str = "indigo"
     }
 
 
-def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
+def _pie_config(labels: list, values: list, palette: str = "vibrant") -> dict:
     colors = _resolve_palette(palette, len(labels))
     return {
         "type": "pie",
@@ -783,11 +788,12 @@ def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 12,
-                "borderWidth": 3,
+                "hoverOffset": 16,
+                "borderWidth": 2,
                 "borderColor": "#ffffff",
                 "hoverBorderColor": "#ffffff",
                 "hoverBorderWidth": 3,
+                "offset": 4,
             }],
         },
         "options": {
@@ -811,7 +817,7 @@ def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
     }
 
 
-def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dict:
+def _doughnut_config(labels: list, values: list, palette: str = "candy") -> dict:
     colors = _resolve_palette(palette, len(labels))
     return {
         "type": "doughnut",
@@ -820,17 +826,18 @@ def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dic
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 12,
-                "borderWidth": 3,
+                "hoverOffset": 16,
+                "borderWidth": 2,
                 "borderColor": "#ffffff",
                 "hoverBorderColor": "#ffffff",
                 "hoverBorderWidth": 3,
+                "offset": 4,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "cutout": "70%",
+            "cutout": "72%",
             "animation": _ANIMATION_OPTS,
             "plugins": {
                 "legend": {
@@ -849,7 +856,7 @@ def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dic
     }
 
 
-def _hbar_config(labels: list, values: list, label: str, palette: str = "indigo",
+def _hbar_config(labels: list, values: list, label: str, palette: str = "tropical",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
     human_label = _humanize_col(label)
@@ -861,11 +868,13 @@ def _hbar_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "label": human_label,
                 "data": values,
                 "backgroundColor": colors,
-                "borderRadius": 5,
+                "borderRadius": 8,
                 "borderSkipped": False,
-                "hoverBackgroundColor": [c + "dd" for c in colors],
-                "hoverBorderColor": colors,
-                "hoverBorderWidth": 2,
+                "borderWidth": 0,
+                "barPercentage": 0.75,
+                "categoryPercentage": 0.85,
+                "hoverBackgroundColor": [c + "cc" for c in colors],
+                "hoverBorderWidth": 0,
             }],
         },
         "options": {
@@ -912,7 +921,7 @@ def _scatter_config(x_values: list, y_values: list, x_label: str = "", y_label: 
     }
 
 
-def _radar_config(labels: list, values: list, label: str, palette: str = "indigo") -> dict:
+def _radar_config(labels: list, values: list, label: str, palette: str = "candy") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
     return {
@@ -923,13 +932,13 @@ def _radar_config(labels: list, values: list, label: str, palette: str = "indigo
                 "label": label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "28",
-                "pointRadius": 4,
-                "pointHoverRadius": 6,
+                "backgroundColor": border + "33",
+                "pointRadius": 5,
+                "pointHoverRadius": 7,
                 "pointBackgroundColor": border,
                 "pointBorderColor": "#ffffff",
                 "pointBorderWidth": 2,
-                "borderWidth": 2,
+                "borderWidth": 2.5,
             }],
         },
         "options": {
@@ -943,8 +952,9 @@ def _radar_config(labels: list, values: list, label: str, palette: str = "indigo
             "scales": {
                 "r": {
                     "ticks": {"color": "#94a3b8", "backdropColor": "transparent", "font": {"size": 10}},
-                    "grid": {"color": "rgba(0,0,0,0.08)"},
-                    "pointLabels": {"color": "#64748b", "font": {"size": 11}},
+                    "grid": {"color": "rgba(148,163,184,0.15)"},
+                    "angleLines": {"color": "rgba(148,163,184,0.2)"},
+                    "pointLabels": {"color": "#64748b", "font": {"size": 11, "weight": "500"}},
                 }
             },
         },
@@ -2749,8 +2759,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         dim = profile.suggested_dimensions[0]
         measure = profile.suggested_measures[0]
         try:
-            top = df.groupby(dim)[measure].sum().nlargest(10)
-            bar_cfg = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, "indigo")
+            top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim]).sum().nlargest(10)
+            bar_cfg = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, "vibrant")
             bar_cfg["layout"] = {"size": "md"}
             bar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
             title = f"{_humanize_col(measure)} by {_humanize_col(dim)}"
@@ -2769,7 +2779,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
-                line_cfg = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "blue")
+                line_cfg = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "aurora")
                 line_cfg["layout"] = {"size": "lg"}
                 line_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
                 title = f"{_humanize_col(measure)} Trend Over Time"
@@ -2788,7 +2798,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
-                area_cfg = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "emerald")
+                area_cfg = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "tropical")
                 area_cfg["layout"] = {"size": "lg"}
                 area_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
                 title = f"{_humanize_col(measure)} Monthly Trend"
@@ -2816,7 +2826,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         dim2 = profile.suggested_dimensions[1]
         try:
             vc2 = df[dim2].value_counts().head(6)
-            doughnut_cfg = _doughnut_config([str(l) for l in vc2.index], [int(v) for v in vc2.values], "ocean")
+            doughnut_cfg = _doughnut_config([str(l) for l in vc2.index], [int(v) for v in vc2.values], "candy")
             doughnut_cfg["layout"] = {"size": "md"}
             doughnut_cfg["builder"] = _make_builder(dimension=dim2)
             title = f"{_humanize_col(dim2)} Breakdown"
@@ -2830,8 +2840,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         dim2 = profile.suggested_dimensions[1]
         measure = profile.suggested_measures[0]
         try:
-            top2 = df.groupby(dim2)[measure].sum().nlargest(10)
-            hbar_cfg = _hbar_config([str(l) for l in top2.index], [round(float(v), 2) for v in top2.values], measure, "amber")
+            top2 = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim2]).sum().nlargest(10)
+            hbar_cfg = _hbar_config([str(l) for l in top2.index], [round(float(v), 2) for v in top2.values], measure, "tropical")
             hbar_cfg["layout"] = {"size": "md"}
             hbar_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
             title = f"Top {_humanize_col(dim2)} by {_humanize_col(measure)}"
@@ -2864,9 +2874,9 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         dim = profile.suggested_dimensions[0]
         measure = profile.suggested_measures[0]
         try:
-            top_r = df.groupby(dim)[measure].sum().nlargest(8)
+            top_r = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim]).sum().nlargest(8)
             if len(top_r) >= 3:
-                radar_cfg = _radar_config([str(l) for l in top_r.index], [round(float(v), 2) for v in top_r.values], measure, "sunset")
+                radar_cfg = _radar_config([str(l) for l in top_r.index], [round(float(v), 2) for v in top_r.values], measure, "candy")
                 radar_cfg["layout"] = {"size": "md"}
                 radar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
                 title = f"{_humanize_col(measure)} Performance by {_humanize_col(dim)}"
@@ -2894,8 +2904,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         dim3 = profile.suggested_dimensions[2]
         measure = profile.suggested_measures[0]
         try:
-            top3 = df.groupby(dim3)[measure].sum().nlargest(8)
-            bar3_cfg = _bar_config([str(l) for l in top3.index], [round(float(v), 2) for v in top3.values], measure, "slate")
+            top3 = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim3]).sum().nlargest(8)
+            bar3_cfg = _bar_config([str(l) for l in top3.index], [round(float(v), 2) for v in top3.values], measure, "aurora")
             bar3_cfg["layout"] = {"size": "md"}
             bar3_cfg["builder"] = _make_builder(dimension=dim3, measures=[measure], measure=measure)
             title = f"{_humanize_col(measure)} by {_humanize_col(dim3)}"

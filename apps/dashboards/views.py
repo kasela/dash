@@ -448,7 +448,7 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=f"{dataset_version.dataset.name} Overview",
+        title=_humanize_col(dataset_version.dataset.name),
         build_status=Dashboard.BuildStatus.PENDING,
     )
     # Link as the primary dataset
