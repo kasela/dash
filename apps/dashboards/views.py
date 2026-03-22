@@ -37,6 +37,7 @@ from apps.datasets.services import (
     ai_suggest_slicers,
     ai_analyze_chart,
     ai_generate_dashboard_specs,
+    ai_generate_dashboard_title,
     _compute_kpi_trend,
 )
 
@@ -103,6 +104,7 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
         "dimensions": [str(c) for c in profile.categorical_columns[:80]],
         "measures": [str(c) for c in profile.numeric_columns[:80]],
         "allowed_chart_types": sorted(list(_VALID_CHART_TYPES - {"smart"})),
+        "sample_rows": min(int(len(df.index)), 50000),
     }
     api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
     if not api_key:
@@ -118,9 +120,23 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
                 {
                     "role": "system",
                     "content": (
-                        "You are a BI assistant. Return ONLY JSON with keys: "
-                        "chart_type, title, dimension, measures, x_measure, y_measure. "
-                        "chart_type must be one of allowed_chart_types."
+                        "You are an expert BI visualization assistant. Your goal is to recommend the most "
+                        "informative chart for the user's analysis intent, not just any valid chart.\n"
+                        "Return ONLY valid JSON (no markdown, no prose) with keys: "
+                        "chart_type, title, dimension, measures, x_measure, y_measure, suggestions.\n"
+                        "Rules:\n"
+                        "1) chart_type must be one of allowed_chart_types.\n"
+                        "2) Use only provided column names.\n"
+                        "3) Match chart to analytical intent (trend/comparison/distribution/composition/relationship).\n"
+                        "3b) Prioritize decision utility: choose charts that make next actions obvious.\n"
+                        "4) Prefer line/area for time trends, bar/hbar for ranked comparisons, "
+                        "scatter/bubble for relationships, pie/doughnut/polararea for simple part-to-whole with "
+                        "limited categories, KPI for single headline metrics, table for detail lookups.\n"
+                        "5) Avoid cluttered charts: if too many categories for pie-style views, choose bar or table.\n"
+                        "6) If prompt is vague, choose the most broadly useful and interpretable chart from available fields.\n"
+                        "7) Build a concise action-oriented title (<= 70 chars).\n"
+                        "8) suggestions should be a short list (max 3) of practical follow-up chart ideas as strings.\n"
+                        "9) If prompt mentions strategy/decision/action, bias toward variance, rank, and trend views."
                     ),
                 },
                 {"role": "user", "content": json.dumps(payload)},
@@ -418,10 +434,23 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
             )
             return redirect("app-home")
 
+    default_title = f"{dataset_version.dataset.name} Overview"
+    dashboard_title = default_title
+
+    # Try AI-powered dashboard generation first, fall back to heuristics
+    df = _load_df_from_version(dataset_version)
+    ai_specs = None
+    if df is not None:
+        profile = build_profile_summary(df)
+        ai_title = ai_generate_dashboard_title(df, profile, dataset_version.dataset.name)
+        if ai_title:
+            dashboard_title = ai_title
+        ai_specs = ai_generate_dashboard_specs(df, profile)
+
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=f"{dataset_version.dataset.name} Overview",
+        title=dashboard_title,
     )
     # Link as the primary dataset in the multi-dataset list
     DashboardDataset.objects.get_or_create(
@@ -429,13 +458,6 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         dataset_version=dataset_version,
         defaults={"label": dataset_version.dataset.name},
     )
-
-    # Try AI-powered dashboard generation first, fall back to heuristics
-    df = _load_df_from_version(dataset_version)
-    ai_specs = None
-    if df is not None:
-        profile = build_profile_summary(df)
-        ai_specs = ai_generate_dashboard_specs(df, profile)
 
     if ai_specs is not None and df is not None:
         widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile)

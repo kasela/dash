@@ -66,6 +66,18 @@
     <span class="hidden md:inline">Present</span>
   </button>
 
+  <!-- Export Full Dashboard PDF -->
+  <button
+    id="export-dashboard-pdf-btn"
+    class="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50"
+    title="Export complete dashboard to PDF">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h8l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3v5h5M8 13h8M8 17h5"/>
+    </svg>
+    <span class="hidden md:inline">Export PDF</span>
+  </button>
+
   <!-- Share button -->
   <form method="post" action="{% url 'dashboard-create-share' dashboard.id %}">
     {% csrf_token %}
@@ -576,6 +588,7 @@
         <button
           class="maximize-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
           data-widget-id="{{ widget.id }}"
+          data-ai-insight="{{ widget.chart_config.ai_insight|default:''|escapejs }}"
           title="Maximize chart">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
@@ -801,6 +814,13 @@
   <div class="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-6">
     <h2 id="maximize-title" class="text-base font-semibold text-slate-900"></h2>
     <div class="flex items-center gap-2">
+      <button id="maximize-pdf-btn" class="flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 3h8l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3v5h5"/>
+        </svg>
+        Export PDF
+      </button>
       <button id="maximize-download-btn" class="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors">
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
@@ -814,8 +834,14 @@
       </button>
     </div>
   </div>
-  <div class="flex-1 p-6 relative">
-    <canvas id="maximize-canvas"></canvas>
+  <div class="flex-1 p-6 relative grid gap-4 md:grid-cols-[minmax(0,1fr)_340px]">
+    <div class="relative min-h-[320px]">
+      <canvas id="maximize-canvas"></canvas>
+    </div>
+    <div id="maximize-insight-wrap" class="rounded-xl border border-violet-100 bg-violet-50 p-4">
+      <div class="text-[11px] font-bold uppercase tracking-widest text-violet-500">AI Insights</div>
+      <p id="maximize-insight-text" class="mt-2 text-sm leading-relaxed text-slate-700">No insights yet. Click AI Insights on the widget first.</p>
+    </div>
   </div>
 </div>
 
@@ -1467,7 +1493,10 @@
       .then(data => {
         if (loadingEl) loadingEl.style.display = 'none';
         if (data.success && textEl) {
-          textEl.textContent = data.analysis || 'No analysis available.';
+          const insightText = data.analysis || 'No analysis available.';
+          textEl.textContent = insightText;
+          const maxBtn = document.querySelector(`.maximize-widget-btn[data-widget-id="${widgetId}"]`);
+          if (maxBtn) maxBtn.dataset.aiInsight = insightText;
           if (data.ai_powered && badgeEl) badgeEl.classList.remove('hidden');
         } else if (textEl) {
           textEl.textContent = data.error || 'Analysis failed.';
