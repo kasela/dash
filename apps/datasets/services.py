@@ -164,7 +164,7 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
     if date_cols:
         try:
             tmp = df[[date_cols[0], measure]].copy()
-            tmp[date_cols[0]] = pd.to_datetime(tmp[date_cols[0]], errors="coerce")
+            tmp[date_cols[0]] = pd.to_datetime(tmp[date_cols[0]], format="mixed", errors="coerce")
             tmp = tmp.dropna(subset=[date_cols[0]]).sort_values(date_cols[0])
             monthly = tmp.groupby(tmp[date_cols[0]].dt.to_period("M"))[measure].sum()
             if len(monthly) >= 2:
@@ -1375,7 +1375,7 @@ def ai_generate_comprehensive_insights(
     for col in df.columns:
         if any(k in str(col).lower() for k in ["date", "month", "year", "period", "quarter"]):
             try:
-                tmp = pd.to_datetime(df[col], errors="coerce").dropna()
+                tmp = pd.to_datetime(df[col], format="mixed", errors="coerce").dropna()
                 if len(tmp) > 0:
                     date_range_info[str(col)] = {
                         "min": str(tmp.min().date()),
@@ -1598,7 +1598,7 @@ def ai_generate_executive_summary(
     date_range: dict = {}
     if date_cols:
         try:
-            tmp = pd.to_datetime(df[date_cols[0]], errors="coerce").dropna()
+            tmp = pd.to_datetime(df[date_cols[0]], format="mixed", errors="coerce").dropna()
             if len(tmp) > 0:
                 date_range = {
                     "column": date_cols[0],
@@ -1837,7 +1837,7 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             elif action == "fix_dtype" and col and col in cleaned.columns:
                 strategy = str(step.get("strategy", "")).lower()
                 if "date" in strategy or "datetime" in strategy:
-                    cleaned[col] = pd.to_datetime(cleaned[col], errors="coerce")
+                    cleaned[col] = pd.to_datetime(cleaned[col], format="mixed", errors="coerce")
                     report["actions"].append(f"Converted '{col}' to datetime")
                 elif "numeric" in strategy or "float" in strategy or "int" in strategy:
                     cleaned[col] = pd.to_numeric(cleaned[col], errors="coerce")
@@ -2137,7 +2137,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     date_ranges: dict = {}
     for col in date_cols[:3]:
         try:
-            tmp = pd.to_datetime(df[col], errors="coerce").dropna()
+            tmp = pd.to_datetime(df[col], format="mixed", errors="coerce").dropna()
             if len(tmp) > 0:
                 date_ranges[str(col)] = {
                     "min": str(tmp.min().date()),
@@ -2620,7 +2620,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             tmp = df[[date_col, measure]].copy()
-            tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+            tmp[date_col] = pd.to_datetime(tmp[date_col], format="mixed", errors="coerce")
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
@@ -2639,7 +2639,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[1]
         try:
             tmp = df[[date_col, measure]].copy()
-            tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+            tmp[date_col] = pd.to_datetime(tmp[date_col], format="mixed", errors="coerce")
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
