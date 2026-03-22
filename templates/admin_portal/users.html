@@ -1,0 +1,127 @@
+{% extends "admin_portal/base.html" %}
+
+{% block title %}Users — Admin Portal{% endblock %}
+{% block nav_users_class %}bg-slate-800 text-white{% endblock %}
+{% block breadcrumb %} / Users{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Page header -->
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Users</h1>
+      <p class="mt-1 text-sm text-slate-500">{{ total_count }} user{{ total_count|pluralize }} found.</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="flex flex-wrap gap-3">
+    <input
+      type="text"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search username or email…"
+      class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 w-64"
+    />
+    <select name="plan" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+      {% for val, label in plan_choices %}
+      <option value="{{ val }}" {% if plan_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="status" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+      {% for val, label in status_choices %}
+      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 transition-colors">
+      Filter
+    </button>
+    {% if q or plan_filter or status_filter %}
+    <a href="{% url 'admin-users' %}" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+      Clear
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- Users table -->
+  <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-100">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">ID</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">User</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Email</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Plan</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sub Status</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Joined</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Status</th>
+            <th class="px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          {% for u in users %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-6 py-3 text-xs text-slate-400 font-mono">#{{ u.pk }}</td>
+            <td class="px-6 py-3">
+              <div class="flex items-center gap-3">
+                <div class="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 shrink-0">
+                  {{ u.username|slice:":1"|upper }}
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-slate-800">{{ u.username }}</p>
+                  {% if u.is_staff %}<span class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-semibold">Staff</span>{% endif %}
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-3 text-sm text-slate-500">{{ u.email|default:"—" }}</td>
+            <td class="px-6 py-3">
+              {% with plan=u.profile.plan %}
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
+                {% if plan == 'pro' %}bg-indigo-100 text-indigo-700
+                {% elif plan == 'enterprise' %}bg-violet-100 text-violet-700
+                {% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ u.profile.plan_display }}
+              </span>
+              {% endwith %}
+            </td>
+            <td class="px-6 py-3">
+              {% with s=u.profile.ls_subscription_status %}
+              {% if s == 'active' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Active</span>
+              {% elif s == 'cancelled' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>Cancelled</span>
+              {% elif s == 'paused' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-blue-700"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>Paused</span>
+              {% elif s == 'past_due' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-red-700"><span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>Past Due</span>
+              {% else %}
+                <span class="text-xs text-slate-400">—</span>
+              {% endif %}
+              {% endwith %}
+            </td>
+            <td class="px-6 py-3 text-sm text-slate-500">{{ u.date_joined|date:"M j, Y" }}</td>
+            <td class="px-6 py-3">
+              {% if u.is_active %}
+                <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Active</span>
+              {% else %}
+                <span class="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Disabled</span>
+              {% endif %}
+            </td>
+            <td class="px-6 py-3">
+              <a href="{% url 'admin-user-detail' u.pk %}" class="text-xs font-medium text-purple-600 hover:text-purple-700">Manage →</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" class="px-6 py-12 text-center text-sm text-slate-400">No users match your filters.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

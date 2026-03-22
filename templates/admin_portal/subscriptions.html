@@ -1,0 +1,168 @@
+{% extends "admin_portal/base.html" %}
+
+{% block title %}Subscriptions — Admin Portal{% endblock %}
+{% block nav_subs_class %}bg-slate-800 text-white{% endblock %}
+{% block breadcrumb %} / Subscriptions{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Page header -->
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Subscriptions</h1>
+    <p class="mt-1 text-sm text-slate-500">All user billing profiles and subscription states.</p>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
+    <div class="col-span-2 rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Total</p>
+      <p class="mt-1 text-2xl font-bold text-slate-900">{{ summary.total }}</p>
+    </div>
+    <div class="col-span-2 rounded-xl bg-slate-50 p-4 shadow-sm border border-slate-200">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Free</p>
+      <p class="mt-1 text-2xl font-bold text-slate-600">{{ summary.free }}</p>
+    </div>
+    <div class="col-span-2 rounded-xl bg-indigo-50 p-4 shadow-sm border border-indigo-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Pro</p>
+      <p class="mt-1 text-2xl font-bold text-indigo-700">{{ summary.pro }}</p>
+    </div>
+    <div class="col-span-2 rounded-xl bg-violet-50 p-4 shadow-sm border border-violet-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-violet-400">Enterprise</p>
+      <p class="mt-1 text-2xl font-bold text-violet-700">{{ summary.enterprise }}</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <div class="rounded-xl bg-emerald-50 p-4 shadow-sm border border-emerald-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-emerald-500">Active</p>
+      <p class="mt-1 text-2xl font-bold text-emerald-700">{{ summary.active }}</p>
+    </div>
+    <div class="rounded-xl bg-amber-50 p-4 shadow-sm border border-amber-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-amber-500">Cancelled</p>
+      <p class="mt-1 text-2xl font-bold text-amber-700">{{ summary.cancelled }}</p>
+    </div>
+    <div class="rounded-xl bg-blue-50 p-4 shadow-sm border border-blue-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-500">Paused</p>
+      <p class="mt-1 text-2xl font-bold text-blue-700">{{ summary.paused }}</p>
+    </div>
+    <div class="rounded-xl bg-red-50 p-4 shadow-sm border border-red-100">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-red-500">Past Due</p>
+      <p class="mt-1 text-2xl font-bold text-red-700">{{ summary.past_due }}</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="flex flex-wrap gap-3">
+    <input
+      type="text"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search user, email, customer ID…"
+      class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 w-64"
+    />
+    <select name="plan" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+      <option value="">All Plans</option>
+      <option value="free" {% if plan_filter == 'free' %}selected{% endif %}>Free</option>
+      <option value="pro" {% if plan_filter == 'pro' %}selected{% endif %}>Pro</option>
+      <option value="enterprise" {% if plan_filter == 'enterprise' %}selected{% endif %}>Enterprise</option>
+    </select>
+    <select name="status" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+      <option value="">All Statuses</option>
+      <option value="free" {% if status_filter == 'free' %}selected{% endif %}>Free users</option>
+      <option value="paid" {% if status_filter == 'paid' %}selected{% endif %}>Paid users</option>
+      <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+      <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+      <option value="paused" {% if status_filter == 'paused' %}selected{% endif %}>Paused</option>
+      <option value="past_due" {% if status_filter == 'past_due' %}selected{% endif %}>Past Due</option>
+    </select>
+    <button type="submit" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 transition-colors">
+      Filter
+    </button>
+    {% if q or plan_filter or status_filter %}
+    <a href="{% url 'admin-subscriptions' %}" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+      Clear
+    </a>
+    {% endif %}
+    <span class="ml-auto self-center text-sm text-slate-500">{{ total_count }} result{{ total_count|pluralize }}</span>
+  </form>
+
+  <!-- Subscriptions table -->
+  <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-100">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">User</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Plan</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sub Status</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Customer ID</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Renews / Ends</th>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">Updated</th>
+            <th class="px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          {% for profile in profiles %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-6 py-3">
+              <div class="flex items-center gap-3">
+                <div class="h-7 w-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 shrink-0">
+                  {{ profile.user.username|slice:":1"|upper }}
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-slate-800">{{ profile.user.username }}</p>
+                  <p class="text-xs text-slate-400">{{ profile.user.email|default:"—" }}</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-3">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
+                {% if profile.plan == 'pro' %}bg-indigo-100 text-indigo-700
+                {% elif profile.plan == 'enterprise' %}bg-violet-100 text-violet-700
+                {% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ profile.plan_display }}
+              </span>
+            </td>
+            <td class="px-6 py-3">
+              {% with s=profile.ls_subscription_status %}
+              {% if s == 'active' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Active</span>
+              {% elif s == 'cancelled' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700"><span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>Cancelled</span>
+              {% elif s == 'paused' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-blue-700"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>Paused</span>
+              {% elif s == 'past_due' %}
+                <span class="inline-flex items-center gap-1 text-xs font-medium text-red-700"><span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>Past Due</span>
+              {% else %}
+                <span class="text-xs text-slate-400">—</span>
+              {% endif %}
+              {% endwith %}
+            </td>
+            <td class="px-6 py-3 text-xs font-mono text-slate-500">{{ profile.ls_customer_id|default:"—" }}</td>
+            <td class="px-6 py-3 text-xs text-slate-500">
+              {% if profile.subscription_renews_at %}
+                <span class="text-emerald-700">↻ {{ profile.subscription_renews_at|date:"M j, Y" }}</span>
+              {% elif profile.subscription_ends_at %}
+                <span class="text-amber-700">⊘ {{ profile.subscription_ends_at|date:"M j, Y" }}</span>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="px-6 py-3 text-xs text-slate-400">{{ profile.updated_at|date:"M j, Y" }}</td>
+            <td class="px-6 py-3">
+              <a href="{% url 'admin-user-detail' profile.user.pk %}" class="text-xs font-medium text-purple-600 hover:text-purple-700">Manage →</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="px-6 py-12 text-center text-sm text-slate-400">No subscriptions match your filters.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

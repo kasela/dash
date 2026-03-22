@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.datasets",
     "apps.dashboards",
     "apps.billing.apps.BillingConfig",
+    "apps.admin_portal.apps.AdminPortalConfig",
 ]
 
 MIDDLEWARE = [

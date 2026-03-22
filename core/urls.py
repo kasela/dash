@@ -57,6 +57,7 @@ sitemaps = {"static": StaticViewSitemap}
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("admin-portal/", include("apps.admin_portal.urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("billing/", include("apps.billing.urls")),
 

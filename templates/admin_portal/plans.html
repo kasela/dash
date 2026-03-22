@@ -1,0 +1,315 @@
+{% extends "admin_portal/base.html" %}
+{% load admin_portal_tags %}
+
+{% block title %}Plans & Features — Admin Portal{% endblock %}
+{% block nav_plans_class %}bg-slate-800 text-white{% endblock %}
+{% block breadcrumb %} / Plans & Features{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- Page header -->
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Plans & Features</h1>
+    <p class="mt-1 text-sm text-slate-500">Plan overview, feature matrix, conversion funnel, and activity.</p>
+  </div>
+
+  <!-- Plan cards -->
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+    {% for plan in plans %}
+    <div class="rounded-xl bg-white shadow-sm border {% if plan.key == 'pro' %}border-indigo-300 ring-2 ring-indigo-100{% elif plan.key == 'enterprise' %}border-violet-300 ring-2 ring-violet-100{% else %}border-slate-200{% endif %} overflow-hidden">
+
+      <!-- Plan header -->
+      <div class="px-6 py-5 {% if plan.key == 'pro' %}bg-gradient-to-r from-indigo-600 to-indigo-500{% elif plan.key == 'enterprise' %}bg-gradient-to-r from-violet-700 to-violet-500{% else %}bg-slate-800{% endif %}">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-widest text-white/70">{{ plan.limits.name }}</p>
+            <p class="text-3xl font-bold text-white mt-0.5">
+              {% if plan.limits.price_monthly == 0 %}Free
+              {% else %}${{ plan.limits.price_monthly }}<span class="text-base font-normal text-white/70">/mo</span>{% endif %}
+            </p>
+          </div>
+          <div class="text-right">
+            <p class="text-2xl font-bold text-white">{{ plan.user_count }}</p>
+            <p class="text-xs text-white/70">users</p>
+          </div>
+        </div>
+        {% if plan.active_sub_count > 0 %}
+        <p class="mt-2 text-xs text-white/80">{{ plan.active_sub_count }} active subscription{{ plan.active_sub_count|pluralize }}</p>
+        {% endif %}
+      </div>
+
+      <!-- Feature list -->
+      <div class="px-6 py-5">
+        <ul class="space-y-2.5 text-sm">
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">Max Dashboards</span>
+            <span class="font-semibold text-slate-800">
+              {% if plan.limits.max_dashboards > 9000 %}Unlimited{% else %}{{ plan.limits.max_dashboards }}{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">Monthly Uploads</span>
+            <span class="font-semibold text-slate-800">
+              {% if plan.limits.max_monthly_uploads > 9000 %}Unlimited{% else %}{{ plan.limits.max_monthly_uploads }}{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between border-t border-slate-100 pt-2.5">
+            <span class="text-slate-600">AI Features</span>
+            <span class="{% if plan.limits.ai_features %}text-emerald-600{% else %}text-red-400{% endif %} font-semibold text-sm">
+              {% if plan.limits.ai_features %}✓ Enabled{% else %}✗ Disabled{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">Team Collaboration</span>
+            <span class="{% if plan.limits.team_collaboration %}text-emerald-600{% else %}text-red-400{% endif %} font-semibold text-sm">
+              {% if plan.limits.team_collaboration %}✓ Enabled{% else %}✗ Disabled{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">API Access</span>
+            <span class="{% if plan.limits.api_access %}text-emerald-600{% else %}text-red-400{% endif %} font-semibold text-sm">
+              {% if plan.limits.api_access %}✓ Enabled{% else %}✗ Disabled{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">Public Sharing</span>
+            <span class="{% if plan.limits.public_sharing %}text-emerald-600{% else %}text-red-400{% endif %} font-semibold text-sm">
+              {% if plan.limits.public_sharing %}✓ Enabled{% else %}✗ Disabled{% endif %}
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="text-slate-600">Priority Support</span>
+            <span class="{% if plan.limits.priority_support %}text-emerald-600{% else %}text-red-400{% endif %} font-semibold text-sm">
+              {% if plan.limits.priority_support %}✓ Enabled{% else %}✗ Disabled{% endif %}
+            </span>
+          </li>
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Feature matrix comparison table -->
+  <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100">
+      <h2 class="text-sm font-semibold text-slate-700">Feature Matrix</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500 w-1/2">Feature</th>
+            {% for plan in plans %}
+            <th class="px-6 py-3 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-500">{{ plan.limits.name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">Max Dashboards</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center text-sm font-semibold text-slate-700">
+              {% if plan.limits.max_dashboards > 9000 %}∞{% else %}{{ plan.limits.max_dashboards }}{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">Monthly Uploads</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center text-sm font-semibold text-slate-700">
+              {% if plan.limits.max_monthly_uploads > 9000 %}∞{% else %}{{ plan.limits.max_monthly_uploads }}{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">AI Features</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center">
+              {% if plan.limits.ai_features %}<span class="text-emerald-600">✓</span>{% else %}<span class="text-slate-300">✗</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">Team Collaboration</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center">
+              {% if plan.limits.team_collaboration %}<span class="text-emerald-600">✓</span>{% else %}<span class="text-slate-300">✗</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">API Access</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center">
+              {% if plan.limits.api_access %}<span class="text-emerald-600">✓</span>{% else %}<span class="text-slate-300">✗</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">Public Sharing</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center">
+              {% if plan.limits.public_sharing %}<span class="text-emerald-600">✓</span>{% else %}<span class="text-slate-300">✗</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <tr class="hover:bg-slate-50">
+            <td class="px-6 py-3 text-sm text-slate-700 font-medium">Priority Support</td>
+            {% for plan in plans %}
+            <td class="px-6 py-3 text-center">
+              {% if plan.limits.priority_support %}<span class="text-emerald-600">✓</span>{% else %}<span class="text-slate-300">✗</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+    <!-- Conversion funnel -->
+    <div class="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">Conversion Funnel</h2>
+      <div class="relative h-56">
+        <canvas id="funnelChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Plan user distribution -->
+    <div class="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">Users by Plan</h2>
+      <div class="relative h-56">
+        <canvas id="planUsersChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent conversions & churned -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+    <!-- Recent paid conversions -->
+    <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100">
+        <h2 class="text-sm font-semibold text-slate-700">Recent Conversions to Paid</h2>
+      </div>
+      {% if recent_pro %}
+      <ul class="divide-y divide-slate-50">
+        {% for profile in recent_pro %}
+        <li class="flex items-center justify-between px-6 py-3">
+          <div class="flex items-center gap-3">
+            <div class="h-7 w-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 shrink-0">
+              {{ profile.user.username|slice:":1"|upper }}
+            </div>
+            <div>
+              <p class="text-sm font-medium text-slate-800">{{ profile.user.username }}</p>
+              <p class="text-xs text-slate-400">{{ profile.user.email|default:"—" }}</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
+              {% if profile.plan == 'pro' %}bg-indigo-100 text-indigo-700{% else %}bg-violet-100 text-violet-700{% endif %}">
+              {{ profile.plan_display }}
+            </span>
+            <p class="text-xs text-slate-400 mt-0.5">{{ profile.updated_at|date:"M j, Y" }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-6 py-8 text-sm text-slate-400">No paid conversions yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- Recently churned -->
+    <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">Churned (last 30 days)</h2>
+        {% if churned %}<span class="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{{ churned|length }}</span>{% endif %}
+      </div>
+      {% if churned %}
+      <ul class="divide-y divide-slate-50">
+        {% for profile in churned %}
+        <li class="flex items-center justify-between px-6 py-3">
+          <div class="flex items-center gap-3">
+            <div class="h-7 w-7 rounded-full bg-red-100 flex items-center justify-center text-xs font-bold text-red-500 shrink-0">
+              {{ profile.user.username|slice:":1"|upper }}
+            </div>
+            <div>
+              <p class="text-sm font-medium text-slate-800">{{ profile.user.username }}</p>
+              <p class="text-xs text-slate-400">{{ profile.user.email|default:"—" }}</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-amber-700 font-medium">Cancelled</span>
+            <p class="text-xs text-slate-400 mt-0.5">{{ profile.updated_at|date:"M j, Y" }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-6 py-8 text-sm text-slate-400">No churn in the last 30 days.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const funnelData = {{ funnel_json|safe }};
+const planDistData = {
+  labels: [{% for plan in plans %}"{{ plan.limits.name }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  data: [{% for plan in plans %}{{ plan.user_count }}{% if not forloop.last %},{% endif %}{% endfor %}],
+};
+
+// Funnel chart (horizontal bar)
+new Chart(document.getElementById('funnelChart'), {
+  type: 'bar',
+  data: {
+    labels: funnelData.labels,
+    datasets: [{
+      label: 'Users',
+      data: funnelData.data,
+      backgroundColor: ['#6366f1', '#8b5cf6', '#a855f7', '#10b981'],
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 10 }, stepSize: 1 } },
+      y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+    }
+  }
+});
+
+// Plan distribution polar area
+new Chart(document.getElementById('planUsersChart'), {
+  type: 'polarArea',
+  data: {
+    labels: planDistData.labels,
+    datasets: [{
+      data: planDistData.data,
+      backgroundColor: ['rgba(148,163,184,0.7)', 'rgba(99,102,241,0.7)', 'rgba(124,58,237,0.7)'],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+    },
+    scales: { r: { ticks: { display: false }, grid: { color: 'rgba(0,0,0,0.05)' } } }
+  }
+});
+</script>
+{% endblock %}

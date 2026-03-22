@@ -1,0 +1,246 @@
+{% extends "admin_portal/base.html" %}
+
+{% block title %}{{ target_user.username }} — Admin Portal{% endblock %}
+{% block nav_users_class %}bg-slate-800 text-white{% endblock %}
+{% block breadcrumb %} / <a href="{% url 'admin-users' %}" class="hover:text-purple-600">Users</a> / {{ target_user.username }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6 max-w-5xl">
+
+  <!-- Page header -->
+  <div class="flex items-center gap-4">
+    <div class="h-14 w-14 rounded-full bg-indigo-100 flex items-center justify-center text-xl font-bold text-indigo-700">
+      {{ target_user.username|slice:":1"|upper }}
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-bold text-slate-900">{{ target_user.username }}</h1>
+        {% if target_user.is_staff %}<span class="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-700">Staff</span>{% endif %}
+        {% if not target_user.is_active %}<span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">Disabled</span>{% endif %}
+      </div>
+      <p class="text-sm text-slate-500">{{ target_user.email|default:"No email" }} · Joined {{ target_user.date_joined|date:"F j, Y" }}</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+    <!-- ── Left col: Plan & Actions ──────────────────────────────────── -->
+    <div class="space-y-5">
+
+      <!-- Current plan card -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">Current Plan</h2>
+        {% with plan=profile.plan %}
+        <div class="flex items-center gap-3 mb-4">
+          <span class="flex h-10 w-10 items-center justify-center rounded-lg
+            {% if plan == 'pro' %}bg-indigo-100
+            {% elif plan == 'enterprise' %}bg-violet-100
+            {% else %}bg-slate-100{% endif %}
+            text-lg">
+            {% if plan == 'pro' %}⚡{% elif plan == 'enterprise' %}🏢{% else %}🆓{% endif %}
+          </span>
+          <div>
+            <p class="font-bold text-slate-800 text-lg">{{ profile.plan_display }}</p>
+            <p class="text-xs text-slate-500">
+              {% if plan == 'free' %}Up to 3 dashboards · 5 uploads/mo
+              {% else %}Unlimited dashboards & uploads{% endif %}
+            </p>
+          </div>
+        </div>
+        {% endwith %}
+
+        <!-- Change plan form -->
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="change_plan" />
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">Change Plan</label>
+          <div class="flex gap-2">
+            <select name="plan" class="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+              {% for val, label in plan_choices %}
+              <option value="{{ val }}" {% if profile.plan == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 transition-colors whitespace-nowrap">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Subscription details -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">Subscription</h2>
+        <dl class="space-y-2.5 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Status</dt>
+            <dd class="font-medium text-slate-800">
+              {% if profile.ls_subscription_status %}
+                <span class="{% if profile.ls_subscription_status == 'active' %}text-emerald-600{% elif profile.ls_subscription_status == 'past_due' %}text-red-600{% else %}text-amber-600{% endif %}">
+                  {{ profile.ls_subscription_status }}
+                </span>
+              {% else %}—{% endif %}
+            </dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Customer ID</dt>
+            <dd class="font-mono text-xs text-slate-700">{{ profile.ls_customer_id|default:"—" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Subscription ID</dt>
+            <dd class="font-mono text-xs text-slate-700">{{ profile.ls_subscription_id|default:"—" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Renews At</dt>
+            <dd class="text-slate-700">{{ profile.subscription_renews_at|date:"M j, Y"|default:"—" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Ends At</dt>
+            <dd class="text-slate-700">{{ profile.subscription_ends_at|date:"M j, Y"|default:"—" }}</dd>
+          </div>
+        </dl>
+
+        <!-- Edit subscription status -->
+        <form method="post" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_subscription" />
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Override Status</label>
+            <select name="ls_subscription_status" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200">
+              <option value="">— no change —</option>
+              {% for s in sub_status_choices %}
+              <option value="{{ s }}" {% if profile.ls_subscription_status == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Ends At (override)</label>
+            <input type="datetime-local" name="subscription_ends_at"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200" />
+          </div>
+          <button type="submit" class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+            Update Subscription
+          </button>
+        </form>
+      </div>
+
+      <!-- Account actions -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">Account Actions</h2>
+        <div class="space-y-2">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle_active" />
+            <button type="submit"
+              class="w-full rounded-lg border px-4 py-2 text-sm font-medium transition-colors
+                {% if target_user.is_active %}border-red-200 text-red-700 hover:bg-red-50{% else %}border-emerald-200 text-emerald-700 hover:bg-emerald-50{% endif %}">
+              {% if target_user.is_active %}Disable Account{% else %}Enable Account{% endif %}
+            </button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle_staff" />
+            <button type="submit"
+              class="w-full rounded-lg border px-4 py-2 text-sm font-medium transition-colors
+                {% if target_user.is_staff %}border-amber-200 text-amber-700 hover:bg-amber-50{% else %}border-purple-200 text-purple-700 hover:bg-purple-50{% endif %}">
+              {% if target_user.is_staff %}Revoke Staff Access{% else %}Grant Staff Access{% endif %}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right col: Activity ────────────────────────────────────────── -->
+    <div class="lg:col-span-2 space-y-5">
+
+      <!-- Workspaces -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+          <h2 class="text-sm font-semibold text-slate-700">Workspaces ({{ workspaces.count }})</h2>
+        </div>
+        {% if workspaces %}
+        <ul class="divide-y divide-slate-50">
+          {% for ws in workspaces %}
+          <li class="flex items-center justify-between px-6 py-3">
+            <div>
+              <p class="text-sm font-medium text-slate-800">{{ ws.name }}</p>
+              <p class="text-xs text-slate-500">Owner: {{ ws.owner.username }} · {{ ws.dashboards.count }} dashboard{{ ws.dashboards.count|pluralize }}</p>
+            </div>
+            <span class="text-xs text-slate-400">{{ ws.created_at|date:"M j, Y" }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="px-6 py-6 text-sm text-slate-400">No workspaces.</p>
+        {% endif %}
+      </div>
+
+      <!-- Recent dashboards -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+          <h2 class="text-sm font-semibold text-slate-700">Recent Dashboards</h2>
+        </div>
+        {% if dashboards %}
+        <ul class="divide-y divide-slate-50">
+          {% for d in dashboards %}
+          <li class="flex items-center justify-between px-6 py-3">
+            <div>
+              <p class="text-sm font-medium text-slate-800">{{ d.title }}</p>
+              <p class="text-xs text-slate-500">{{ d.workspace.name }} · {{ d.created_at|date:"M j, Y" }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              {% if d.is_public %}<span class="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Public</span>{% endif %}
+              <a href="{% url 'dashboard-detail' d.pk %}" target="_blank" class="text-xs text-purple-600 hover:text-purple-700">View →</a>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="px-6 py-6 text-sm text-slate-400">No dashboards.</p>
+        {% endif %}
+      </div>
+
+      <!-- Recent dataset uploads -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+          <h2 class="text-sm font-semibold text-slate-700">Recent Dataset Uploads</h2>
+        </div>
+        {% if datasets %}
+        <ul class="divide-y divide-slate-50">
+          {% for dv in datasets %}
+          <li class="flex items-center justify-between px-6 py-3">
+            <div>
+              <p class="text-sm font-medium text-slate-800">{{ dv.dataset.name }}</p>
+              <p class="text-xs text-slate-500">{{ dv.row_count }} rows · {{ dv.column_count }} cols · {{ dv.dataset.workspace.name }}</p>
+            </div>
+            <span class="text-xs text-slate-400">{{ dv.uploaded_at|date:"M j, Y" }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="px-6 py-6 text-sm text-slate-400">No datasets uploaded.</p>
+        {% endif %}
+      </div>
+
+      <!-- Plan limits reference -->
+      <div class="rounded-xl bg-white shadow-sm border border-slate-200 p-5">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">Plan Limits Reference</h2>
+        <div class="grid grid-cols-3 gap-3">
+          {% for key, limits in plan_limits.items %}
+          <div class="rounded-lg border {% if profile.plan == key %}border-purple-300 bg-purple-50{% else %}border-slate-200 bg-slate-50{% endif %} p-3">
+            <p class="text-xs font-bold text-slate-700 mb-2">{{ limits.name }}
+              {% if profile.plan == key %}<span class="text-purple-600 ml-1">✓</span>{% endif %}
+            </p>
+            <ul class="space-y-1 text-xs text-slate-600">
+              <li>{% if limits.max_dashboards > 9000 %}∞{% else %}{{ limits.max_dashboards }}{% endif %} dashboards</li>
+              <li>{% if limits.max_monthly_uploads > 9000 %}∞{% else %}{{ limits.max_monthly_uploads }}{% endif %} uploads/mo</li>
+              <li>AI: {% if limits.ai_features %}✓{% else %}✗{% endif %}</li>
+              <li>Teams: {% if limits.team_collaboration %}✓{% else %}✗{% endif %}</li>
+            </ul>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
