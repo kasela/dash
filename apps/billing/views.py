@@ -17,6 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.workspaces.models import Workspace, WorkspaceMember
+from apps.accounts.models import ApiKey
 from .models import UserProfile
 
 
@@ -153,9 +154,11 @@ def account_settings(request: HttpRequest) -> HttpResponse:
                 messages.info(request, "Your subscription has been cancelled. You retain access until the end of the billing period.")
             return redirect("account-settings")
 
+    api_keys = ApiKey.objects.filter(user=request.user).order_by("-created_at")
     return render(request, "billing/account_settings.html", {
         "profile": profile,
         "password_form": password_form,
+        "api_keys": api_keys,
     })
 
 
