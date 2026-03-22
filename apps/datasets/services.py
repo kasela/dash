@@ -1287,13 +1287,14 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                         "ref, key, index, serial, row_number, record_id\n\n"
                         "For each column also specify:\n"
                         "- agg: best aggregation method ('sum' for totals, 'avg' for averages/rates/ratios, "
-                        "'count' for occurrences, 'max'/'min' for extremes, 'group' for dimensions, 'none' for ids/dates)\n"
+                        "'count' for occurrences, 'nunique' for distinct counts (e.g. unique suppliers/customers/products), "
+                        "'max'/'min' for extremes, 'group' for dimensions, 'none' for ids/dates)\n"
                         "- label: human-friendly business label (e.g. 'total_revenue_usd' → 'Total Revenue (USD)')\n"
                         "- cardinality: for dimensions only ('low'=<10 unique, 'medium'=10-50, 'high'>50); "
                         "use null for measures, dates, ids\n\n"
                         "RETURN ONLY valid JSON (no markdown, no extra text):\n"
                         "{\"roles\": {\"column_name\": {\"role\": \"measure|dimension|date|id\", "
-                        "\"agg\": \"sum|avg|count|max|min|group|none\", "
+                        "\"agg\": \"sum|avg|count|nunique|max|min|group|none\", "
                         "\"label\": \"Business Label\", \"cardinality\": \"low|medium|high|null\"}}}"
                     ),
                 },
@@ -2223,10 +2224,12 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         for i, kpi in enumerate(kpis):
             name = str(kpi.get("name", "")).strip() or f"KPI {i + 1}"
             value_col = str(kpi.get("measure") or kpi.get("column") or "").strip()
-            change = str(kpi.get("change", "")).strip()
+            _raw_change = kpi.get("change")
+            change = "" if (_raw_change is None or str(_raw_change).strip().lower() in ("", "none", "null", "n/a", "na")) else str(_raw_change).strip()
             insight = str(kpi.get("insight", "")).strip() or (insights[i % len(insights)] if insights else "")
             full_insight = f"{insight} Period change: {change}." if change and insight else insight
-            specs.append({
+            _agg = str(kpi.get("agg") or "").strip().lower()
+            spec: dict = {
                 "title": name,
                 "chart_type": "kpi",
                 "dimension": None,
@@ -2234,7 +2237,10 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 "size": "sm",
                 "palette": "indigo",
                 "ai_insight": full_insight[:400],
-            })
+            }
+            if _agg in ("sum", "avg", "count", "nunique", "max", "min"):
+                spec["_agg"] = _agg
+            specs.append(spec)
 
         # ── Charts section ─────────────────────────────────────────────────
         charts = [c for c in (plan.get("charts") or []) if isinstance(c, dict)]
@@ -2335,8 +2341,9 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "- 'table_section_title': A section title like 'Transaction Detail' or 'Raw Data Explorer'\n\n"
                         "═══ KPI RULES ═══\n"
                         "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, count, "
-                        "and growth metric (if dates present).\n"
-                        "- 'measure' must be an exact column name from provided numeric_columns.\n"
+                        "and growth metric (if dates present). For distinct entity counts (unique suppliers, customers, products), "
+                        "use a categorical column as 'measure' and set agg='nunique'.\n"
+                        "- 'measure' must be an exact column name from provided columns (numeric or categorical).\n"
                         "- 'insight': 1 sentence citing the actual sum or mean from sample_stats. "
                         "Example: 'Total revenue of $4.2M represents a strong baseline; focus on high-margin segments.'\n"
                         "- 'change': Describe a meaningful comparison (e.g. '12% above Q3 average', 'top 20% of performers').\n\n"
@@ -2370,7 +2377,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "\"chart_section_title\":\"Section heading for charts\","
                         "\"table_section_title\":\"Section heading for tables\","
                         "\"schema\":{\"columns\":[],\"types\":{}},"
-                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"exact_column\",\"change\":\"comparison\",\"insight\":\"data-driven sentence\"}],"
+                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"exact_column\",\"agg\":\"sum|avg|count|nunique\",\"change\":\"comparison or null\",\"insight\":\"data-driven sentence\"}],"
                         "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"exact_column\",\"y\":[\"exact_column\"],\"x_measure\":\"exact_col_or_empty\",\"y_measure\":\"exact_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"data-driven sentence with number\"}],"
                         "\"tables\":[{\"title\":\"Analytical View Name\",\"columns\":[\"exact_col\"],\"insight\":\"data-driven sentence\"}],"
                         "\"insights\":[\"Global finding 1\",\"Global finding 2\",\"Global finding 3\"]"

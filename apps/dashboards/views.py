@@ -501,6 +501,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
         if size not in {"sm", "md", "lg"}:
             size = "md"
         ai_insight = str(spec.get("ai_insight") or "").strip()[:400]
+        spec_agg = str(spec.get("_agg") or "").strip().lower()
 
         config: dict = {}
 
@@ -537,22 +538,35 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
         # ── Chart/data widgets ─────────────────────────────────────────────────
         try:
             if chart_type == "kpi":
-                if measure and measure in df.columns:
-                    col_data = df[measure].dropna()
-                    total = col_data.sum()
-                    avg = col_data.mean()
-                    role_info = column_roles.get(measure, {})
+                # Resolve measure column with case-insensitive fallback
+                resolved_measure = measure if measure and measure in df.columns else None
+                if not resolved_measure and measure:
+                    lower_map = {c.lower(): c for c in df.columns}
+                    resolved_measure = lower_map.get(measure.lower())
+                if resolved_measure:
+                    role_info = column_roles.get(resolved_measure, {})
                     role_label = str(role_info.get("label") or "").strip()
-                    human_label = role_label if role_label else _humanize_col(measure)
-                    kpi_meta = _detect_kpi_meta(measure)
-                    agg = str(role_info.get("agg") or "sum").strip()
-                    if agg == "avg":
+                    human_label = role_label if role_label else _humanize_col(resolved_measure)
+                    kpi_meta = _detect_kpi_meta(resolved_measure)
+                    agg = spec_agg if spec_agg else str(role_info.get("agg") or "sum").strip()
+
+                    # Smart value formatting based on aggregation preference
+                    if agg == "nunique":
+                        display_val = f"{int(df[resolved_measure].nunique()):,}"
+                        kpi_label = f"Unique {human_label}"
+                    elif agg == "avg":
+                        col_data = df[resolved_measure].dropna()
+                        avg = col_data.mean()
                         display_val = f"{avg:,.2f}"
                         kpi_label = f"Avg {human_label}"
                     elif agg == "count":
+                        col_data = df[resolved_measure].dropna()
                         display_val = f"{int(len(col_data)):,}"
                         kpi_label = f"{human_label} Count"
                     else:
+                        col_data = df[resolved_measure].dropna()
+                        total = col_data.sum()
+                        avg = col_data.mean()
                         display_val = f"{total:,.0f}"
                         kpi_label = human_label
                     config = {
@@ -561,17 +575,23 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         "kpi_meta": kpi_meta,
                         "layout": {"size": size},
                     }
-                    trend = _compute_kpi_trend(df, measure)
-                    if trend:
-                        config["trend"] = trend
+                    if agg not in ("nunique", "count"):
+                        trend = _compute_kpi_trend(df, resolved_measure)
+                        if trend:
+                            config["trend"] = trend
                     if not ai_insight:
                         try:
-                            pct_above = round(sum(1 for v in col_data if v > avg) / len(col_data) * 100, 1)
-                            ai_insight = (
-                                f"{kpi_label} totals {display_val} with a mean of {avg:,.2f}. "
-                                f"{pct_above}% of records exceed the average — "
-                                f"monitor this distribution for outlier-driven variance."
-                            )
+                            if agg == "nunique":
+                                ai_insight = f"{kpi_label}: {display_val} distinct values across {profile.total_rows:,} records."
+                            else:
+                                col_data = df[resolved_measure].dropna()
+                                avg = col_data.mean()
+                                pct_above = round(sum(1 for v in col_data if v > avg) / len(col_data) * 100, 1)
+                                ai_insight = (
+                                    f"{kpi_label} totals {display_val} with a mean of {avg:,.2f}. "
+                                    f"{pct_above}% of records exceed the average — "
+                                    f"monitor this distribution for outlier-driven variance."
+                                )
                         except Exception:
                             pass
                 else:
