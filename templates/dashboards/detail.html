@@ -95,6 +95,7 @@
 {% block content %}
 
 <style>
+  /* ── Enhanced Dashboard Theme ──────────────────────────────────────────── */
   .dashboard-section-heading {
     font-family: "Poppins", "Inter", "Segoe UI", sans-serif;
     font-size: 1.375rem;
@@ -102,23 +103,212 @@
     letter-spacing: 0.01em;
     line-height: 1.2;
   }
+
+  /* Build status banner */
+  .build-banner {
+    background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 50%, #dbeafe 100%);
+    border: 1px solid #c4b5fd;
+    border-radius: 1rem;
+    animation: bannerPulse 2s ease-in-out infinite;
+  }
+  @keyframes bannerPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    50% { box-shadow: 0 0 0 4px rgba(99,102,241,0.12); }
+  }
+
+  /* Skeleton loader */
+  .skeleton-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    padding: 1.25rem;
+    overflow: hidden;
+  }
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 0.5rem;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .skeleton-title { height: 1rem; width: 55%; margin-bottom: 1rem; }
+  .skeleton-chart { height: 9rem; width: 100%; }
+  .skeleton-kpi-val { height: 2.5rem; width: 40%; margin-bottom: 0.5rem; }
+  .skeleton-kpi-sub { height: 0.75rem; width: 60%; }
+
+  /* Enhanced widget cards */
+  .widget-card {
+    transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s;
+  }
+  .widget-card:hover {
+    box-shadow: 0 6px 24px rgba(99,102,241,0.10), 0 1px 4px rgba(0,0,0,0.06);
+    border-color: #c7d2fe;
+    transform: translateY(-1px);
+  }
+  .widget-card.drag-over {
+    box-shadow: 0 0 0 2px #6366f1, 0 8px 24px rgba(99,102,241,0.2);
+    transform: scale(1.01);
+  }
+
+  /* Header gradient badge */
+  .dashboard-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .status-pending { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .status-building { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+  .status-ready { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .status-failed { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+  /* Dashboard header gradient */
+  .dashboard-header-wrap {
+    background: linear-gradient(135deg, #f8faff 0%, #f1f5ff 100%);
+    border: 1px solid #e0e7ff;
+    border-radius: 1.25rem;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 12px rgba(99,102,241,0.06);
+  }
+
+  /* Progress bar for building state */
+  .build-progress-track {
+    height: 3px;
+    background: #e0e7ff;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 0.75rem;
+  }
+  .build-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1);
+    background-size: 200% 100%;
+    border-radius: 9999px;
+    animation: progressMove 1.8s linear infinite;
+    width: 60%;
+  }
+  @keyframes progressMove {
+    0% { background-position: 200% 0; transform: translateX(-100%); }
+    100% { background-position: -200% 0; transform: translateX(200%); }
+  }
+
+  /* Widget fade-in when loaded */
+  @keyframes widgetFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .widget-loaded {
+    animation: widgetFadeIn 0.4s ease forwards;
+  }
 </style>
 
-<!-- Dashboard header -->
-<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-  <div>
-    <div class="flex items-center gap-2">
-      <h1 id="dashboard-title" class="text-2xl font-extrabold text-slate-900 cursor-pointer" title="Click to rename dashboard">{{ dashboard.title }}</h1>
-      <input id="dashboard-title-input" class="hidden rounded-md border border-indigo-400 px-2 py-1 text-xl font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500" type="text" value="{{ dashboard.title }}">
-    </div>
-    <div class="mt-1.5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-      <span>Created {{ dashboard.created_at|date:"N j, Y" }}</span>
-      <span class="h-1 w-1 rounded-full bg-slate-300"></span>
-      <span id="widget-count">{{ widgets|length }} widget{{ widgets|length|pluralize }}</span>
-      {% if dashboard.dataset_version %}
-        <span class="h-1 w-1 rounded-full bg-slate-300"></span>
-        <span>{{ dashboard.dataset_version.row_count|default:"–" }} rows · {{ dashboard.dataset_version.column_count|default:"–" }} cols</span>
+{% if dashboard.build_status != 'ready' %}
+<!-- ── Build Status Banner ─────────────────────────────────────────────────── -->
+<div id="build-status-banner" class="build-banner mb-6 flex items-start gap-4 p-4"
+     data-status-url="{% url 'dashboard-build-status' dashboard.id %}"
+     data-dashboard-id="{{ dashboard.id }}">
+  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100">
+    {% if dashboard.build_status == 'failed' %}
+      <svg class="h-5 w-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+    {% else %}
+      <svg id="build-spinner" class="h-5 w-5 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+    {% endif %}
+  </div>
+  <div class="flex-1 min-w-0">
+    <p id="build-status-title" class="text-sm font-bold text-indigo-900">
+      {% if dashboard.build_status == 'pending' %}Queuing chart generation…
+      {% elif dashboard.build_status == 'building' %}Building your dashboard charts…
+      {% elif dashboard.build_status == 'failed' %}Chart generation failed
+      {% else %}Preparing dashboard…{% endif %}
+    </p>
+    <p id="build-status-desc" class="mt-0.5 text-xs text-indigo-700">
+      {% if dashboard.build_status == 'failed' %}
+        The chart builder encountered an error. You can add charts manually or refresh to retry.
+      {% else %}
+        AI is analysing your data and generating the best charts. This happens in the background — you can already interact with the page.
       {% endif %}
+    </p>
+    {% if dashboard.build_status != 'failed' %}
+    <div class="build-progress-track">
+      <div class="build-progress-bar"></div>
+    </div>
+    {% endif %}
+  </div>
+  <button onclick="document.getElementById('build-status-banner').style.display='none'"
+    class="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-indigo-400 hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </button>
+</div>
+{% endif %}
+
+<!-- Dashboard header -->
+<div class="dashboard-header-wrap mb-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-3 flex-wrap">
+        <h1 id="dashboard-title" class="text-2xl font-extrabold text-slate-900 cursor-pointer hover:text-indigo-700 transition-colors" title="Click to rename dashboard">{{ dashboard.title }}</h1>
+        <input id="dashboard-title-input" class="hidden rounded-md border border-indigo-400 px-2 py-1 text-xl font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500" type="text" value="{{ dashboard.title }}">
+        <!-- Build status badge -->
+        <span id="build-status-badge" class="dashboard-status-badge
+          {% if dashboard.build_status == 'pending' %}status-pending
+          {% elif dashboard.build_status == 'building' %}status-building
+          {% elif dashboard.build_status == 'ready' %}status-ready
+          {% else %}status-failed{% endif %}">
+          {% if dashboard.build_status == 'pending' %}
+            <svg class="h-2.5 w-2.5 animate-pulse" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3"/></svg>
+            Queued
+          {% elif dashboard.build_status == 'building' %}
+            <svg class="h-2.5 w-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            Building
+          {% elif dashboard.build_status == 'ready' %}
+            <svg class="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+            Ready
+          {% else %}
+            <svg class="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Failed
+          {% endif %}
+        </span>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+        <span class="flex items-center gap-1">
+          <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          {{ dashboard.created_at|date:"N j, Y" }}
+        </span>
+        <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+        <span id="widget-count" class="flex items-center gap-1">
+          <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          {{ widgets|length }} widget{{ widgets|length|pluralize }}
+        </span>
+        {% if dashboard.dataset_version %}
+          <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+          <span class="flex items-center gap-1">
+            <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+            {{ dashboard.dataset_version.row_count|default:"–" }} rows · {{ dashboard.dataset_version.column_count|default:"–" }} cols
+          </span>
+        {% endif %}
+        <!-- UUID display -->
+        <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+        <span class="flex items-center gap-1 font-mono text-xs text-slate-400" title="Dashboard UUID">
+          <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+          {{ dashboard.id }}
+        </span>
+      </div>
     </div>
   </div>
 </div>
@@ -480,11 +670,44 @@
 {{ filter_config|json_script:"dashboard-filter-config" }}
 
 <!-- Widgets grid -->
-<div class="mb-3 flex items-center gap-2">
+<div class="mb-4 flex items-center gap-2">
   <span class="dashboard-section-heading text-emerald-700">Dashboard Widgets</span>
   <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Analysis Canvas</span>
   <span class="ml-1 text-xs text-slate-400">Drag ⠿ to reorder</span>
 </div>
+
+{% if dashboard.build_status != 'ready' and not widgets %}
+<!-- Skeleton loader cards shown while Celery task is running -->
+<div id="skeleton-grid" class="grid gap-6 sm:grid-cols-2 mb-6">
+  <!-- KPI skeleton -->
+  <div class="skeleton-card">
+    <div class="skeleton-shimmer skeleton-title"></div>
+    <div class="skeleton-shimmer skeleton-kpi-val"></div>
+    <div class="skeleton-shimmer skeleton-kpi-sub"></div>
+  </div>
+  <!-- Chart skeleton 1 -->
+  <div class="skeleton-card">
+    <div class="skeleton-shimmer skeleton-title"></div>
+    <div class="skeleton-shimmer skeleton-chart"></div>
+  </div>
+  <!-- Chart skeleton 2 (full-width) -->
+  <div class="skeleton-card sm:col-span-2">
+    <div class="skeleton-shimmer skeleton-title"></div>
+    <div class="skeleton-shimmer" style="height:11rem;width:100%;border-radius:0.5rem;"></div>
+  </div>
+  <!-- Chart skeleton 3 -->
+  <div class="skeleton-card">
+    <div class="skeleton-shimmer skeleton-title"></div>
+    <div class="skeleton-shimmer skeleton-chart"></div>
+  </div>
+  <!-- KPI skeleton 2 -->
+  <div class="skeleton-card">
+    <div class="skeleton-shimmer skeleton-title"></div>
+    <div class="skeleton-shimmer skeleton-kpi-val"></div>
+    <div class="skeleton-shimmer skeleton-kpi-sub" style="width:45%;"></div>
+  </div>
+</div>
+{% endif %}
 
 <style>
 /* Widget card base */
@@ -1590,6 +1813,90 @@
     });
   }
 
+})();
+</script>
+
+<!-- ── Dashboard Build Status Polling ──────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  const banner = document.getElementById('build-status-banner');
+  const badge  = document.getElementById('build-status-badge');
+  const initialStatus = "{{ dashboard.build_status }}";
+
+  // Only poll if not already ready/failed
+  const terminalStatuses = new Set(['ready', 'failed']);
+  const statusFromServer = "{{ dashboard.build_status }}";
+  if (terminalStatuses.has(statusFromServer)) return;
+
+  const statusUrl = banner ? banner.dataset.statusUrl : null;
+  if (!statusUrl) return;
+
+  let pollInterval = 1500; // start at 1.5s, back off
+  let attempts = 0;
+  const MAX_ATTEMPTS = 80; // ~2 minutes
+
+  function updateBadge(status) {
+    if (!badge) return;
+    badge.className = 'dashboard-status-badge';
+    const cfg = {
+      pending:  { cls: 'status-pending',  label: 'Queued',   icon: '⏳' },
+      building: { cls: 'status-building', label: 'Building', icon: '⚙' },
+      ready:    { cls: 'status-ready',    label: 'Ready',    icon: '✓'  },
+      failed:   { cls: 'status-failed',   label: 'Failed',   icon: '✗'  },
+    };
+    const c = cfg[status] || cfg.pending;
+    badge.classList.add(c.cls);
+    badge.textContent = c.icon + ' ' + c.label;
+  }
+
+  function onReady(widgetCount) {
+    // Hide skeleton
+    const skeleton = document.getElementById('skeleton-grid');
+    if (skeleton) skeleton.style.display = 'none';
+    if (banner) banner.style.display = 'none';
+    updateBadge('ready');
+    // Reload only the widgets section via full page reload so chart.js renders
+    location.reload();
+  }
+
+  function poll() {
+    if (attempts++ > MAX_ATTEMPTS) return;
+    fetch(statusUrl, { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        updateBadge(data.status);
+        if (data.status === 'ready') {
+          onReady(data.widget_count || 0);
+        } else if (data.status === 'failed') {
+          if (banner) {
+            document.getElementById('build-status-title').textContent = 'Chart generation failed';
+            document.getElementById('build-status-desc').textContent =
+              'The background task failed. You can add charts manually or refresh to retry.';
+            const prog = banner.querySelector('.build-progress-track');
+            if (prog) prog.style.display = 'none';
+          }
+        } else {
+          // Still building – back off gently
+          pollInterval = Math.min(pollInterval * 1.3, 4000);
+          setTimeout(poll, pollInterval);
+        }
+      })
+      .catch(() => {
+        pollInterval = Math.min(pollInterval * 1.5, 6000);
+        setTimeout(poll, pollInterval);
+      });
+  }
+
+  // Start polling shortly after page load
+  setTimeout(poll, 800);
+
+  // Add widget-loaded animation class to existing widgets
+  document.querySelectorAll('.widget-card').forEach((card, i) => {
+    card.style.animationDelay = (i * 60) + 'ms';
+    card.classList.add('widget-loaded');
+  });
 })();
 </script>
 

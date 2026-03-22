@@ -328,7 +328,7 @@ def app_home(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
+def dashboard_detail(request: HttpRequest, dashboard_id) -> HttpResponse:
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     widgets = dashboard.widgets.order_by("position")
     share_links = dashboard.share_links.filter(is_active=True).order_by("-created_at")
@@ -412,6 +412,11 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
 
 @login_required
 def dashboard_create_from_version(request: HttpRequest, version_id: int) -> HttpResponse:
+    """Create a dashboard shell immediately and dispatch chart-building to Celery.
+
+    The user is redirected to the dashboard detail page straight away.
+    Charts are lazily loaded in the browser as the Celery task progresses.
+    """
     if request.method != "POST":
         return HttpResponseBadRequest("POST required")
 
@@ -423,88 +428,39 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
 
     # Enforce dashboard limit for free plan
     from apps.billing.models import UserProfile
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    if not profile.is_pro:
+    billing_profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not billing_profile.is_pro:
         current_count = Dashboard.objects.filter(workspace__owner=request.user).count()
-        if current_count >= profile.max_dashboards:
+        if current_count >= billing_profile.max_dashboards:
             from django.contrib import messages
             messages.error(
                 request,
-                f"You've reached the {profile.max_dashboards} dashboard limit on the Free plan. "
+                f"You've reached the {billing_profile.max_dashboards} dashboard limit on the Free plan. "
                 "Upgrade to Pro for unlimited dashboards."
             )
             return redirect("app-home")
 
-    default_title = f"{dataset_version.dataset.name} Overview"
-    dashboard_title = default_title
-
-    # Try AI-powered dashboard generation first, fall back to heuristics
-    df = _load_df_from_version(dataset_version)
-    ai_specs = None
-    if df is not None:
-        profile = build_profile_summary(df)
-        ai_title = ai_generate_dashboard_title(df, profile, dataset_version.dataset.name)
-        if ai_title:
-            dashboard_title = ai_title
-        ai_specs = ai_generate_dashboard_specs(df, profile)
-
+    # Create the dashboard shell immediately (status=pending)
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=dashboard_title,
+        title=f"{dataset_version.dataset.name} Overview",
+        build_status=Dashboard.BuildStatus.PENDING,
     )
-    # Link as the primary dataset in the multi-dataset list
+    # Link as the primary dataset
     DashboardDataset.objects.get_or_create(
         dashboard=dashboard,
         dataset_version=dataset_version,
         defaults={"label": dataset_version.dataset.name},
     )
 
-    if ai_specs is not None and df is not None:
-        widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile)
-        # Save suggested slicers automatically
-        slicer_suggestions, _ = ai_suggest_slicers(df, profile)
-        if slicer_suggestions:
-            auto_filters = [
-                {
-                    "id": s["column"],
-                    "column": s["column"],
-                    "filter_type": s["filter_type"],
-                    "label": s["label"],
-                    "version_id": None,
-                }
-                for s in slicer_suggestions
-            ]
-            dashboard.filter_config = auto_filters
-            dashboard.save(update_fields=["filter_config"])
-    else:
-        widget_specs = generate_widget_specs_from_version(dataset_version)
+    # Dispatch background Celery task to build charts
+    from apps.dashboards.tasks import build_dashboard_widgets
+    task = build_dashboard_widgets.delay(str(dashboard.id), dataset_version.id)
+    dashboard.celery_task_id = task.id
+    dashboard.save(update_fields=["celery_task_id"])
 
-    if widget_specs:
-        for spec in widget_specs:
-            DashboardWidget.objects.create(
-                dashboard=dashboard,
-                title=spec["title"],
-                widget_type=spec["widget_type"],
-                position=spec["position"],
-                chart_config=spec["config"],
-            )
-    else:
-        DashboardWidget.objects.create(
-            dashboard=dashboard,
-            title="Total Rows",
-            widget_type=DashboardWidget.WidgetType.KPI,
-            position=1,
-            chart_config={"kpi": "rows", "value": f"{dataset_version.row_count:,}"},
-        )
-        DashboardWidget.objects.create(
-            dashboard=dashboard,
-            title="Top Categories",
-            widget_type=DashboardWidget.WidgetType.BAR,
-            position=2,
-            chart_config=_FALLBACK_CHART,
-        )
-
+    # Redirect immediately – the browser will poll for build status
     return redirect("dashboard-detail", dashboard_id=dashboard.id)
 
 
@@ -640,7 +596,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
 
 
 @login_required
-def dashboard_create_share_link(request: HttpRequest, dashboard_id: int) -> HttpResponse:
+def dashboard_create_share_link(request: HttpRequest, dashboard_id) -> HttpResponse:
     if request.method != "POST":
         return HttpResponseBadRequest("POST required")
 
@@ -651,6 +607,17 @@ def dashboard_create_share_link(request: HttpRequest, dashboard_id: int) -> Http
     if f"/dashboards/{dashboard_id}/" in referer:
         return redirect("dashboard-detail", dashboard_id=dashboard_id)
     return redirect("app-home")
+
+
+@login_required
+def dashboard_build_status(request: HttpRequest, dashboard_id) -> JsonResponse:
+    """Poll endpoint: returns build status + widget HTML once ready."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    data: dict = {"status": dashboard.build_status}
+    if dashboard.build_status == Dashboard.BuildStatus.READY:
+        widgets = list(dashboard.widgets.order_by("position"))
+        data["widget_count"] = len(widgets)
+    return JsonResponse(data)
 
 
 def dashboard_public_view(request: HttpRequest, token) -> HttpResponse:
@@ -689,7 +656,7 @@ def _get_default_dataset_version(dashboard: Dashboard):
 
 
 @login_required
-def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_get_columns(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Return column metadata for a dataset linked to a dashboard.
 
     Optional query param ``version_id`` selects which linked DatasetVersion to use.
@@ -755,7 +722,7 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
 
 
 @login_required
-def dashboard_list_datasets(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_list_datasets(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Return all DatasetVersions linked to a dashboard (for multi-dataset UI)."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
 
@@ -792,7 +759,7 @@ def dashboard_list_datasets(request: HttpRequest, dashboard_id: int) -> JsonResp
 
 
 @login_required
-def dashboard_add_dataset(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_add_dataset(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Link an existing DatasetVersion (from the same workspace) to a dashboard."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -836,7 +803,7 @@ def dashboard_add_dataset(request: HttpRequest, dashboard_id: int) -> JsonRespon
 
 
 @login_required
-def dashboard_remove_dataset(request: HttpRequest, dashboard_id: int, version_id: int) -> JsonResponse:
+def dashboard_remove_dataset(request: HttpRequest, dashboard_id, version_id: int) -> JsonResponse:
     """Unlink a DatasetVersion from a dashboard (cannot remove the primary dataset_version)."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -857,7 +824,7 @@ def dashboard_remove_dataset(request: HttpRequest, dashboard_id: int, version_id
 
 
 @login_required
-def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_add_widget(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Create a new chart widget and append it to the dashboard."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -894,7 +861,7 @@ def dashboard_add_widget(request: HttpRequest, dashboard_id: int) -> JsonRespons
 
 
 @login_required
-def dashboard_add_heading(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_add_heading(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Create a text heading widget at a user-selected location."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1273,7 +1240,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
 
 
 @login_required
-def dashboard_update_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_update_widget(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
@@ -1294,7 +1261,7 @@ def dashboard_update_widget(request: HttpRequest, dashboard_id: int, widget_id: 
 
 
 @login_required
-def dashboard_resize_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_resize_widget(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
@@ -1327,7 +1294,7 @@ def dashboard_resize_widget(request: HttpRequest, dashboard_id: int, widget_id: 
 
 
 @login_required
-def dashboard_rename(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_rename(request: HttpRequest, dashboard_id) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
@@ -1346,7 +1313,7 @@ def dashboard_rename(request: HttpRequest, dashboard_id: int) -> JsonResponse:
 
 
 @login_required
-def dashboard_delete_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_delete_widget(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Delete a single widget from a dashboard."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1359,7 +1326,7 @@ def dashboard_delete_widget(request: HttpRequest, dashboard_id: int, widget_id: 
 
 
 @login_required
-def dashboard_rename_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_rename_widget(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Rename a widget title."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1385,7 +1352,7 @@ def dashboard_rename_widget(request: HttpRequest, dashboard_id: int, widget_id: 
 
 
 @login_required
-def dashboard_reorder_widgets(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_reorder_widgets(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Reorder widgets by accepting an ordered list of widget IDs."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1411,7 +1378,7 @@ def dashboard_reorder_widgets(request: HttpRequest, dashboard_id: int) -> JsonRe
 
 
 @login_required
-def dashboard_add_text_canvas(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_add_text_canvas(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Create a freeform text canvas widget."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1453,7 +1420,7 @@ def dashboard_add_text_canvas(request: HttpRequest, dashboard_id: int) -> JsonRe
 
 
 @login_required
-def dashboard_update_heading(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_update_heading(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Update an existing heading widget's text and styling."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1499,7 +1466,7 @@ def dashboard_update_heading(request: HttpRequest, dashboard_id: int, widget_id:
 
 
 @login_required
-def dashboard_update_text_canvas(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_update_text_canvas(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Update an existing text canvas widget's content and styling."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1538,7 +1505,7 @@ def dashboard_update_text_canvas(request: HttpRequest, dashboard_id: int, widget
 
 
 @login_required
-def dashboard_add_divider(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_add_divider(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Create a visual divider/separator widget between sections."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1570,7 +1537,7 @@ def dashboard_add_divider(request: HttpRequest, dashboard_id: int) -> JsonRespon
 
 
 @login_required
-def dashboard_update_widget_span(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_update_widget_span(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Update only the layout.size (column span) of a widget without page reload."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1593,7 +1560,7 @@ def dashboard_update_widget_span(request: HttpRequest, dashboard_id: int, widget
 
 
 @login_required
-def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_save_filters(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Persist the filter configuration for this dashboard."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1658,7 +1625,7 @@ def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonRespo
 
 
 @login_required
-def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_apply_filters(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Return updated chart configs for all chart-type widgets with filters applied.
 
     POST body: { "filters": [{column, filter_type, value}, ...] }
@@ -1724,7 +1691,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
 
 
 @login_required
-def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_get_filter_columns(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Return columns available for filtering (dimension columns with their unique values)."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     dataset_version = _get_default_dataset_version(dashboard)
@@ -1765,7 +1732,7 @@ def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> Jso
 
 
 @login_required
-def dashboard_ai_analyze_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+def dashboard_ai_analyze_widget(request: HttpRequest, dashboard_id, widget_id) -> JsonResponse:
     """Return AI-generated analysis text for a specific widget's chart data."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
@@ -1798,7 +1765,7 @@ def dashboard_ai_analyze_widget(request: HttpRequest, dashboard_id: int, widget_
 
 
 @login_required
-def dashboard_ai_suggest_slicers(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_ai_suggest_slicers(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Return AI-suggested slicers for this dashboard's primary dataset."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
     dataset_version = _get_default_dataset_version(dashboard)
@@ -1815,7 +1782,7 @@ def dashboard_ai_suggest_slicers(request: HttpRequest, dashboard_id: int) -> Jso
 
 
 @login_required
-def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Run AI data cleaning on the primary dataset and return a cleaning report."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -1836,7 +1803,7 @@ def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id: int) -> JsonR
 
 
 @login_required
-def dashboard_ai_executive_summary(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+def dashboard_ai_executive_summary(request: HttpRequest, dashboard_id) -> JsonResponse:
     """Generate an AI-powered executive summary for the dashboard (used for PDF export)."""
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)

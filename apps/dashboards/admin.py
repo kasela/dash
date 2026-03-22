@@ -24,8 +24,8 @@ class DashboardShareLinkInline(admin.TabularInline):
 
 @admin.register(Dashboard)
 class DashboardAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "workspace", "dataset_version", "is_public", "created_at")
-    list_filter = ("is_public", "created_at")
+    list_display = ("id", "title", "workspace", "dataset_version", "is_public", "build_status", "created_at")
+    list_filter = ("is_public", "build_status", "created_at")
     search_fields = ("title", "workspace__name", "workspace__owner__username")
     autocomplete_fields = ("workspace", "dataset_version")
     inlines = (DashboardDatasetInline, DashboardWidgetInline, DashboardShareLinkInline)

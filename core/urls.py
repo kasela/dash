@@ -10,6 +10,7 @@ from apps.dashboards.views import (
     dashboard_add_heading,
     dashboard_add_text_canvas,
     dashboard_add_divider,
+    dashboard_build_status,
     dashboard_create_from_version,
     dashboard_create_share_link,
     dashboard_delete_widget,
@@ -72,26 +73,27 @@ urlpatterns = [
 
     # Authenticated app
     path("app/", app_home, name="app-home"),
-    path("app/dashboards/<int:dashboard_id>/", dashboard_detail, name="dashboard-detail"),
+    path("app/dashboards/<uuid:dashboard_id>/", dashboard_detail, name="dashboard-detail"),
 
     # Dashboard actions
     path("dashboards/create/<int:version_id>/", dashboard_create_from_version, name="dashboard-create-from-version"),
-    path("dashboards/<int:dashboard_id>/share/", dashboard_create_share_link, name="dashboard-create-share"),
+    path("dashboards/<uuid:dashboard_id>/share/", dashboard_create_share_link, name="dashboard-create-share"),
     path("dashboards/share/<uuid:token>/", dashboard_public_view, name="dashboard-public-view"),
-    path("dashboards/<int:dashboard_id>/columns/", dashboard_get_columns, name="dashboard-get-columns"),
-    path("dashboards/<int:dashboard_id>/widgets/add/", dashboard_add_widget, name="dashboard-add-widget"),
-    path("dashboards/<int:dashboard_id>/widgets/add-heading/", dashboard_add_heading, name="dashboard-add-heading"),
-    path("dashboards/<int:dashboard_id>/widgets/add-text-canvas/", dashboard_add_text_canvas, name="dashboard-add-text-canvas"),
-    path("dashboards/<int:dashboard_id>/widgets/add-divider/", dashboard_add_divider, name="dashboard-add-divider"),
-    path("dashboards/<int:dashboard_id>/widgets/reorder/", dashboard_reorder_widgets, name="dashboard-reorder-widgets"),
-    path("dashboards/<int:dashboard_id>/rename/", dashboard_rename, name="dashboard-rename"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/delete/", dashboard_delete_widget, name="dashboard-delete-widget"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/rename/", dashboard_rename_widget, name="dashboard-rename-widget"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update/", dashboard_update_widget, name="dashboard-update-widget"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/resize/", dashboard_resize_widget, name="dashboard-resize-widget"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/span/", dashboard_update_widget_span, name="dashboard-widget-span"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update-heading/", dashboard_update_heading, name="dashboard-update-heading"),
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update-text-canvas/", dashboard_update_text_canvas, name="dashboard-update-text-canvas"),
+    path("dashboards/<uuid:dashboard_id>/build-status/", dashboard_build_status, name="dashboard-build-status"),
+    path("dashboards/<uuid:dashboard_id>/columns/", dashboard_get_columns, name="dashboard-get-columns"),
+    path("dashboards/<uuid:dashboard_id>/widgets/add/", dashboard_add_widget, name="dashboard-add-widget"),
+    path("dashboards/<uuid:dashboard_id>/widgets/add-heading/", dashboard_add_heading, name="dashboard-add-heading"),
+    path("dashboards/<uuid:dashboard_id>/widgets/add-text-canvas/", dashboard_add_text_canvas, name="dashboard-add-text-canvas"),
+    path("dashboards/<uuid:dashboard_id>/widgets/add-divider/", dashboard_add_divider, name="dashboard-add-divider"),
+    path("dashboards/<uuid:dashboard_id>/widgets/reorder/", dashboard_reorder_widgets, name="dashboard-reorder-widgets"),
+    path("dashboards/<uuid:dashboard_id>/rename/", dashboard_rename, name="dashboard-rename"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/delete/", dashboard_delete_widget, name="dashboard-delete-widget"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/rename/", dashboard_rename_widget, name="dashboard-rename-widget"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/update/", dashboard_update_widget, name="dashboard-update-widget"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/resize/", dashboard_resize_widget, name="dashboard-resize-widget"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/span/", dashboard_update_widget_span, name="dashboard-widget-span"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/update-heading/", dashboard_update_heading, name="dashboard-update-heading"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/update-text-canvas/", dashboard_update_text_canvas, name="dashboard-update-text-canvas"),
 
     # Dataset actions
     path("datasets/upload/", dataset_upload, name="dataset-upload"),
@@ -103,18 +105,18 @@ urlpatterns = [
     path("datasets/versions/<int:version_id>/delete-rows/", dataset_delete_rows, name="dataset-delete-rows"),
 
     # Dashboard multi-dataset management
-    path("dashboards/<int:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
-    path("dashboards/<int:dashboard_id>/datasets/add/", dashboard_add_dataset, name="dashboard-add-dataset"),
-    path("dashboards/<int:dashboard_id>/datasets/<int:version_id>/remove/", dashboard_remove_dataset, name="dashboard-remove-dataset"),
+    path("dashboards/<uuid:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
+    path("dashboards/<uuid:dashboard_id>/datasets/add/", dashboard_add_dataset, name="dashboard-add-dataset"),
+    path("dashboards/<uuid:dashboard_id>/datasets/<int:version_id>/remove/", dashboard_remove_dataset, name="dashboard-remove-dataset"),
 
     # Dashboard interactive filters
-    path("dashboards/<int:dashboard_id>/filters/save/", dashboard_save_filters, name="dashboard-save-filters"),
-    path("dashboards/<int:dashboard_id>/filters/apply/", dashboard_apply_filters, name="dashboard-apply-filters"),
-    path("dashboards/<int:dashboard_id>/filters/columns/", dashboard_get_filter_columns, name="dashboard-filter-columns"),
+    path("dashboards/<uuid:dashboard_id>/filters/save/", dashboard_save_filters, name="dashboard-save-filters"),
+    path("dashboards/<uuid:dashboard_id>/filters/apply/", dashboard_apply_filters, name="dashboard-apply-filters"),
+    path("dashboards/<uuid:dashboard_id>/filters/columns/", dashboard_get_filter_columns, name="dashboard-filter-columns"),
 
     # AI-powered endpoints
-    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/ai-analyze/", dashboard_ai_analyze_widget, name="dashboard-ai-analyze-widget"),
-    path("dashboards/<int:dashboard_id>/ai/suggest-slicers/", dashboard_ai_suggest_slicers, name="dashboard-ai-suggest-slicers"),
-    path("dashboards/<int:dashboard_id>/ai/clean-dataset/", dashboard_ai_clean_dataset, name="dashboard-ai-clean-dataset"),
-    path("dashboards/<int:dashboard_id>/ai/executive-summary/", dashboard_ai_executive_summary, name="dashboard-ai-executive-summary"),
+    path("dashboards/<uuid:dashboard_id>/widgets/<uuid:widget_id>/ai-analyze/", dashboard_ai_analyze_widget, name="dashboard-ai-analyze-widget"),
+    path("dashboards/<uuid:dashboard_id>/ai/suggest-slicers/", dashboard_ai_suggest_slicers, name="dashboard-ai-suggest-slicers"),
+    path("dashboards/<uuid:dashboard_id>/ai/clean-dataset/", dashboard_ai_clean_dataset, name="dashboard-ai-clean-dataset"),
+    path("dashboards/<uuid:dashboard_id>/ai/executive-summary/", dashboard_ai_executive_summary, name="dashboard-ai-executive-summary"),
 ]
