@@ -1777,6 +1777,198 @@
     });
   }
 
+  // ── Section (Heading / Text Canvas) Inline Edit ──────────────────────────
+
+  function initSectionEdit() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    // — Heading edit modal elements —
+    var ehOverlay = document.getElementById('edit-heading-overlay');
+    var ehModal = document.getElementById('edit-heading-modal');
+    var ehText = document.getElementById('eh-text');
+    var ehFontSize = document.getElementById('eh-font-size');
+    var ehColor = document.getElementById('eh-color');
+    var ehFontFamily = document.getElementById('eh-font-family');
+    var ehAlign = document.getElementById('eh-align');
+    var ehError = document.getElementById('eh-error');
+    var ehSubmit = document.getElementById('submit-edit-heading-btn');
+    var ehClose = document.getElementById('close-edit-heading-btn');
+    var ehCancel = document.getElementById('cancel-edit-heading-btn');
+
+    // — Text canvas edit modal elements —
+    var etcOverlay = document.getElementById('edit-text-canvas-overlay');
+    var etcModal = document.getElementById('edit-text-canvas-modal');
+    var etcTitle = document.getElementById('etc-title');
+    var etcContent = document.getElementById('etc-content');
+    var etcBgColor = document.getElementById('etc-bg-color');
+    var etcTextSize = document.getElementById('etc-text-size');
+    var etcError = document.getElementById('etc-error');
+    var etcSubmit = document.getElementById('submit-edit-text-canvas-btn');
+    var etcClose = document.getElementById('close-edit-text-canvas-btn');
+    var etcCancel = document.getElementById('cancel-edit-text-canvas-btn');
+
+    var activeWidgetId = null;
+
+    function setSelectValue(el, val) {
+      if (!el || !val) return;
+      for (var i = 0; i < el.options.length; i++) {
+        if (el.options[i].value === val) { el.selectedIndex = i; break; }
+      }
+    }
+
+    function openHeadingEdit(widgetId, widgetConfig, widgetTitle) {
+      activeWidgetId = widgetId;
+      var config = {};
+      try { config = JSON.parse(widgetConfig); } catch (_) {}
+      if (ehText) ehText.value = config.text || widgetTitle || '';
+      setSelectValue(ehFontSize, config.font_size || '2xl');
+      setSelectValue(ehColor, config.color || 'indigo');
+      setSelectValue(ehFontFamily, config.font_family || 'inter');
+      setSelectValue(ehAlign, config.align || 'left');
+      if (ehError) { ehError.style.display = 'none'; ehError.textContent = ''; }
+      if (ehModal) ehModal.style.display = 'block';
+      if (ehOverlay) ehOverlay.style.display = 'block';
+      setTimeout(function () { if (ehText) ehText.focus(); }, 20);
+    }
+
+    function closeHeadingEdit() {
+      if (ehModal) ehModal.style.display = 'none';
+      if (ehOverlay) ehOverlay.style.display = 'none';
+      activeWidgetId = null;
+    }
+
+    function openTextCanvasEdit(widgetId, widgetConfig, widgetTitle) {
+      activeWidgetId = widgetId;
+      var config = {};
+      try { config = JSON.parse(widgetConfig); } catch (_) {}
+      if (etcTitle) etcTitle.value = widgetTitle || '';
+      if (etcContent) etcContent.value = config.content || '';
+      setSelectValue(etcBgColor, config.bg_color || 'white');
+      setSelectValue(etcTextSize, config.text_size || 'sm');
+      if (etcError) { etcError.style.display = 'none'; etcError.textContent = ''; }
+      if (etcModal) etcModal.style.display = 'block';
+      if (etcOverlay) etcOverlay.style.display = 'block';
+      setTimeout(function () { if (etcContent) etcContent.focus(); }, 20);
+    }
+
+    function closeTextCanvasEdit() {
+      if (etcModal) etcModal.style.display = 'none';
+      if (etcOverlay) etcOverlay.style.display = 'none';
+      activeWidgetId = null;
+    }
+
+    // Wire up edit section buttons
+    document.querySelectorAll('.edit-section-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var widgetId = btn.dataset.widgetId;
+        var widgetType = btn.dataset.widgetType;
+        var widgetConfig = btn.dataset.widgetConfig || '{}';
+        var widgetTitle = btn.dataset.widgetTitle || '';
+        if (widgetType === 'heading') {
+          openHeadingEdit(widgetId, widgetConfig, widgetTitle);
+        } else if (widgetType === 'text_canvas') {
+          openTextCanvasEdit(widgetId, widgetConfig, widgetTitle);
+        }
+      });
+    });
+
+    // Heading modal close/cancel
+    if (ehClose) ehClose.addEventListener('click', closeHeadingEdit);
+    if (ehCancel) ehCancel.addEventListener('click', closeHeadingEdit);
+    if (ehOverlay) ehOverlay.addEventListener('click', closeHeadingEdit);
+
+    // Text canvas modal close/cancel
+    if (etcClose) etcClose.addEventListener('click', closeTextCanvasEdit);
+    if (etcCancel) etcCancel.addEventListener('click', closeTextCanvasEdit);
+    if (etcOverlay) etcOverlay.addEventListener('click', closeTextCanvasEdit);
+
+    // Heading submit
+    if (ehSubmit) {
+      ehSubmit.addEventListener('click', function () {
+        var text = ehText ? ehText.value.trim() : '';
+        if (!text) {
+          if (ehError) { ehError.textContent = 'Heading text is required.'; ehError.style.display = 'block'; }
+          return;
+        }
+        ehSubmit.disabled = true;
+        ehSubmit.textContent = 'Saving…';
+        var url = (cfg.updateHeadingBaseUrl || '') + activeWidgetId + '/update-heading/';
+        fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({
+            text: text,
+            font_size: (ehFontSize || {}).value || '2xl',
+            color: (ehColor || {}).value || 'indigo',
+            font_family: (ehFontFamily || {}).value || 'inter',
+            align: (ehAlign || {}).value || 'left',
+          }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            ehSubmit.disabled = false;
+            ehSubmit.textContent = 'Save Heading';
+            if (data.success) {
+              closeHeadingEdit();
+              showToast('Heading updated', 'success');
+              setTimeout(function () { window.location.reload(); }, 300);
+            } else {
+              if (ehError) { ehError.textContent = data.error || 'Could not update heading.'; ehError.style.display = 'block'; }
+            }
+          })
+          .catch(function (err) {
+            ehSubmit.disabled = false;
+            ehSubmit.textContent = 'Save Heading';
+            if (ehError) { ehError.textContent = 'Network error: ' + err.message; ehError.style.display = 'block'; }
+          });
+      });
+    }
+
+    // Text canvas submit
+    if (etcSubmit) {
+      etcSubmit.addEventListener('click', function () {
+        var content = etcContent ? etcContent.value.trim() : '';
+        if (!content) {
+          if (etcError) { etcError.textContent = 'Content is required.'; etcError.style.display = 'block'; }
+          return;
+        }
+        etcSubmit.disabled = true;
+        etcSubmit.textContent = 'Saving…';
+        var url = (cfg.updateTextCanvasBaseUrl || '') + activeWidgetId + '/update-text-canvas/';
+        fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({
+            title: (etcTitle || {}).value || '',
+            content: content,
+            bg_color: (etcBgColor || {}).value || 'white',
+            text_size: (etcTextSize || {}).value || 'sm',
+          }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            etcSubmit.disabled = false;
+            etcSubmit.textContent = 'Save Text Block';
+            if (data.success) {
+              closeTextCanvasEdit();
+              showToast('Text block updated', 'success');
+              setTimeout(function () { window.location.reload(); }, 300);
+            } else {
+              if (etcError) { etcError.textContent = data.error || 'Could not update text block.'; etcError.style.display = 'block'; }
+            }
+          })
+          .catch(function (err) {
+            etcSubmit.disabled = false;
+            etcSubmit.textContent = 'Save Text Block';
+            if (etcError) { etcError.textContent = 'Network error: ' + err.message; etcError.style.display = 'block'; }
+          });
+      });
+    }
+  }
+
   function initChartBuilder() {
     var openBtn = document.getElementById('open-chart-builder-btn');
     if (!openBtn) return;
@@ -1982,6 +2174,7 @@
     initWidgetEdit();
     initDashboardRename();
     initHeadingBuilder();
+    initSectionEdit();
     initDatasetsPanel();
     initPresentationMode();
     initTextCanvasBuilder();
