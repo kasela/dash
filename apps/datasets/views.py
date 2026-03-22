@@ -1,12 +1,17 @@
 from pathlib import Path
+import io
+import json
+import os
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.workspaces.models import Workspace
+import pandas as pd
 
 from .models import Dataset, DatasetColumn, DatasetVersion, ExternalDataSource
 from .services import (
@@ -469,6 +474,157 @@ def dataset_ai_clean(request: HttpRequest, version_id: int) -> HttpResponse:
         "profile": profile_summary,
         "widget_suggestions": widget_suggestions,
         "ai_clean_report": ai_report,
+    }
+    return render(request, "datasets/partials/upload_result.html", context)
+
+
+def _load_dataframe_for_version(version: DatasetVersion) -> pd.DataFrame:
+    file_name = version.source_file.name.lower()
+    if file_name.endswith(".csv"):
+        return pd.read_csv(version.source_file)
+    if file_name.endswith((".xlsx", ".xlsm")):
+        return pd.read_excel(version.source_file)
+    if file_name.endswith(".json"):
+        return pd.read_json(version.source_file)
+    return pd.read_csv(version.source_file)
+
+
+def _save_transformed_version(version: DatasetVersion, df: pd.DataFrame, suffix: str) -> DatasetVersion:
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    original_name = os.path.basename(version.source_file.name)
+    stem = os.path.splitext(original_name)[0]
+    csv_file = InMemoryUploadedFile(
+        file=io.BytesIO(csv_bytes),
+        field_name="source_file",
+        name=f"{stem}_{suffix}.csv",
+        content_type="text/csv",
+        size=len(csv_bytes),
+        charset="utf-8",
+    )
+    next_version = version.dataset.versions.count() + 1
+    new_version = DatasetVersion.objects.create(
+        dataset=version.dataset,
+        version=next_version,
+        source_file=csv_file,
+        row_count=int(df.shape[0]),
+        column_count=int(df.shape[1]),
+    )
+    for column_name in df.columns:
+        series = df[column_name]
+        DatasetColumn.objects.create(
+            dataset_version=new_version,
+            name=str(column_name),
+            kind=infer_column_kind(series),
+            dtype=str(series.dtype),
+            null_ratio=float(series.isna().mean()),
+        )
+    return new_version
+
+
+@require_POST
+def dataset_transform_version(request: HttpRequest, version_id: int) -> HttpResponse:
+    """Apply lightweight data-prepare transforms before dashboard generation."""
+    from django.shortcuts import get_object_or_404
+
+    version = get_object_or_404(DatasetVersion, pk=version_id)
+    action = request.POST.get("action", "").strip()
+    if action not in {"promote_header", "set_type", "add_column"}:
+        return HttpResponseBadRequest("Invalid transform action")
+
+    try:
+        df = _load_dataframe_for_version(version)
+    except Exception as exc:
+        return HttpResponseBadRequest(f"Could not read dataset file: {exc}")
+
+    transformed = df.copy()
+    note = ""
+
+    if action == "promote_header":
+        try:
+            header_row_index = int(request.POST.get("header_row_index", "0"))
+        except ValueError:
+            return HttpResponseBadRequest("Invalid header row index")
+        if header_row_index < 0 or header_row_index >= len(transformed):
+            return HttpResponseBadRequest("Header row index out of range")
+
+        raw_headers = transformed.iloc[header_row_index].fillna("").astype(str).str.strip().tolist()
+        used = {}
+        safe_headers = []
+        for idx, h in enumerate(raw_headers):
+            base = h or f"column_{idx+1}"
+            c = used.get(base, 0)
+            used[base] = c + 1
+            safe_headers.append(base if c == 0 else f"{base}_{c+1}")
+        transformed = transformed.iloc[header_row_index + 1 :].reset_index(drop=True)
+        transformed.columns = safe_headers
+        note = f"Promoted row {header_row_index + 1} to header."
+
+    elif action == "set_type":
+        column_name = request.POST.get("column_name", "").strip()
+        target_type = request.POST.get("target_type", "").strip()
+        if column_name not in transformed.columns:
+            return HttpResponseBadRequest("Column not found")
+        if target_type not in {"text", "date", "number", "currency"}:
+            return HttpResponseBadRequest("Invalid target type")
+
+        if target_type in {"number", "currency"}:
+            transformed[column_name] = pd.to_numeric(transformed[column_name], errors="coerce")
+        elif target_type == "date":
+            transformed[column_name] = pd.to_datetime(transformed[column_name], errors="coerce")
+        else:
+            transformed[column_name] = transformed[column_name].astype(str)
+        note = f"Set {column_name} as {target_type}."
+
+    elif action == "add_column":
+        new_col = request.POST.get("new_column_name", "").strip()
+        operation = request.POST.get("operation", "").strip()
+        col_a = request.POST.get("column_a", "").strip()
+        col_b = request.POST.get("column_b", "").strip()
+        if not new_col:
+            return HttpResponseBadRequest("New column name is required")
+        if new_col in transformed.columns:
+            return HttpResponseBadRequest("Column name already exists")
+        if operation not in {"sum", "multiply", "left", "mid", "right"}:
+            return HttpResponseBadRequest("Invalid operation")
+        if col_a not in transformed.columns:
+            return HttpResponseBadRequest("Column A not found")
+
+        if operation in {"sum", "multiply"}:
+            if col_b not in transformed.columns:
+                return HttpResponseBadRequest("Column B not found for numeric operation")
+            a = pd.to_numeric(transformed[col_a], errors="coerce").fillna(0)
+            b = pd.to_numeric(transformed[col_b], errors="coerce").fillna(0)
+            transformed[new_col] = a + b if operation == "sum" else a * b
+        else:
+            start = int(request.POST.get("start", "0") or 0)
+            length = int(request.POST.get("length", "3") or 3)
+            s = transformed[col_a].fillna("").astype(str)
+            if operation == "left":
+                transformed[new_col] = s.str[: max(length, 0)]
+            elif operation == "right":
+                transformed[new_col] = s.str[-max(length, 0) :]
+            else:
+                transformed[new_col] = s.str[max(start, 0) : max(start, 0) + max(length, 0)]
+        note = f"Created column {new_col}."
+
+    with transaction.atomic():
+        new_version = _save_transformed_version(version, transformed, "transformed")
+
+    sample_df = transformed.head(100)
+    records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
+    profile_summary = build_profile_summary(transformed)
+    widget_suggestions = build_widget_suggestions(profile_summary)
+    context = {
+        "headers": [str(h) for h in transformed.columns],
+        "rows": records,
+        "shape": transformed.shape,
+        "filename": os.path.basename(new_version.source_file.name),
+        "dataset_version": new_version,
+        "persistence_error": None,
+        "plan_error": None,
+        "profile": profile_summary,
+        "widget_suggestions": widget_suggestions,
+        "transform_note": note,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 
