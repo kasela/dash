@@ -39,6 +39,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+celery -A core worker --loglevel=info -Q default,high_priority
+
 
 ### 2) Run app
 
