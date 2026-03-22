@@ -1837,6 +1837,7 @@
   "filterColumnsUrl": "{% url 'dashboard-filter-columns' dashboard.id %}",
   "executiveSummaryUrl": "{% url 'dashboard-ai-executive-summary' dashboard.id %}",
   "enhancePresentationTextUrl": "{% url 'dashboard-ai-enhance-presentation-text' dashboard.id %}",
+  "dashboardId": "{{ dashboard.id }}",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>
@@ -2017,90 +2018,191 @@
   role="dialog" aria-modal="true" aria-label="Presentation mode">
 
   <!-- Header bar -->
-  <div class="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-6">
-    <div class="flex items-center gap-3">
-      <span class="text-indigo-400 font-bold text-sm uppercase tracking-widest">Present</span>
-      <span id="presentation-counter" class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-300">– / –</span>
-    </div>
-    <h2 id="presentation-widget-title" class="text-base font-semibold text-white truncate max-w-md text-center"></h2>
+  <div class="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
     <div class="flex items-center gap-2">
-      <select id="presentation-theme-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+      <span class="text-indigo-400 font-bold text-xs uppercase tracking-widest">Present</span>
+      <span id="presentation-counter" class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-slate-300">– / –</span>
+    </div>
+    <h2 id="presentation-widget-title" class="text-sm font-semibold text-white truncate max-w-xs text-center"></h2>
+    <div class="flex items-center gap-1.5">
+      <!-- Presentation Timer -->
+      <span id="presentation-timer-display" class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-mono text-slate-300 tabular-nums">00:00</span>
+      <button id="presentation-timer-btn" title="Start / Pause timer" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 text-xs">▶</button>
+      <button id="presentation-timer-reset-btn" title="Reset timer" class="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 text-xs">↺</button>
+      <span class="mx-1 h-4 w-px bg-white/20"></span>
+      <select id="presentation-theme-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white" title="Presentation theme">
         <option value="dark">Dark</option>
         <option value="indigo">Indigo</option>
         <option value="emerald">Emerald</option>
+        <option value="rose">Rose</option>
+        <option value="midnight">Midnight</option>
         <option value="light">Light</option>
       </select>
-      <input id="presentation-bg-color" type="color" value="#020617" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
-      <button id="presentation-close-btn"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <input id="presentation-bg-color" type="color" value="#020617" title="Custom background color" class="h-7 w-7 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+      <button id="presentation-close-btn" title="Close (Esc)"
+        class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </div>
   </div>
 
-  <!-- Builder controls -->
-  <div class="flex flex-wrap items-center gap-2 border-b border-white/10 px-6 py-3">
-    <button id="presentation-add-text-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Text Slide</button>
-    <select id="presentation-chart-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white">
-      <option value="">Select chart widget</option>
+  <!-- Toolbar Row 1: Add slides & slide management -->
+  <div class="flex flex-wrap items-center gap-1.5 border-b border-white/10 px-4 py-2" style="background:rgba(255,255,255,0.025);">
+    <!-- Add slide types -->
+    <button id="presentation-add-text-btn" title="Add a text/notes slide" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Text</button>
+    <select id="presentation-chart-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+      <option value="">Select chart</option>
     </select>
-    <button id="presentation-add-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Chart Slide</button>
-    <button id="presentation-ai-slide-btn" class="rounded-lg bg-indigo-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Generate AI Slide</button>
-    <button id="presentation-add-image-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Image</button>
-    <button id="presentation-add-video-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Video</button>
-    <button id="presentation-add-multi-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Multi-Chart</button>
-    <button id="presentation-add-voice-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Voice</button>
-    <button id="presentation-auto-deck-btn" class="rounded-lg bg-emerald-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">AI Full Deck</button>
-    <button id="presentation-fullscreen-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">Fullscreen</button>
-    <select id="presentation-transition-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+    <button id="presentation-add-chart-btn" title="Add selected chart as a slide" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Chart</button>
+    <button id="presentation-ai-slide-btn" title="Generate an AI executive summary slide" class="rounded-lg bg-indigo-500/80 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-500">✦ AI Slide</button>
+    <button id="presentation-add-image-btn" title="Add an image slide" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Image</button>
+    <button id="presentation-add-video-btn" title="Embed a YouTube or video URL" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Video</button>
+    <button id="presentation-add-multi-chart-btn" title="Add a 2×2 multi-chart grid slide" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Grid</button>
+    <button id="presentation-add-voice-btn" title="Attach audio narration to current slide" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">+ Audio</button>
+    <button id="presentation-auto-deck-btn" title="Auto-generate a complete deck from this dashboard" class="rounded-lg bg-emerald-500/80 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-500">✦ AI Deck</button>
+    <span class="mx-1 h-4 w-px bg-white/20"></span>
+    <!-- Slide operations -->
+    <button id="presentation-duplicate-btn" title="Duplicate current slide (Ctrl+D)" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">⧉ Dup</button>
+    <button id="presentation-move-up-btn" title="Move slide earlier" class="rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold text-white hover:bg-white/20">↑</button>
+    <button id="presentation-move-down-btn" title="Move slide later" class="rounded-lg bg-white/10 px-2 py-1 text-xs font-semibold text-white hover:bg-white/20">↓</button>
+    <button id="presentation-delete-slide-btn" title="Delete current slide (Del)" class="rounded-lg bg-red-500/25 px-2.5 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/55 hover:text-white">✕ Del</button>
+    <span class="mx-1 h-4 w-px bg-white/20"></span>
+    <!-- View controls -->
+    <button id="presentation-toggle-panel-btn" title="Toggle slide panel" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">☰ Slides</button>
+    <button id="presentation-toggle-notes-btn" title="Toggle speaker notes" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">✎ Notes</button>
+    <button id="presentation-fullscreen-btn" title="Toggle fullscreen (F)" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">⛶ Full</button>
+    <select id="presentation-transition-select" title="Slide transition effect" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
       <option value="fade">Fade</option>
       <option value="slide">Slide</option>
       <option value="zoom">Zoom</option>
+      <option value="flip">Flip</option>
       <option value="none">None</option>
     </select>
-    <span class="mx-1 h-5 w-px bg-white/20"></span>
-    <button id="presentation-text-bold-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">B</button>
-    <button id="presentation-text-italic-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs italic text-white hover:bg-white/20">I</button>
-    <select id="presentation-font-size-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+  </div>
+
+  <!-- Toolbar Row 2: Text formatting -->
+  <div class="flex flex-wrap items-center gap-1 border-b border-white/10 px-4 py-1.5" style="background:rgba(0,0,0,0.15);">
+    <span class="text-xs text-slate-600 mr-0.5 select-none">Format</span>
+    <!-- Font style -->
+    <button id="presentation-text-bold-btn" title="Bold (Ctrl+B)" class="rounded bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20">B</button>
+    <button id="presentation-text-italic-btn" title="Italic (Ctrl+I)" class="rounded bg-white/10 px-2 py-0.5 text-xs italic font-semibold text-white hover:bg-white/20">I</button>
+    <button id="presentation-text-underline-btn" title="Underline (Ctrl+U)" class="rounded bg-white/10 px-2 py-0.5 text-xs font-semibold text-white hover:bg-white/20" style="text-decoration:underline;">U</button>
+    <button id="presentation-text-strike-btn" title="Strikethrough" class="rounded bg-white/10 px-2 py-0.5 text-xs font-semibold text-white hover:bg-white/20" style="text-decoration:line-through;">S</button>
+    <span class="mx-0.5 h-4 w-px bg-white/15"></span>
+    <!-- Font family & size -->
+    <select id="presentation-font-family-select" title="Font family" class="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-xs text-white">
+      <option value="">Default</option>
+      <option value="Georgia, serif">Georgia</option>
+      <option value="'Times New Roman', serif">Times</option>
+      <option value="Arial, sans-serif">Arial</option>
+      <option value="'Helvetica Neue', sans-serif">Helvetica</option>
+      <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+      <option value="'Courier New', monospace">Courier</option>
+    </select>
+    <select id="presentation-font-size-select" title="Font size" class="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 text-xs text-white">
+      <option value="12px">12</option>
       <option value="14px">14</option>
       <option value="16px" selected>16</option>
       <option value="18px">18</option>
-      <option value="22px">22</option>
+      <option value="20px">20</option>
+      <option value="24px">24</option>
       <option value="28px">28</option>
+      <option value="36px">36</option>
+      <option value="48px">48</option>
     </select>
-    <input id="presentation-text-color" type="color" value="#ffffff" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
-    <button id="presentation-enhance-text-btn" class="rounded-lg bg-violet-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500">AI Enhance Text</button>
+    <span class="mx-0.5 h-4 w-px bg-white/15"></span>
+    <!-- Colors -->
+    <label title="Text color" class="flex items-center gap-1 cursor-pointer">
+      <span class="text-xs text-slate-500">A</span>
+      <input id="presentation-text-color" type="color" value="#ffffff" class="h-6 w-6 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+    </label>
+    <label title="Highlight / background color" class="flex items-center gap-1 cursor-pointer">
+      <span class="text-xs text-slate-500">H</span>
+      <input id="presentation-highlight-color" type="color" value="#fbbf24" class="h-6 w-6 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+    </label>
+    <span class="mx-0.5 h-4 w-px bg-white/15"></span>
+    <!-- Alignment -->
+    <button id="presentation-align-left-btn" title="Align left" class="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20">
+      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h8a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+    </button>
+    <button id="presentation-align-center-btn" title="Align center" class="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20">
+      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 4a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm-2 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+    </button>
+    <button id="presentation-align-right-btn" title="Align right" class="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20">
+      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm4 4a1 1 0 011-1h8a1 1 0 110 2H8a1 1 0 01-1-1zm-4 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+    </button>
+    <span class="mx-0.5 h-4 w-px bg-white/15"></span>
+    <!-- Lists -->
+    <button id="presentation-bullet-btn" title="Bullet list" class="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20">• List</button>
+    <button id="presentation-number-btn" title="Numbered list" class="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20">1. List</button>
+    <span class="mx-0.5 h-4 w-px bg-white/15"></span>
+    <!-- AI & clear -->
+    <button id="presentation-enhance-text-btn" title="Enhance slide text with AI" class="rounded bg-violet-500/80 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-violet-500">✦ AI Enhance</button>
+    <button id="presentation-clear-format-btn" title="Remove all formatting from selection" class="rounded bg-white/10 px-2.5 py-0.5 text-xs text-white hover:bg-white/20">✕ Format</button>
   </div>
 
-  <!-- Chart area -->
-  <div id="presentation-stage" class="relative flex-1 p-8" style="min-height:0;">
-    <canvas id="presentation-canvas" style="display:none;max-height:100%;"></canvas>
-    <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
-    <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
-    <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
-    <div id="presentation-insight-wrap" style="display:none;" class="absolute bottom-10 left-10 max-w-xl rounded-xl border border-violet-300/40 bg-slate-900/70 px-4 py-3 text-xs text-violet-100 backdrop-blur-sm"></div>
-    <div id="presentation-audio-wrap" style="display:none;" class="absolute bottom-10 right-10"></div>
+  <!-- Progress bar -->
+  <div style="height:3px;background:rgba(255,255,255,0.08);flex-shrink:0;">
+    <div id="presentation-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#8b5cf6);transition:width 0.35s ease;"></div>
   </div>
+
+  <!-- Content area: optional slide panel + stage + notes -->
+  <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
+
+    <!-- Slide Panel Sidebar (toggle-able) -->
+    <div id="presentation-slide-panel"
+      style="display:none;width:165px;flex-shrink:0;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.08);padding:8px 6px;background:rgba(0,0,0,0.25);">
+      <!-- Slide thumbnails rendered by JS -->
+    </div>
+
+    <!-- Stage + Notes vertical stack -->
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;">
+
+      <!-- Stage area -->
+      <div id="presentation-stage" class="relative flex-1 p-8" style="min-height:0;overflow:hidden;">
+        <canvas id="presentation-canvas" style="display:none;max-height:100%;"></canvas>
+        <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
+        <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
+        <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
+        <div id="presentation-insight-wrap" style="display:none;" class="absolute bottom-10 left-10 max-w-xl rounded-xl border border-violet-300/40 bg-slate-900/70 px-4 py-3 text-xs text-violet-100 backdrop-blur-sm"></div>
+        <div id="presentation-audio-wrap" style="display:none;" class="absolute bottom-10 right-10"></div>
+      </div>
+
+      <!-- Speaker Notes Panel (toggle-able) -->
+      <div id="presentation-notes-panel" style="display:none;height:120px;flex-shrink:0;border-top:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.3);">
+        <div style="height:26px;display:flex;align-items:center;padding:0 14px;gap:6px;border-bottom:1px solid rgba(255,255,255,0.06);">
+          <svg style="width:11px;height:11px;stroke:#475569;fill:none;flex-shrink:0;" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          <span style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">Speaker Notes</span>
+        </div>
+        <textarea id="presentation-notes-textarea"
+          style="width:100%;height:calc(100% - 26px);background:transparent;border:none;outline:none;color:#94a3b8;font-size:12px;padding:6px 14px;resize:none;line-height:1.55;"
+          placeholder="Add speaker notes for this slide…"></textarea>
+      </div>
+
+    </div>
+  </div>
+
   <input id="presentation-image-input" type="file" accept="image/*" class="hidden">
   <input id="presentation-audio-input" type="file" accept="audio/*" class="hidden">
 
   <!-- Navigation bar -->
-  <div class="flex h-20 shrink-0 items-center justify-center gap-6 border-t border-white/10 px-6">
+  <div class="flex h-16 shrink-0 items-center justify-center gap-6 border-t border-white/10 px-6">
     <button id="presentation-prev-btn"
-      class="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
-      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      class="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
       </svg>
     </button>
     <div class="text-center">
-      <p class="text-xs text-slate-500">Use ← → arrow keys to navigate</p>
-      <p class="text-xs text-slate-600 mt-0.5">Press Esc to exit</p>
+      <p class="text-xs text-slate-500">← → navigate &nbsp;·&nbsp; Esc exit &nbsp;·&nbsp; Del delete &nbsp;·&nbsp; Ctrl+D duplicate</p>
     </div>
     <button id="presentation-next-btn"
-      class="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
-      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      class="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
       </svg>
     </button>
