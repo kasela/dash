@@ -1952,6 +1952,7 @@
   // ── Presentation Mode ────────────────────────────────────────────────────
 
   var presentationChart = null;
+  var presentationAuxCharts = [];
   var presentationSlides = [];
   var presentationIndex = 0;
 
@@ -1968,6 +1969,8 @@
     var kpiWrap = document.getElementById('presentation-kpi-wrap');
     var textWrap = document.getElementById('presentation-text-wrap');
     var insightWrap = document.getElementById('presentation-insight-wrap');
+    var audioWrap = document.getElementById('presentation-audio-wrap');
+    var stageWrap = document.getElementById('presentation-stage');
     var addTextBtn = document.getElementById('presentation-add-text-btn');
     var chartSelect = document.getElementById('presentation-chart-select');
     var addChartBtn = document.getElementById('presentation-add-chart-btn');
@@ -1979,6 +1982,13 @@
     var fontSizeSelect = document.getElementById('presentation-font-size-select');
     var textColorInput = document.getElementById('presentation-text-color');
     var enhanceTextBtn = document.getElementById('presentation-enhance-text-btn');
+    var addImageBtn = document.getElementById('presentation-add-image-btn');
+    var addVideoBtn = document.getElementById('presentation-add-video-btn');
+    var addMultiChartBtn = document.getElementById('presentation-add-multi-chart-btn');
+    var addVoiceBtn = document.getElementById('presentation-add-voice-btn');
+    var transitionSelect = document.getElementById('presentation-transition-select');
+    var imageInput = document.getElementById('presentation-image-input');
+    var audioInput = document.getElementById('presentation-audio-input');
 
     if (!openBtn || !overlay) return;
 
@@ -2010,6 +2020,8 @@
         try { presentationChart.destroy(); } catch (_) {}
         presentationChart = null;
       }
+      presentationAuxCharts.forEach(function (ch) { try { ch.destroy(); } catch (_) {} });
+      presentationAuxCharts = [];
       if (canvas) {
         canvas.style.display = 'none';
         // Clear canvas context to avoid Chart.js reuse issues
@@ -2022,6 +2034,21 @@
       if (kpiWrap) { kpiWrap.style.display = 'none'; kpiWrap.innerHTML = ''; }
       if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; textWrap.contentEditable = 'false'; }
       if (insightWrap) { insightWrap.style.display = 'none'; insightWrap.textContent = ''; }
+      if (audioWrap) { audioWrap.style.display = 'none'; audioWrap.innerHTML = ''; }
+    }
+
+    function animateStage(mode) {
+      if (!stageWrap || mode === 'none') return;
+      var keyframes = [{ opacity: 0, transform: 'translateY(0px) scale(1)' }, { opacity: 1, transform: 'translateY(0px) scale(1)' }];
+      if (mode === 'slide') keyframes = [{ opacity: 0, transform: 'translateX(18px)' }, { opacity: 1, transform: 'translateX(0)' }];
+      if (mode === 'zoom') keyframes = [{ opacity: 0, transform: 'scale(0.97)' }, { opacity: 1, transform: 'scale(1)' }];
+      stageWrap.animate(keyframes, { duration: 360, easing: 'ease-out' });
+    }
+
+    function renderAudioForSlide(slide) {
+      if (!audioWrap || !slide || !slide.audioSrc) return;
+      audioWrap.style.display = 'block';
+      audioWrap.innerHTML = '<audio controls src="' + slide.audioSrc + '" style="max-width:260px;"></audio>';
     }
 
     function renderSlide(index) {
@@ -2045,6 +2072,63 @@
           textWrap.contentEditable = 'true';
           textWrap.innerHTML = '<div class="presentation-editable" style="max-width:920px;margin:0 auto;"><h3 style="font-size:1.6rem;font-weight:700;margin-bottom:0.75rem;">' + escapeHtml(slide.title || 'Notes') + '</h3><p style="white-space:pre-wrap;font-size:1.05rem;line-height:1.7;">' + escapeHtml(slide.content || '') + '</p></div>';
         }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'image') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Image Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          textWrap.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;"><img src="' + slide.src + '" alt="Slide image" style="max-width:100%;max-height:70vh;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,0.35);"></div>';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'video') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Video Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          var url = slide.url || '';
+          var embed = url;
+          var yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+          if (yt && yt[1]) embed = 'https://www.youtube.com/embed/' + yt[1];
+          textWrap.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;"><iframe src="' + embed + '" allowfullscreen style="width:min(100%,960px);height:540px;border:0;border-radius:16px;background:#000;"></iframe></div>';
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
+        return;
+      }
+
+      if (slide.kind === 'multi_chart') {
+        clearPresentationAreas();
+        if (titleEl) titleEl.textContent = slide.title || 'Multi-Chart Slide';
+        if (textWrap) {
+          textWrap.style.display = 'block';
+          textWrap.contentEditable = 'false';
+          var html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;">';
+          (slide.widgetIds || []).forEach(function (wid) {
+            var entry2 = widgetCharts[wid];
+            if (entry2 && entry2.canvas) {
+              var img = '';
+              try { img = entry2.canvas.toDataURL('image/png'); } catch (_) {}
+              if (img) {
+                html += '<div style="background:rgba(255,255,255,0.08);border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:10px;"><img src="' + img + '" style="width:100%;height:auto;border-radius:8px;"></div>';
+              }
+            }
+          });
+          html += '</div>';
+          textWrap.innerHTML = html;
+        }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -2090,6 +2174,8 @@
           insightWrap.textContent = 'AI Insight: ' + insight;
           insightWrap.style.display = 'block';
         }
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -2100,6 +2186,8 @@
       if (kpiEl && kpiWrap) {
         kpiWrap.style.display = 'flex';
         kpiWrap.innerHTML = kpiEl.parentElement.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -2108,6 +2196,8 @@
       if (tbl && tableWrap) {
         tableWrap.style.display = 'block';
         tableWrap.innerHTML = tbl.parentElement.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -2116,6 +2206,8 @@
       if (textContent && textWrap) {
         textWrap.style.display = 'block';
         textWrap.innerHTML = textContent.innerHTML;
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
 
@@ -2126,6 +2218,8 @@
         textWrap.style.alignItems = 'center';
         textWrap.style.justifyContent = 'center';
         textWrap.innerHTML = '<div style="font-size:2.5rem;font-weight:800;color:#e2e8f0;text-align:center;">' + headingEl.textContent + '</div>';
+        renderAudioForSlide(slide);
+        animateStage(transitionSelect ? transitionSelect.value : 'fade');
         return;
       }
     }
@@ -2248,6 +2342,64 @@
             enhanceTextBtn.textContent = 'AI Enhance Text';
             showToast('Text enhancement failed', 'error');
           });
+      });
+    }
+
+    if (addImageBtn && imageInput) {
+      addImageBtn.addEventListener('click', function () { imageInput.click(); });
+      imageInput.addEventListener('change', function () {
+        var file = imageInput.files && imageInput.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          presentationSlides.push({ kind: 'image', title: file.name, src: String(e.target.result || '') });
+          renderSlide(presentationSlides.length - 1);
+        };
+        reader.readAsDataURL(file);
+        imageInput.value = '';
+      });
+    }
+
+    if (addVideoBtn) {
+      addVideoBtn.addEventListener('click', function () {
+        var url = window.prompt('Video URL (YouTube or direct embed URL)');
+        if (!url) return;
+        presentationSlides.push({ kind: 'video', title: 'Video', url: url.trim() });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+
+    if (addMultiChartBtn && chartSelect) {
+      addMultiChartBtn.addEventListener('click', function () {
+        var ids = [];
+        for (var i = 0; i < chartSelect.options.length; i++) {
+          var opt = chartSelect.options[i];
+          if (opt.value) ids.push(opt.value);
+          if (ids.length >= 4) break;
+        }
+        if (!ids.length) { showToast('No chart widgets available.', 'info'); return; }
+        presentationSlides.push({ kind: 'multi_chart', title: 'Dashboard Highlights', widgetIds: ids });
+        renderSlide(presentationSlides.length - 1);
+      });
+    }
+
+    if (addVoiceBtn && audioInput) {
+      addVoiceBtn.addEventListener('click', function () {
+        if (!presentationSlides[presentationIndex]) { showToast('Open a slide first', 'info'); return; }
+        audioInput.click();
+      });
+      audioInput.addEventListener('change', function () {
+        var file = audioInput.files && audioInput.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var slide = presentationSlides[presentationIndex];
+          if (!slide) return;
+          slide.audioSrc = String(e.target.result || '');
+          renderSlide(presentationIndex);
+        };
+        reader.readAsDataURL(file);
+        audioInput.value = '';
       });
     }
 

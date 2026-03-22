@@ -2048,6 +2048,16 @@
     </select>
     <button id="presentation-add-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Chart Slide</button>
     <button id="presentation-ai-slide-btn" class="rounded-lg bg-indigo-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Generate AI Slide</button>
+    <button id="presentation-add-image-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Image</button>
+    <button id="presentation-add-video-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Video</button>
+    <button id="presentation-add-multi-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Multi-Chart</button>
+    <button id="presentation-add-voice-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Voice</button>
+    <select id="presentation-transition-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+      <option value="fade">Fade</option>
+      <option value="slide">Slide</option>
+      <option value="zoom">Zoom</option>
+      <option value="none">None</option>
+    </select>
     <span class="mx-1 h-5 w-px bg-white/20"></span>
     <button id="presentation-text-bold-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">B</button>
     <button id="presentation-text-italic-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs italic text-white hover:bg-white/20">I</button>
@@ -2063,13 +2073,16 @@
   </div>
 
   <!-- Chart area -->
-  <div class="relative flex-1 p-8" style="min-height:0;">
+  <div id="presentation-stage" class="relative flex-1 p-8" style="min-height:0;">
     <canvas id="presentation-canvas" style="display:none;max-height:100%;"></canvas>
     <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
     <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
     <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
     <div id="presentation-insight-wrap" style="display:none;" class="absolute bottom-10 left-10 max-w-xl rounded-xl border border-violet-300/40 bg-slate-900/70 px-4 py-3 text-xs text-violet-100 backdrop-blur-sm"></div>
+    <div id="presentation-audio-wrap" style="display:none;" class="absolute bottom-10 right-10"></div>
   </div>
+  <input id="presentation-image-input" type="file" accept="image/*" class="hidden">
+  <input id="presentation-audio-input" type="file" accept="audio/*" class="hidden">
 
   <!-- Navigation bar -->
   <div class="flex h-20 shrink-0 items-center justify-center gap-6 border-t border-white/10 px-6">
