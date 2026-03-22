@@ -106,6 +106,12 @@ LEMONSQUEEZY_STORE_SLUG = os.environ.get("LEMONSQUEEZY_STORE_SLUG", "")
 # ── AI settings (DeepSeek) ─────────────────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+# Timeout (seconds) for the TCP/TLS handshake phase — fail fast when the API endpoint is unreachable
+DEEPSEEK_CONNECT_TIMEOUT = int(os.environ.get("DEEPSEEK_CONNECT_TIMEOUT", 10))
+# Timeout (seconds) for receiving the full dashboard-specs response (large prompt → longer budget)
+DEEPSEEK_SPECS_TIMEOUT = int(os.environ.get("DEEPSEEK_SPECS_TIMEOUT", 60))
+# Number of automatic retries on transient server errors (0 = no retries)
+DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
 
 # Site metadata for SEO
 SITE_NAME = "DashAI"
