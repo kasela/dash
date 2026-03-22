@@ -1475,7 +1475,7 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
 
 
 def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
-    """Ask AI to design an advanced dashboard layout with 4 KPIs + 10 charts.
+    """Ask AI to design a schema-agnostic dashboard plan and normalize it to widget specs.
 
     Returns a list of widget specs or None if AI is unavailable.
     Each spec may include an 'ai_insight' field with a 1-2 sentence preview insight.
@@ -1516,11 +1516,24 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         except Exception:
             pass
 
+    summary_rows = []
+    try:
+        summary_rows = df.head(8).fillna("").astype(str).to_dict(orient="records")
+    except Exception:
+        summary_rows = []
+
+    mode = "analytical"
+    if date_cols:
+        mode = "executive"
+    if profile.total_rows and int(profile.total_rows) > 150000:
+        mode = "operational"
+
     payload = {
         "columns": list(df.columns[:60]),
         "numeric_columns": profile.numeric_columns[:20],
         "categorical_columns": profile.categorical_columns[:20],
         "date_columns": date_cols[:5],
+        "sample_rows": summary_rows,
         "total_rows": profile.total_rows,
         "duplicate_rows": profile.duplicate_rows,
         "missing_cells": profile.missing_cells,
@@ -1533,7 +1546,78 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         ],
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
+        "mode": mode,
     }
+
+    def _normalize_plan_to_specs(plan: object) -> list[dict]:
+        if isinstance(plan, list):
+            return plan
+        if not isinstance(plan, dict):
+            return []
+
+        insights = [str(x).strip() for x in (plan.get("insights") or []) if str(x).strip()]
+        specs: list[dict] = []
+
+        for i, kpi in enumerate(plan.get("kpis") or []):
+            if not isinstance(kpi, dict):
+                continue
+            name = str(kpi.get("name", "")).strip() or f"KPI {i + 1}"
+            value_col = str(kpi.get("measure") or kpi.get("column") or "").strip()
+            change = str(kpi.get("change", "")).strip()
+            insight = str(kpi.get("insight", "")).strip() or (insights[i % len(insights)] if insights else "")
+            specs.append({
+                "title": name,
+                "chart_type": "kpi",
+                "dimension": None,
+                "measures": [value_col] if value_col else [],
+                "size": "sm",
+                "palette": "indigo",
+                "ai_insight": (f"{insight} Change: {change}" if change and insight else insight),
+            })
+
+        for i, chart in enumerate(plan.get("charts") or []):
+            if not isinstance(chart, dict):
+                continue
+            chart_type = str(chart.get("type", "bar")).strip().lower()
+            title = str(chart.get("title", "")).strip() or f"Chart {i + 1}"
+            dimension = str(chart.get("x") or chart.get("dimension") or "").strip()
+            y = chart.get("y") or chart.get("measure") or chart.get("measures") or []
+            measures = [y] if isinstance(y, str) else (list(y) if isinstance(y, list) else [])
+            measures = [str(m).strip() for m in measures if str(m).strip()]
+            x_measure = str(chart.get("x_measure") or "").strip()
+            y_measure = str(chart.get("y_measure") or "").strip()
+            insight = str(chart.get("insight", "")).strip() or (insights[i % len(insights)] if insights else "")
+            specs.append({
+                "title": title,
+                "chart_type": chart_type,
+                "dimension": dimension,
+                "measures": measures,
+                "x_measure": x_measure,
+                "y_measure": y_measure,
+                "size": str(chart.get("size") or "md").strip().lower(),
+                "palette": str(chart.get("palette") or "indigo").strip().lower(),
+                "ai_insight": insight,
+            })
+
+        for i, table in enumerate(plan.get("tables") or []):
+            if not isinstance(table, dict):
+                continue
+            title = str(table.get("title", "")).strip() or f"Table {i + 1}"
+            cols = table.get("columns") or []
+            measures = [str(c).strip() for c in cols if str(c).strip()]
+            insight = str(table.get("insight", "")).strip() or (insights[i % len(insights)] if insights else "")
+            specs.append({
+                "title": title,
+                "chart_type": "table",
+                "dimension": "",
+                "measures": measures,
+                "size": "lg",
+                "palette": "slate",
+                "ai_insight": insight,
+            })
+
+        return specs
+
     try:
         response = client.chat.completions.create(
             model=model,
@@ -1543,43 +1627,42 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                     "content": (
                         "You are a world-class BI dashboard designer at a top-tier analytics consultancy. "
                         "Your dashboards are modern, dense with signal, and built for confident decision-making.\n\n"
-                        "TASK: Design a comprehensive executive dashboard for the dataset profile provided.\n"
-                        "Focus on decision-readiness: each widget should answer a concrete business question.\n\n"
-                        "OUTPUT: Return a JSON array of EXACTLY 14 widget specs in this strict order:\n"
-                        "  Position 1-4: FOUR KPI cards (chart_type='kpi', size='sm') — pick the 4 most business-critical numeric metrics "
-                        "  (prefer revenue/sales/profit/count; use sum as the KPI value, not average).\n"
-                        "  Position 5-14: TEN chart widgets with MAXIMUM variety:\n"
-                        "    - At least 1 'line' or 'area' for time-series trends (use a date column as dimension)\n"
-                        "    - At most 1 'pie' or 'doughnut' and only when category count is low (<=6)\n"
-                        "    - At least 1 'hbar' for ranked comparison (top N)\n"
-                        "    - At least 1 'scatter' for correlation analysis (two numeric columns)\n"
-                        "    - At least 1 'bar' for group comparison\n"
-                        "    - At least 1 'radar' and at least 1 'table' for multi-dimensional and detailed views\n"
-                        "    - Include at least 1 chart focused on anomalies/outliers and 1 on segment performance\n"
-                        "    - Include at least 2 advanced charts from: bubble, mixed, funnel, gauge, waterfall, polararea (when data supports them)\n"
-                        "    - The remaining charts can be any type — choose what best reveals the data story\n"
-                        "    - Prefer line/hbar/bar/table over pie when data is high-cardinality or long-tail.\n\n"
-                        "REQUIRED KEYS for every widget:\n"
-                        "  title: concise, business-friendly title with decision framing (e.g. 'Regions Driving Margin Erosion')\n"
-                        "  chart_type: from allowed_chart_types\n"
-                        "  dimension: exact column name for x-axis/grouping (null only for scatter KPI)\n"
-                        "  measures: array of exact numeric column names ([] only for pure distribution charts)\n"
-                        "  x_measure: exact numeric column name for scatter x-axis (null otherwise)\n"
-                        "  y_measure: exact numeric column name for scatter y-axis (null otherwise)\n"
-                        "  size: 'sm' for KPIs, 'lg' for time-series/main charts, 'md' for standard charts\n"
-                        "  palette: from allowed_palettes — VARY palettes across widgets, no two consecutive same\n"
-                        "  ai_insight: 2-3 sentences of specific, data-grounded insight + one action-oriented implication. "
-                        "  Reference actual column names and what the chart will reveal (e.g. 'This chart exposes which product "
-                        "  category drives the highest revenue — expect Electronics or similar high-ASP categories to dominate.')\n\n"
-                        "STRICT RULES:\n"
-                        "- dimension and measures MUST use EXACT column names from the 'columns' list in the dataset profile.\n"
-                        "- Never invent column names that do not exist in the dataset.\n"
-                        "- For scatter: set x_measure and y_measure to two different numeric columns; dimension=null.\n"
-                        "- For table: set measures to the 3-5 most informative columns (mix categorical + numeric).\n"
-                        "- For date columns, avoid raw unparsed IDs; prefer interpretable period columns.\n"
-                        "- Avoid redundant widgets that answer the same question.\n"
-                        "- Optimize for executive scanability: titles should be specific and non-generic.\n"
-                        "- Return ONLY a valid JSON array. No markdown fences, no explanation, no comments."
+                        "Create a schema-agnostic BI plan for the provided dataset.\n"
+                        "Mode is provided in payload: executive | analytical | operational.\n\n"
+                        "Must perform:\n"
+                        "1) Automatic data profiling (schema + column types)\n"
+                        "2) Dynamic KPI generation\n"
+                        "3) Intelligent chart selection from allowed_chart_types\n"
+                        "4) Ranking/summary table generation\n"
+                        "5) Actionable insights with quantified findings\n\n"
+                        "KPI logic hints:\n"
+                        "- If 1 numeric: total, average, min, max\n"
+                        "- If 2+ numeric: ratios/correlation candidates\n"
+                        "- If date exists: growth/trend KPIs\n"
+                        "- If category + numeric: top/bottom performers\n\n"
+                        "Chart logic hints:\n"
+                        "- time -> line/area\n"
+                        "- category+numeric -> bar/hbar\n"
+                        "- relationship of two numerics -> scatter/bubble\n"
+                        "- part-to-whole with low cardinality -> pie/doughnut/polararea\n"
+                        "- multi-dimension -> mixed/radar/table\n"
+                        "- stage flow -> funnel; cumulative deltas -> waterfall\n\n"
+                        "Boosters:\n"
+                        "- Avoid generic insights.\n"
+                        "- Quantify findings.\n"
+                        "- Prioritize business relevance and decision clarity.\n"
+                        "- Prefer advanced charts only when supported by columns.\n\n"
+                        "Return ONLY valid JSON object with keys:\n"
+                        "schema, kpis, charts, tables, insights.\n"
+                        "Required shape:\n"
+                        "{"
+                        "\"schema\":{\"columns\":[],\"types\":{}},"
+                        "\"kpis\":[{\"name\":\"...\",\"measure\":\"...\",\"change\":\"...\",\"insight\":\"...\"}],"
+                        "\"charts\":[{\"type\":\"...\",\"title\":\"...\",\"x\":\"...\",\"y\":[\"...\"],\"x_measure\":\"...\",\"y_measure\":\"...\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"...\"}],"
+                        "\"tables\":[{\"title\":\"...\",\"columns\":[],\"insight\":\"...\"}],"
+                        "\"insights\":[\"...\"]"
+                        "}\n"
+                        "Use exact provided column names only. No markdown."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
@@ -1589,9 +1672,14 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
             timeout=35,
         )
         content = ((response.choices[0].message.content) or "").strip()
-        match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
-        specs = _json.loads(match.group(0) if match else content)
-        if isinstance(specs, list) and specs:
+        if content.startswith("["):
+            match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+            parsed = _json.loads(match_arr.group(0) if match_arr else content)
+        else:
+            match_obj = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+            parsed = _json.loads(match_obj.group(0) if match_obj else content)
+        specs = _normalize_plan_to_specs(parsed)
+        if specs:
             return specs
     except Exception:
         pass
