@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import warnings
+import logging
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -1200,8 +1202,6 @@ def _get_ai_client():
         return None, None
     openai_module = __import__("openai")
     model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-    # Default retries to 0 to avoid long retry chains in background tasks.
-    # Operators can opt back in by setting DEEPSEEK_MAX_RETRIES > 0.
     max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0))
     client = openai_module.OpenAI(
         api_key=api_key,
@@ -2428,8 +2428,12 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             return specs
+        logger.warning("DeepSeek returned a response but produced no normalizable dashboard specs.")
     except Exception:
-        pass
+        logger.exception(
+            "DeepSeek dashboard specs generation failed (timeout=%ss); falling back to heuristic specs.",
+            specs_timeout,
+        )
     return None
 
 
