@@ -32,6 +32,54 @@ class WidgetSuggestion:
     description: str
 
 
+def detect_and_clean_headers(df: pd.DataFrame) -> pd.DataFrame:
+    """Dynamically detect and clean column headers.
+
+    - Detects when first data row is actually headers (>50% Unnamed: columns)
+    - Strips whitespace from column names
+    - Fills empty/NaN headers with Column_N
+    - Deduplicates column names by appending _2, _3 suffixes
+    """
+    cols = list(df.columns)
+
+    # If more than half the columns are auto-named "Unnamed: N", try promoting first row as header
+    unnamed_count = sum(1 for c in cols if str(c).startswith("Unnamed:") or str(c).strip() == "")
+    if unnamed_count > len(cols) * 0.5 and len(df) > 0:
+        first_row_vals = [str(v).strip() for v in df.iloc[0]]
+        # Only promote if first row looks like strings (not all numeric)
+        non_numeric = sum(1 for v in first_row_vals if not v.replace(".", "").replace("-", "").isdigit())
+        if non_numeric >= len(first_row_vals) * 0.5:
+            new_cols = [
+                v if v and v.lower() not in ("nan", "none", "") else f"Column_{i+1}"
+                for i, v in enumerate(first_row_vals)
+            ]
+            df = df.iloc[1:].reset_index(drop=True)
+            df.columns = new_cols
+            cols = new_cols
+
+    # Strip whitespace and replace empty/NaN names
+    cleaned: list[str] = []
+    for i, c in enumerate(cols):
+        name = str(c).strip()
+        if not name or name.lower() in ("nan", "none", ""):
+            name = f"Column_{i + 1}"
+        cleaned.append(name)
+
+    # Deduplicate
+    seen: dict[str, int] = {}
+    deduped: list[str] = []
+    for name in cleaned:
+        if name in seen:
+            seen[name] += 1
+            deduped.append(f"{name}_{seen[name]}")
+        else:
+            seen[name] = 0
+            deduped.append(name)
+
+    df.columns = deduped
+    return df
+
+
 def parse_uploaded_file(file_obj) -> ParsedPreview:
     name = file_obj.name.lower()
     if name.endswith(".csv"):
@@ -42,6 +90,9 @@ def parse_uploaded_file(file_obj) -> ParsedPreview:
         df = pd.read_json(file_obj)
     else:
         raise ValueError("Unsupported file type")
+
+    # Dynamic header detection and column name cleaning
+    df = detect_and_clean_headers(df)
 
     sample_df = df.head(100)
     records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
@@ -83,6 +134,77 @@ def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
         suggested_dimensions=suggested_dimensions,
         suggested_measures=suggested_measures,
     )
+
+
+def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
+    """Compute trend metadata for a KPI metric.
+
+    Returns dict with: trend_dir, trend_pct, secondary_label, secondary_value, sparkline.
+    All fields are safe defaults when computation is not possible.
+    """
+    if measure not in df.columns or not pd.api.types.is_numeric_dtype(df[measure]):
+        return {}
+
+    col = df[measure].dropna()
+    if len(col) < 2:
+        return {}
+
+    mean_val = float(col.mean())
+    sparkline: list[float] = []
+    trend_dir = "flat"
+    trend_pct = 0.0
+    secondary_label = "avg"
+    secondary_value = f"{mean_val:,.1f}"
+
+    # Try period-over-period comparison using a date column
+    date_cols = [
+        c for c in df.columns
+        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+    ]
+    if date_cols:
+        try:
+            tmp = df[[date_cols[0], measure]].copy()
+            tmp[date_cols[0]] = pd.to_datetime(tmp[date_cols[0]], errors="coerce")
+            tmp = tmp.dropna(subset=[date_cols[0]]).sort_values(date_cols[0])
+            monthly = tmp.groupby(tmp[date_cols[0]].dt.to_period("M"))[measure].sum()
+            if len(monthly) >= 2:
+                sparkline = [round(float(v), 2) for v in monthly.values[-12:]]
+                last = float(monthly.values[-1])
+                prev = float(monthly.values[-2])
+                if prev != 0:
+                    trend_pct = round((last - prev) / abs(prev) * 100, 1)
+                    trend_dir = "up" if trend_pct > 0 else ("down" if trend_pct < 0 else "flat")
+                secondary_label = f"vs {monthly.index[-2]}"
+                secondary_value = f"{prev:,.0f}"
+        except Exception:
+            pass
+
+    # Fallback sparkline: split data into chunks
+    if not sparkline and len(col) >= 4:
+        chunk_size = max(1, len(col) // 12)
+        chunks = [
+            float(col.iloc[i: i + chunk_size].sum())
+            for i in range(0, len(col), chunk_size)
+        ]
+        sparkline = [round(v, 2) for v in chunks[-12:]]
+        if len(sparkline) >= 2 and sparkline[-2] != 0:
+            trend_pct = round((sparkline[-1] - sparkline[-2]) / abs(sparkline[-2]) * 100, 1)
+            trend_dir = "up" if trend_pct > 0 else ("down" if trend_pct < 0 else "flat")
+
+    # Compute sparkline_pct: normalize sparkline to 8-100% range for bar heights
+    sparkline_pct: list[int] = []
+    if sparkline:
+        sp_max = max(abs(v) for v in sparkline) or 1
+        sparkline_pct = [max(8, round(abs(v) / sp_max * 100)) for v in sparkline]
+
+    return {
+        "trend_dir": trend_dir,
+        "trend_pct": abs(trend_pct),
+        "secondary_label": secondary_label,
+        "secondary_value": secondary_value,
+        "sparkline": sparkline,
+        "sparkline_pct": sparkline_pct,
+    }
 
 
 def build_widget_suggestions(profile: ProfileSummary) -> list[WidgetSuggestion]:
@@ -202,6 +324,9 @@ def fetch_from_url(url: str) -> "ParsedPreview":
             df = pd.read_csv(io.BytesIO(raw))
         except Exception:
             df = pd.read_excel(io.BytesIO(raw))
+
+    # Dynamic header detection and column name cleaning
+    df = detect_and_clean_headers(df)
 
     sample_df = df.head(100)
     records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
@@ -1189,7 +1314,11 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
 
 
 def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
-    """Ask AI to design a complete dashboard layout. Returns widget specs or None."""
+    """Ask AI to design an advanced dashboard layout with 3 KPIs + 8+ charts.
+
+    Returns a list of widget specs or None if AI is unavailable.
+    Each spec may include an 'ai_insight' field with a 1-2 sentence preview insight.
+    """
     import json as _json
     import re as _re
 
@@ -1198,6 +1327,20 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         return None
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+
+    # Compute sample stats for richer AI context
+    sample_stats: dict = {}
+    for col in profile.numeric_columns[:10]:
+        try:
+            sample_stats[col] = {
+                "sum": round(float(df[col].sum()), 2),
+                "mean": round(float(df[col].mean()), 2),
+                "min": round(float(df[col].min()), 2),
+                "max": round(float(df[col].max()), 2),
+            }
+        except Exception:
+            pass
+
     payload = {
         "columns": list(df.columns[:60]),
         "numeric_columns": profile.numeric_columns[:20],
@@ -1206,6 +1349,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         "total_rows": profile.total_rows,
         "duplicate_rows": profile.duplicate_rows,
         "missing_cells": profile.missing_cells,
+        "sample_stats": sample_stats,
         "allowed_chart_types": ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"],
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
@@ -1217,22 +1361,29 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 {
                     "role": "system",
                     "content": (
-                        "You are a BI dashboard designer. Design a complete dashboard for this dataset. "
-                        "Return a JSON array of widget specs (max 8). Each spec must have: "
-                        "title (string), chart_type (one of allowed_chart_types), "
-                        "dimension (column name or null), measures (array of column names or []), "
-                        "x_measure (column or null), y_measure (column or null), "
-                        "size (one of allowed_sizes: sm for KPIs, md for standard charts, lg for main/wide charts), "
-                        "palette (one of allowed_palettes). "
-                        "Start with 2-3 KPI widgets (sm), then add variety of chart types. "
-                        "Use different palettes for visual variety. Return ONLY valid JSON array."
+                        "You are an expert BI dashboard designer. Design a COMPREHENSIVE, advanced dashboard. "
+                        "Return a JSON array of EXACTLY 11 widget specs in this order:\n"
+                        "1. THREE KPI widgets (chart_type='kpi', size='sm') for the 3 most impactful numeric metrics.\n"
+                        "2. EIGHT chart widgets using VARIED types from: bar, line, area, pie, doughnut, hbar, scatter, radar, table.\n"
+                        "   - Must include: at least 1 line or area (time-series/trend), 1 pie or doughnut (distribution), "
+                        "     1 hbar (ranking), 1 scatter (correlation), 1 bar (comparison), 1 radar or table.\n"
+                        "Each widget spec MUST have ALL these keys:\n"
+                        "  title (string), chart_type (from allowed_chart_types), "
+                        "  dimension (column name string or null), measures (array of column name strings, can be []), "
+                        "  x_measure (column name or null), y_measure (column name or null), "
+                        "  size ('sm' for KPIs, 'md' for standard, 'lg' for main/wide charts), "
+                        "  palette (one of allowed_palettes), "
+                        "  ai_insight (1-2 sentence insight about what this chart reveals about the data — be specific).\n"
+                        "Rules: Use different palettes for variety. For KPIs pick numeric columns with meaningful sums. "
+                        "For charts, always set dimension and/or measures to valid column names from the dataset. "
+                        "Return ONLY a valid JSON array with no explanation, comments or markdown."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
             temperature=0.2,
             stream=False,
-            timeout=20,
+            timeout=30,
         )
         content = ((response.choices[0].message.content) or "").strip()
         match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
@@ -1285,78 +1436,76 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             "dataset_version_id": version_id,
         }
 
-    # 1. KPI – total rows
-    kpi_rows_cfg = {"kpi": "rows", "value": f"{profile.total_rows:,}"}
+    date_cols = [
+        c for c in df.columns
+        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+    ]
+
+    # ── KPI 1: Total rows ────────────────────────────────────────────────────
+    kpi_rows_cfg: dict = {
+        "kpi": "rows",
+        "value": f"{profile.total_rows:,}",
+        "layout": {"size": "sm"},
+    }
     kpi_rows_cfg["builder"] = _make_builder(measure="rows")
-    specs.append({
-        "title": "Total Rows",
-        "widget_type": "kpi",
-        "config": kpi_rows_cfg,
-        "position": position,
-    })
+    specs.append({"title": "Total Records", "widget_type": "kpi", "config": kpi_rows_cfg, "position": position})
     position += 1
 
-    # 2. KPI – total for first numeric column
+    # ── KPI 2: Sum of first numeric column ──────────────────────────────────
     if profile.suggested_measures:
-        measure = profile.suggested_measures[0]
+        m1 = profile.suggested_measures[0]
         try:
-            total = df[measure].sum()
-            kpi_cfg = {"kpi": measure, "value": f"{total:,.0f}"}
-            kpi_cfg["builder"] = _make_builder(measures=[measure], measure=measure)
-            specs.append({
-                "title": f"Total {measure}",
-                "widget_type": "kpi",
-                "config": kpi_cfg,
-                "position": position,
-            })
+            total = df[m1].sum()
+            trend_data = _compute_kpi_trend(df, m1)
+            kpi_cfg: dict = {"kpi": m1, "value": f"{total:,.0f}", "layout": {"size": "sm"}}
+            if trend_data:
+                kpi_cfg["trend"] = trend_data
+            kpi_cfg["builder"] = _make_builder(measures=[m1], measure=m1)
+            specs.append({"title": f"Total {m1}", "widget_type": "kpi", "config": kpi_cfg, "position": position})
             position += 1
         except Exception:
             pass
 
-    # 3. Bar chart – top dimension by first measure
+    # ── KPI 3: Sum of second numeric column (or average of first) ───────────
+    if len(profile.suggested_measures) >= 2:
+        m2 = profile.suggested_measures[1]
+        try:
+            total2 = df[m2].sum()
+            trend_data2 = _compute_kpi_trend(df, m2)
+            kpi2_cfg: dict = {"kpi": m2, "value": f"{total2:,.0f}", "layout": {"size": "sm"}}
+            if trend_data2:
+                kpi2_cfg["trend"] = trend_data2
+            kpi2_cfg["builder"] = _make_builder(measures=[m2], measure=m2)
+            specs.append({"title": f"Total {m2}", "widget_type": "kpi", "config": kpi2_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+    elif profile.suggested_measures:
+        m1 = profile.suggested_measures[0]
+        try:
+            avg_val = df[m1].mean()
+            avg_cfg: dict = {"kpi": m1, "value": f"{avg_val:,.2f}", "layout": {"size": "sm"}}
+            avg_cfg["builder"] = _make_builder(measures=[m1], measure=m1)
+            specs.append({"title": f"Avg {m1}", "widget_type": "kpi", "config": avg_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── Chart 1: Bar – top dimension by first measure ────────────────────────
     if profile.suggested_dimensions and profile.suggested_measures:
         dim = profile.suggested_dimensions[0]
         measure = profile.suggested_measures[0]
         try:
             top = df.groupby(dim)[measure].sum().nlargest(10)
-            labels = [str(l) for l in top.index.tolist()]
-            values = [round(float(v), 2) for v in top.values.tolist()]
-            bar_cfg = _bar_config(labels, values, measure)
+            bar_cfg = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, "indigo")
+            bar_cfg["layout"] = {"size": "md"}
             bar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
-            specs.append({
-                "title": f"{measure} by {dim}",
-                "widget_type": "bar",
-                "config": bar_cfg,
-                "position": position,
-            })
+            specs.append({"title": f"{measure} by {dim}", "widget_type": "bar", "config": bar_cfg, "position": position})
             position += 1
         except Exception:
             pass
 
-    # 4. Pie chart – value counts of first categorical dimension
-    if profile.suggested_dimensions:
-        dim = profile.suggested_dimensions[0]
-        try:
-            vc = df[dim].value_counts().head(6)
-            labels = [str(l) for l in vc.index.tolist()]
-            values = [int(v) for v in vc.values.tolist()]
-            pie_cfg = _pie_config(labels, values)
-            pie_cfg["builder"] = _make_builder(dimension=dim)
-            specs.append({
-                "title": f"Distribution: {dim}",
-                "widget_type": "pie",
-                "config": pie_cfg,
-                "position": position,
-            })
-            position += 1
-        except Exception:
-            pass
-
-    # 5. Line chart – time series if a date-like column exists
-    date_cols = [
-        c for c in df.columns
-        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
-    ]
+    # ── Chart 2: Line – time series ──────────────────────────────────────────
     if date_cols and profile.suggested_measures:
         date_col = date_cols[0]
         measure = profile.suggested_measures[0]
@@ -1366,36 +1515,129 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
-                labels = [str(p) for p in trend.index.tolist()]
-                values = [round(float(v), 2) for v in trend.values.tolist()]
-                line_cfg = _line_config(labels, values, measure)
+                line_cfg = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "blue")
+                line_cfg["layout"] = {"size": "lg"}
                 line_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
-                specs.append({
-                    "title": f"{measure} over time",
-                    "widget_type": "line",
-                    "config": line_cfg,
-                    "position": position,
-                })
+                specs.append({"title": f"{measure} over Time", "widget_type": "line", "config": line_cfg, "position": position})
                 position += 1
         except Exception:
             pass
 
-    # 6. Second bar chart – second dimension vs first measure (if available)
+    # ── Chart 3: Area – time series (second measure or same) ────────────────
+    if date_cols and len(profile.suggested_measures) >= 2:
+        date_col = date_cols[0]
+        measure = profile.suggested_measures[1]
+        try:
+            tmp = df[[date_col, measure]].copy()
+            tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+            tmp = tmp.dropna(subset=[date_col])
+            trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
+            if len(trend) >= 2:
+                area_cfg = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "emerald")
+                area_cfg["layout"] = {"size": "lg"}
+                area_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
+                specs.append({"title": f"{measure} Trend", "widget_type": "area", "config": area_cfg, "position": position})
+                position += 1
+        except Exception:
+            pass
+
+    # ── Chart 4: Pie – distribution of first categorical dimension ───────────
+    if profile.suggested_dimensions:
+        dim = profile.suggested_dimensions[0]
+        try:
+            vc = df[dim].value_counts().head(6)
+            pie_cfg = _pie_config([str(l) for l in vc.index], [int(v) for v in vc.values], "vibrant")
+            pie_cfg["layout"] = {"size": "md"}
+            pie_cfg["builder"] = _make_builder(dimension=dim)
+            specs.append({"title": f"Distribution: {dim}", "widget_type": "pie", "config": pie_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── Chart 5: Doughnut – distribution of second categorical dimension ─────
+    if len(profile.suggested_dimensions) >= 2:
+        dim2 = profile.suggested_dimensions[1]
+        try:
+            vc2 = df[dim2].value_counts().head(6)
+            doughnut_cfg = _doughnut_config([str(l) for l in vc2.index], [int(v) for v in vc2.values], "ocean")
+            doughnut_cfg["layout"] = {"size": "md"}
+            doughnut_cfg["builder"] = _make_builder(dimension=dim2)
+            specs.append({"title": f"Breakdown: {dim2}", "widget_type": "doughnut", "config": doughnut_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── Chart 6: Horizontal Bar – ranking of second dimension ────────────────
     if len(profile.suggested_dimensions) > 1 and profile.suggested_measures:
         dim2 = profile.suggested_dimensions[1]
         measure = profile.suggested_measures[0]
         try:
-            top2 = df.groupby(dim2)[measure].sum().nlargest(8)
-            labels = [str(l) for l in top2.index.tolist()]
-            values = [round(float(v), 2) for v in top2.values.tolist()]
-            bar2_cfg = _bar_config(labels, values, measure)
-            bar2_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
-            specs.append({
-                "title": f"{measure} by {dim2}",
-                "widget_type": "bar",
-                "config": bar2_cfg,
-                "position": position,
-            })
+            top2 = df.groupby(dim2)[measure].sum().nlargest(10)
+            hbar_cfg = _hbar_config([str(l) for l in top2.index], [round(float(v), 2) for v in top2.values], measure, "amber")
+            hbar_cfg["layout"] = {"size": "md"}
+            hbar_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
+            specs.append({"title": f"{measure} Ranking by {dim2}", "widget_type": "hbar", "config": hbar_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── Chart 7: Scatter – correlation of two numeric columns ────────────────
+    if len(profile.suggested_measures) >= 2:
+        x_col = profile.suggested_measures[0]
+        y_col = profile.suggested_measures[1]
+        try:
+            tmp = df[[x_col, y_col]].dropna().head(500)
+            scatter_cfg = _scatter_config(
+                [round(float(v), 4) for v in tmp[x_col]],
+                [round(float(v), 4) for v in tmp[y_col]],
+                x_col, y_col, "rose", f"{x_col} vs {y_col}",
+            )
+            scatter_cfg["layout"] = {"size": "md"}
+            scatter_cfg["builder"] = _make_builder(x_measure=x_col, y_measure=y_col)
+            specs.append({"title": f"Correlation: {x_col} vs {y_col}", "widget_type": "scatter", "config": scatter_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── Chart 8: Radar – multi-dimension comparison ──────────────────────────
+    if profile.suggested_dimensions and profile.suggested_measures:
+        dim = profile.suggested_dimensions[0]
+        measure = profile.suggested_measures[0]
+        try:
+            top_r = df.groupby(dim)[measure].sum().nlargest(8)
+            if len(top_r) >= 3:
+                radar_cfg = _radar_config([str(l) for l in top_r.index], [round(float(v), 2) for v in top_r.values], measure, "sunset")
+                radar_cfg["layout"] = {"size": "md"}
+                radar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
+                specs.append({"title": f"{measure} Profile by {dim}", "widget_type": "radar", "config": radar_cfg, "position": position})
+                position += 1
+        except Exception:
+            pass
+
+    # ── Chart 9: Data Table ──────────────────────────────────────────────────
+    try:
+        table_cols = (profile.categorical_columns[:2] + profile.numeric_columns[:3])[:5]
+        if not table_cols:
+            table_cols = [str(c) for c in df.columns[:5]]
+        preview = df[table_cols].head(50).fillna("")
+        rows = [[str(v) for v in row] for row in preview.values.tolist()]
+        table_cfg: dict = {"columns": table_cols, "rows": rows, "layout": {"size": "lg"}}
+        table_cfg["builder"] = _make_builder(measures=profile.numeric_columns[:3])
+        specs.append({"title": "Data Preview", "widget_type": "table", "config": table_cfg, "position": position})
+        position += 1
+    except Exception:
+        pass
+
+    # ── Chart 10: Second bar – third dimension (if available) ────────────────
+    if len(profile.suggested_dimensions) > 2 and profile.suggested_measures:
+        dim3 = profile.suggested_dimensions[2]
+        measure = profile.suggested_measures[0]
+        try:
+            top3 = df.groupby(dim3)[measure].sum().nlargest(8)
+            bar3_cfg = _bar_config([str(l) for l in top3.index], [round(float(v), 2) for v in top3.values], measure, "slate")
+            bar3_cfg["layout"] = {"size": "md"}
+            bar3_cfg["builder"] = _make_builder(dimension=dim3, measures=[measure], measure=measure)
+            specs.append({"title": f"{measure} by {dim3}", "widget_type": "bar", "config": bar3_cfg, "position": position})
             position += 1
         except Exception:
             pass

@@ -37,6 +37,7 @@ from apps.datasets.services import (
     ai_suggest_slicers,
     ai_analyze_chart,
     ai_generate_dashboard_specs,
+    _compute_kpi_trend,
 )
 
 from .models import Dashboard, DashboardDataset, DashboardShareLink, DashboardWidget
@@ -485,7 +486,11 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
 
 
 def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
-    """Convert AI-generated dashboard spec list into concrete widget specs with chart configs."""
+    """Convert AI-generated dashboard spec list into concrete widget specs with chart configs.
+
+    KPI widgets include trend direction, sparkline data, and secondary comparison values.
+    All widgets include ai_insight when provided by the AI spec.
+    """
     specs = []
     position = 1
     for spec in ai_specs:
@@ -505,15 +510,25 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
         size = str(spec.get("size") or "md").strip()
         if size not in {"sm", "md", "lg"}:
             size = "md"
+        ai_insight = str(spec.get("ai_insight") or "").strip()[:300]
         config: dict = {}
         try:
             if chart_type == "kpi":
                 if measure and measure in df.columns:
                     total = df[measure].sum()
-                    config = {"kpi": measure, "value": f"{total:,.0f}", "layout": {"size": size}}
+                    formatted = f"{total:,.0f}"
+                    config = {
+                        "kpi": measure,
+                        "value": formatted,
+                        "layout": {"size": size},
+                    }
+                    # Compute trend metadata
+                    trend = _compute_kpi_trend(df, measure)
+                    if trend:
+                        config["trend"] = trend
                 else:
                     config = {"kpi": "rows", "value": f"{profile.total_rows:,}", "layout": {"size": size}}
-            elif chart_type in ("bar",) and dimension and measure and dimension in df.columns and measure in df.columns:
+            elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
                 top = df.groupby(dimension)[measure].sum().nlargest(10)
                 config = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, palette)
                 config["layout"] = {"size": size}
@@ -542,13 +557,21 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
                 config = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, palette)
                 config["layout"] = {"size": size}
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
-                vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
+                vc = (
+                    df.groupby(dimension)[measure].sum().nlargest(6)
+                    if measure and measure in df.columns
+                    else df[dimension].value_counts().head(6)
+                )
                 fn = _pie_config if chart_type == "pie" else _doughnut_config
                 config = fn([str(l) for l in vc.index], [round(float(v), 2) for v in vc.values], palette)
                 config["layout"] = {"size": size}
             elif chart_type == "scatter" and x_measure and y_measure and x_measure in df.columns and y_measure in df.columns:
                 tmp = df[[x_measure, y_measure]].dropna().head(500)
-                config = _scatter_config([round(float(v), 4) for v in tmp[x_measure]], [round(float(v), 4) for v in tmp[y_measure]], x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
+                config = _scatter_config(
+                    [round(float(v), 4) for v in tmp[x_measure]],
+                    [round(float(v), 4) for v in tmp[y_measure]],
+                    x_measure, y_measure, palette, f"{x_measure} vs {y_measure}",
+                )
                 config["layout"] = {"size": size}
             elif chart_type == "radar" and dimension and measure and dimension in df.columns and measure in df.columns:
                 top = df.groupby(dimension)[measure].sum().nlargest(8)
@@ -565,6 +588,9 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
             config = {}
         if not config:
             continue
+        # Attach AI insight if provided
+        if ai_insight:
+            config["ai_insight"] = ai_insight
         # Attach builder metadata so dashboard_apply_filters can rebuild with active filters
         config["builder"] = {
             "dimension": dimension,
