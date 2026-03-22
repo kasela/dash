@@ -100,7 +100,7 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int):
 
             # ── Step 4: Comprehensive dashboard spec ────────────────────────────
             logger.info("Dashboard %s: generating comprehensive dashboard specs", dashboard_id)
-            ai_specs = ai_generate_dashboard_specs(df, profile)
+            ai_specs = ai_generate_dashboard_specs(df, profile, dataset_version.dataset.name)
 
             if ai_specs:
                 logger.info("AI specs generated: %d widgets planned", len(ai_specs))

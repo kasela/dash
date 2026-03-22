@@ -1298,22 +1298,37 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                 {
                     "role": "system",
                     "content": (
-                        "You are a senior BI data architect specializing in dimensional modeling and column classification.\n\n"
-                        "Analyze every column provided and classify it into one of four roles:\n"
-                        "1. 'measure': Quantitative, aggregatable values — revenue, sales, count, amount, "
-                        "quantity, score, rate, price, cost, profit, margin, duration, weight, distance\n"
-                        "2. 'dimension': Categorical grouping variables — region, category, name, type, "
-                        "status, segment, product, department, country, channel, brand\n"
-                        "3. 'date': Temporal columns — date, month, year, quarter, period, timestamp, "
-                        "created_at, updated_at, order_date, event_date\n"
-                        "4. 'id': Identifier/key columns to skip in aggregations — id, uuid, code, "
-                        "ref, key, index, serial, row_number, record_id\n\n"
-                        "For each column also specify:\n"
-                        "- agg: best aggregation method ('sum' for totals, 'avg' for averages/rates/ratios, "
-                        "'count' for occurrences, 'nunique' for distinct counts (e.g. unique suppliers/customers/products), "
-                        "'max'/'min' for extremes, 'group' for dimensions, 'none' for ids/dates)\n"
-                        "- label: human-friendly business label (e.g. 'total_revenue_usd' → 'Total Revenue (USD)')\n"
-                        "- cardinality: for dimensions only ('low'=<10 unique, 'medium'=10-50, 'high'>50); "
+                        "You are a senior BI data architect specializing in dimensional modeling and column classification. "
+                        "Classify EVERY column in the dataset into exactly one role.\n\n"
+                        "ROLES:\n"
+                        "1. 'measure': Quantitative, aggregatable numeric values\n"
+                        "   Examples: revenue, sales, amount, quantity, score, rate, price, cost, profit, "
+                        "margin, duration, weight, distance, age, salary, count, balance, volume\n"
+                        "   IMPORTANT: numeric IDs that represent real quantities (e.g. order_value, "
+                        "employee_count) are measures, not ids.\n\n"
+                        "2. 'dimension': Categorical grouping/segmentation variables\n"
+                        "   Examples: region, category, name, type, status, segment, product, department, "
+                        "country, channel, brand, gender, tier, level, class, group\n"
+                        "   IMPORTANT: columns with low cardinality numeric codes (e.g. rating 1-5, "
+                        "grade A-F) are dimensions if they segment data meaningfully.\n\n"
+                        "3. 'date': Any temporal column — use sample_values to confirm\n"
+                        "   Examples: date, month, year, quarter, period, timestamp, created_at, "
+                        "updated_at, order_date, event_date, hire_date, expiry_date\n"
+                        "   IMPORTANT: integer years (e.g. 2020, 2021) are dates if column name "
+                        "contains 'year'/'period'; otherwise treat as dimension.\n\n"
+                        "4. 'id': Pure identifier/surrogate key columns with no analytical value\n"
+                        "   Examples: id, uuid, row_id, record_id, pk, fk, index, serial_number\n"
+                        "   IMPORTANT: only classify as 'id' if the column is clearly a surrogate key "
+                        "with no business meaning. Business codes like product_sku, customer_code "
+                        "that have analytical value should be 'dimension'.\n\n"
+                        "FOR EACH COLUMN specify:\n"
+                        "- role: measure | dimension | date | id\n"
+                        "- agg: sum (totals/financials), avg (rates/ratios/scores), count (occurrences), "
+                        "nunique (distinct entity counts), max/min (extremes), group (dimensions), none (id/date)\n"
+                        "- label: human-friendly business label "
+                        "('total_revenue_usd' → 'Total Revenue (USD)', 'num_empl' → 'Employees', "
+                        "'avg_score' → 'Avg Score', 'cust_id' → 'Customer ID')\n"
+                        "- cardinality: for dimensions only — 'low' (<10 unique), 'medium' (10-50), 'high' (>50); "
                         "use null for measures, dates, ids\n\n"
                         "RETURN ONLY valid JSON (no markdown, no extra text):\n"
                         "{\"roles\": {\"column_name\": {\"role\": \"measure|dimension|date|id\", "
@@ -1516,10 +1531,17 @@ def ai_generate_comprehensive_insights(
                 {"role": "user", "content": _json.dumps(payload)},
             ],
             temperature=0.2,
-            stream=False,
-            timeout=30,
+            stream=True,
+            timeout=45,
         )
-        content = ((response.choices[0].message.content) or "").strip()
+        # Stream chunks to avoid read timeout on long narrative responses
+        content_parts: list[str] = []
+        for chunk in response:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                content_parts.append(delta)
+        content = "".join(content_parts).strip()
+        content = _re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("```").strip()
         match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
         parsed = _json.loads(match.group(0) if match else content)
         result = {
@@ -1890,6 +1912,14 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
     client, model = _get_ai_client()
 
     if client is not None:
+        # Include sample values per categorical column for better AI context
+        sample_values: dict = {}
+        for col in profile.categorical_columns[:30]:
+            try:
+                sample_values[str(col)] = list(df[col].value_counts().head(5).index.astype(str))
+            except Exception:
+                pass
+
         payload = {
             "columns": list(df.columns[:60]),
             "dtypes": {str(c): str(df[c].dtype) for c in df.columns[:60]},
@@ -1899,6 +1929,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
                 str(c): int(df[c].nunique(dropna=True))
                 for c in profile.categorical_columns[:30]
             },
+            "sample_values": sample_values,
             "total_rows": profile.total_rows,
         }
         try:
@@ -1911,25 +1942,34 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
                             "You are a senior BI engineer designing interactive dashboard filters for business users.\n\n"
                             "TASK: Recommend the best slicers/filters for this dataset. Return a JSON array of max 6 items.\n\n"
                             "SELECTION RULES:\n"
-                            "- dropdown: categorical columns with 2–15 unique values (single-select, fast lookup)\n"
-                            "- multiselect: categorical columns with 6–50 unique values (multi-value comparison)\n"
-                            "- range: numeric/date columns for continuous narrowing\n"
-                            "- Avoid ID columns (uuid, primary keys, row numbers) — they have no filter utility\n"
-                            "- Prioritize columns that business users filter by most: time periods, regions, categories, status, segments\n"
-                            "- Infer the business domain from column names to name slicers naturally\n\n"
-                            "OUTPUT FORMAT — return ONLY a valid JSON array:\n"
+                            "- dropdown: categorical columns with 2-12 unique values (fast single-select lookup)\n"
+                            "- multiselect: categorical columns with 6-50 unique values (multi-value comparison)\n"
+                            "- range: numeric columns for continuous value narrowing (revenue, age, quantity, score)\n"
+                            "- AVOID: pure ID columns (uuid, primary keys, row numbers, record identifiers)\n"
+                            "- AVOID: high cardinality text fields (free-text notes, descriptions, names with >100 values)\n"
+                            "- PRIORITIZE: time periods, geography (region/country/state), category/segment, "
+                            "status/type (active/inactive, pending/approved), tier/level/grade\n"
+                            "- Use sample_values to understand what each categorical column contains — "
+                            "this helps distinguish business dimensions from technical fields\n"
+                            "- Name labels as business users would expect: "
+                            "'region_code' → 'Region', 'product_category_name' → 'Product Category', "
+                            "'order_status' → 'Order Status'\n\n"
+                            "OUTPUT FORMAT — return ONLY a valid JSON array (no markdown, no extra text):\n"
                             '[\n'
-                            '  {"column": "region", "filter_type": "dropdown", "label": "Region", "reason": "5 regions allow fast segment drill-down for executives"},\n'
-                            '  {"column": "product_category", "filter_type": "multiselect", "label": "Product Category", "reason": "12 categories support cross-category comparison"},\n'
-                            '  {"column": "revenue", "filter_type": "range", "label": "Revenue Range ($)", "reason": "Filter by revenue band to focus on high-value customers"}\n'
+                            '  {"column": "region", "filter_type": "dropdown", "label": "Region", '
+                            '"reason": "5 regions enable fast executive segment drill-down"},\n'
+                            '  {"column": "product_category", "filter_type": "multiselect", "label": "Product Category", '
+                            '"reason": "12 categories enable cross-category performance comparison"},\n'
+                            '  {"column": "revenue", "filter_type": "range", "label": "Revenue Range", '
+                            '"reason": "Range filter isolates high-value customers from low-value ones"}\n'
                             "]"
                         ),
                     },
                     {"role": "user", "content": _json.dumps(payload)},
                 ],
-                temperature=0.15,
+                temperature=0.1,
                 stream=False,
-                timeout=12,
+                timeout=15,
             )
             content = ((response.choices[0].message.content) or "").strip()
             match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
@@ -2041,19 +2081,28 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
                 {
                     "role": "system",
                     "content": (
-                        "You are a sharp business data analyst writing executive-level chart commentary for a professional dashboard report.\n\n"
+                        "You are a sharp business data analyst writing executive-level chart commentary "
+                        "for a professional BI dashboard report.\n\n"
                         "TASK: Write 2-3 punchy, numerically specific insights for the chart. "
-                        "Use pre-computed statistics to cite precise values, labels, and percentages.\n\n"
+                        "Use ONLY the pre-computed statistics provided — cite precise values, labels, and percentages.\n\n"
                         "RULES:\n"
-                        "- Plain text only — no markdown, no bullet points, no headers.\n"
-                        "- Every sentence must contain at least one specific number or label from the data.\n"
-                        "- bar/hbar: highlight top performer, gap between top and bottom, count above average.\n"
-                        "- line/area: trend direction, peak period, magnitude of change, any reversal points.\n"
-                        "- pie/doughnut/polararea: dominant segment share, top-2 combined share, smallest segment.\n"
-                        "- scatter/bubble: correlation direction, any visible cluster or outlier.\n"
-                        "- kpi: compare to average, contextualise the magnitude.\n"
-                        "- End with ONE forward-looking sentence: what to watch or action to take.\n"
-                        "- Keep total under 120 words. Be direct, confident, and specific."
+                        "- Plain text ONLY — no markdown, no bullet points, no headers, no hyphens.\n"
+                        "- EVERY sentence must contain at least one specific number or label from the statistics.\n"
+                        "- NEVER use vague phrases like 'shows a trend', 'indicates patterns', 'data reveals', "
+                        "'interesting to note', 'worth mentioning'.\n"
+                        "- bar/hbar: name the top performer with its exact value, cite the gap vs average, "
+                        "state how many categories are above/below average.\n"
+                        "- line/area: state the overall trend direction and magnitude (% change from start to end), "
+                        "name the peak period and its value, note any significant reversal.\n"
+                        "- pie/doughnut/polararea: state dominant segment's % share, cite top-2 combined %, "
+                        "name the smallest segment.\n"
+                        "- scatter/bubble: describe correlation direction (positive/negative/none), "
+                        "name any visible outlier by label if available.\n"
+                        "- kpi: compare the value to the dataset mean, state whether it is above or below average "
+                        "and by how much.\n"
+                        "- radar: identify highest and lowest dimension, note the range spread.\n"
+                        "- End with ONE forward-looking action sentence: what to investigate or optimize next.\n"
+                        "- Keep total under 100 words. Be direct, confident, and data-specific."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
@@ -2106,7 +2155,7 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
     return f"'{title}' — {len(numeric_values)} data points, total {total:,.0f}, avg {avg_val:,.1f}."
 
 
-def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
+def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> list[dict] | None:
     """Ask AI to design a schema-agnostic, comprehensive dashboard plan and normalize it to widget specs.
 
     Returns a list of widget specs or None if AI is unavailable.
@@ -2185,6 +2234,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         mode = "operational"
 
     payload = {
+        "dataset_name": str(dataset_name or "").strip(),
         "columns": [str(c) for c in df.columns[:60]],
         "numeric_columns": [str(c) for c in profile.numeric_columns[:20]],
         "categorical_columns": [str(c) for c in profile.categorical_columns[:20]],
@@ -2347,42 +2397,54 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "Your dashboards are used by Fortune 500 CEOs, investment committees, and government ministers. "
                         "They are modern, insight-dense, narratively coherent, and built for confident executive decision-making.\n\n"
                         "Create a COMPREHENSIVE, schema-agnostic BI dashboard plan for the provided dataset.\n"
+                        "The payload includes 'dataset_name' — use it to infer business domain (Sales, HR, Finance, etc.).\n"
                         "Mode is provided in payload: executive | analytical | operational.\n\n"
+                        "═══ COLUMN NAME RULES (CRITICAL) ═══\n"
+                        "- ALL 'measure', 'x', 'y', 'x_measure', 'y_measure', and 'columns' fields MUST use "
+                        "EXACT column names copied verbatim from the payload 'columns' list.\n"
+                        "- NEVER invent column names. NEVER paraphrase column names.\n"
+                        "- If unsure which column to use, pick the closest match from the provided list.\n\n"
                         "═══ NAMING RULES (non-negotiable) ═══\n"
                         "- KPI names: 2-4 business-friendly words. 'total_revenue_usd' → 'Total Revenue'. "
                         "'num_orders' → 'Orders'. 'avg_order_value' → 'Avg Order Value'.\n"
                         "- Chart titles: Write a business question being answered. "
                         "GOOD: 'Revenue by Region', 'Monthly Growth Trend', 'Top 10 Products by Margin'. "
-                        "BAD: 'sales_amount by region_name', 'chart of qty'.\n"
-                        "- Insights: Lead with the finding, cite a specific number. "
+                        "BAD: 'sales_amount by region_name', 'chart of qty', 'Column1 Distribution'.\n"
+                        "- Insights: Lead with the finding, cite a specific number from sample_stats. "
                         "GOOD: 'North America drives 42% of total revenue at $2.1M — the largest regional contributor.' "
-                        "BAD: 'region column shows high sales_amount values'.\n\n"
+                        "BAD: 'region column shows high sales_amount values', 'data shows trends'.\n\n"
                         "═══ NARRATIVE RULES ═══\n"
-                        "- 'narrative': Write a 2-3 sentence executive summary of what this dashboard reveals. "
+                        "- 'narrative': Write a 2-3 sentence executive summary using the dataset_name as domain context. "
                         "Must cite the most important metric value from sample_stats. "
                         "Structured as: [What the data is about] + [Key finding with number] + [Strategic implication].\n"
-                        "- 'kpi_section_title': A section title like 'Executive KPI Summary' or 'Key Business Metrics'\n"
-                        "- 'chart_section_title': A section title like 'Performance Deep-Dive' or 'Trend & Distribution Analysis'\n"
-                        "- 'table_section_title': A section title like 'Transaction Detail' or 'Raw Data Explorer'\n\n"
+                        "- 'kpi_section_title': Domain-specific heading like 'Sales KPI Summary', 'HR Key Metrics', "
+                        "'Financial Performance Indicators'\n"
+                        "- 'chart_section_title': Domain-specific heading like 'Sales Performance Deep-Dive', "
+                        "'Trend & Distribution Analysis', 'Customer Behavior Patterns'\n"
+                        "- 'table_section_title': Domain-specific heading like 'Transaction Detail', "
+                        "'Employee Records', 'Order History'\n\n"
                         "═══ KPI RULES ═══\n"
-                        "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, count, "
-                        "and growth metric (if dates present). For distinct entity counts (unique suppliers, customers, products), "
-                        "use a categorical column as 'measure' and set agg='nunique'.\n"
-                        "- 'measure' must be an exact column name from provided columns (numeric or categorical).\n"
-                        "- 'insight': 1 sentence citing the actual sum or mean from sample_stats. "
-                        "Example: 'Total revenue of $4.2M represents a strong baseline; focus on high-margin segments.'\n"
-                        "- 'change': Describe a meaningful comparison (e.g. '12% above Q3 average', 'top 20% of performers').\n\n"
+                        "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, unique count, "
+                        "and growth metric (if dates present).\n"
+                        "- For distinct entity counts (unique customers, products, suppliers): "
+                        "use categorical column as 'measure' with agg='nunique'.\n"
+                        "- 'measure' MUST be an exact column name from the payload columns list.\n"
+                        "- 'agg' must be one of: sum, avg, count, nunique, max, min\n"
+                        "- 'insight': 1 sentence citing actual value from sample_stats. "
+                        "Example: 'Total revenue of $4.2M across 1,250 records provides a strong performance baseline.'\n"
+                        "- 'change': Meaningful comparison or null "
+                        "(e.g. '12% above dataset average', 'top quartile of performers').\n\n"
                         "═══ CHART SELECTION RULES ═══\n"
-                        "- Date column present → ALWAYS a line chart for primary trend + area for secondary metric.\n"
+                        "- Date column present → ALWAYS include a line chart for primary trend + area for secondary metric.\n"
                         "- Category (cardinality 3-12) + numeric → bar. Title: '[Metric] by [Category]'\n"
                         "- Category (cardinality >12) + numeric → hbar top 10. Title: 'Top 10 [Category] by [Metric]'\n"
-                        "- Part-to-whole (cardinality ≤8) → doughnut. Title: '[Metric] Mix by [Category]'\n"
-                        "- Two numerics with correlation → scatter. Title: '[Metric A] vs [Metric B] Relationship'\n"
-                        "- Multiple categories + numeric → radar. Title: '[Metric] Profile by [Category]'\n"
+                        "- Part-to-whole (cardinality ≤8) → doughnut. Title: '[Metric] Distribution by [Category]'\n"
+                        "- Two correlated numerics → scatter. Title: '[Metric A] vs [Metric B]'\n"
+                        "- Multiple categories + single numeric → radar. Title: '[Metric] Profile Comparison'\n"
                         "- Stage/funnel progression → funnel. Title: '[Process] Conversion Funnel'\n"
-                        "- Cumulative variance → waterfall. Title: '[Metric] Waterfall by [Category]'\n"
-                        "- Time series + rate overlay → mixed. Title: '[Metric] & [Rate] by [Period]'\n"
-                        "- Generate 6-10 charts covering different analytical angles.\n\n"
+                        "- Cumulative variance → waterfall. Title: '[Metric] Contribution by [Category]'\n"
+                        "- Time series + rate overlay → mixed. Title: '[Metric] & [Rate] Over Time'\n"
+                        "- Generate 6-10 charts covering different analytical angles (trend, distribution, ranking, composition).\n\n"
                         "═══ SIZE RULES ═══\n"
                         "kpi='sm', line/area/waterfall='lg', bar/hbar/mixed='md', pie/doughnut/radar/scatter='md', "
                         "table='lg', funnel='md'.\n\n"
@@ -2393,32 +2455,37 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "═══ INSIGHT QUALITY RULES ═══\n"
                         "- EVERY insight must cite at least one specific number from sample_stats or cardinality.\n"
                         "- Structure: [Key finding with number] → [Business implication] → [Recommended action].\n"
-                        "- Avoid generic phrases like 'shows trends' or 'indicates patterns'.\n"
-                        "- Maximum 120 words per insight. Be punchy and decisive.\n\n"
-                        "Return ONLY valid JSON with these exact keys:\n"
+                        "- Avoid vague phrases: 'shows trends', 'indicates patterns', 'data reveals', 'interesting'.\n"
+                        "- Maximum 100 words per insight. Be punchy, confident, and specific.\n\n"
+                        "Return ONLY valid JSON (no markdown code fences, no extra text) with these exact keys:\n"
                         "{"
                         "\"narrative\":\"2-3 sentence executive summary with specific numbers\","
-                        "\"kpi_section_title\":\"Section heading for KPIs\","
-                        "\"chart_section_title\":\"Section heading for charts\","
-                        "\"table_section_title\":\"Section heading for tables\","
+                        "\"kpi_section_title\":\"Domain-specific KPI section heading\","
+                        "\"chart_section_title\":\"Domain-specific chart section heading\","
+                        "\"table_section_title\":\"Domain-specific table section heading\","
                         "\"schema\":{\"columns\":[],\"types\":{}},"
-                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"exact_column\",\"agg\":\"sum|avg|count|nunique\",\"change\":\"comparison or null\",\"insight\":\"data-driven sentence\"}],"
-                        "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"exact_column\",\"y\":[\"exact_column\"],\"x_measure\":\"exact_col_or_empty\",\"y_measure\":\"exact_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"data-driven sentence with number\"}],"
-                        "\"tables\":[{\"title\":\"Analytical View Name\",\"columns\":[\"exact_col\"],\"insight\":\"data-driven sentence\"}],"
-                        "\"insights\":[\"Global finding 1\",\"Global finding 2\",\"Global finding 3\"]"
-                        "}\n"
-                        "CRITICAL: Use EXACT column names from the payload for x/y/measure fields. "
-                        "Chart titles, KPI names, and insights must be human-readable and numerically specific. "
-                        "No markdown. No extra text outside the JSON."
+                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"EXACT_column_name\",\"agg\":\"sum|avg|count|nunique\",\"change\":\"comparison or null\",\"insight\":\"data-driven sentence with specific number\"}],"
+                        "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"EXACT_column_name\",\"y\":[\"EXACT_column_name\"],\"x_measure\":\"EXACT_col_or_empty\",\"y_measure\":\"EXACT_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"data-driven sentence with number\"}],"
+                        "\"tables\":[{\"title\":\"Descriptive Table Name\",\"columns\":[\"EXACT_col\"],\"insight\":\"data-driven sentence\"}],"
+                        "\"insights\":[\"Global finding 1 with specific number\",\"Global finding 2 with specific number\",\"Global finding 3 with action\"]"
+                        "}"
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
             temperature=0.15,
-            stream=False,
+            stream=True,
             timeout=specs_timeout,
         )
-        content = ((response.choices[0].message.content) or "").strip()
+        # Stream chunks to avoid read timeout on large JSON responses
+        content_parts: list[str] = []
+        for chunk in response:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                content_parts.append(delta)
+        content = "".join(content_parts).strip()
+        # Strip markdown code fences if present
+        content = _re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("```").strip()
         if content.startswith("["):
             match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
             parsed = _json.loads(match_arr.group(0) if match_arr else content)
@@ -2428,17 +2495,17 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             return specs
-        logger.warning("DeepSeek returned a response but produced no normalizable dashboard specs.")
+        logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
         logger.exception(
-            "DeepSeek dashboard specs generation failed (timeout=%ss); falling back to heuristic specs.",
+            "AI dashboard specs generation failed (timeout=%ss); falling back to heuristic specs.",
             specs_timeout,
         )
     return None
 
 
 def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> str | None:
-    """Ask AI for a concise dashboard title tailored to the dataset."""
+    """Ask AI for a concise, business-specific dashboard title tailored to the dataset."""
     import json as _json
     import re as _re
 
@@ -2447,6 +2514,33 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
         return None
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+
+    # Build rich statistical context so AI can infer the business domain
+    sample_stats: dict = {}
+    for col in profile.numeric_columns[:6]:
+        try:
+            s = df[col].dropna()
+            sample_stats[str(col)] = {
+                "sum": round(float(s.sum()), 2),
+                "mean": round(float(s.mean()), 2),
+                "human_label": _humanize_col(col),
+            }
+        except Exception:
+            pass
+
+    top_categories: dict = {}
+    for col in profile.categorical_columns[:5]:
+        try:
+            top_categories[str(col)] = list(df[col].value_counts().head(4).index.astype(str))
+        except Exception:
+            pass
+
+    sample_rows: list = []
+    try:
+        sample_rows = df.head(3).fillna("").astype(str).to_dict(orient="records")
+    except Exception:
+        pass
+
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
         "columns": [str(c) for c in df.columns[:50]],
@@ -2454,6 +2548,9 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
         "categorical_columns": [str(c) for c in profile.categorical_columns[:12]],
         "date_columns": [str(c) for c in date_cols[:5]],
         "total_rows": int(profile.total_rows),
+        "sample_stats": sample_stats,
+        "top_categories": top_categories,
+        "sample_rows": sample_rows,
     }
     try:
         response = client.chat.completions.create(
@@ -2462,23 +2559,36 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
                 {
                     "role": "system",
                     "content": (
-                        "You are an expert analytics storyteller. Generate ONE concise executive dashboard title.\n"
-                        "Return ONLY valid JSON with key: title.\n"
-                        "Rules:\n"
-                        "- Keep title 3-7 words.\n"
-                        "- Be specific to the dataset context and columns.\n"
-                        "- Avoid generic words like 'Overview' when possible.\n"
-                        "- No punctuation-heavy or clickbait phrasing."
+                        "You are a senior BI analyst and executive dashboard strategist. "
+                        "Your job is to generate ONE precise, business-oriented dashboard title that "
+                        "captures the core purpose of the dataset.\n\n"
+                        "Return ONLY valid JSON with a single key: {\"title\": \"Your Title Here\"}\n\n"
+                        "TITLE RULES:\n"
+                        "- 3-7 words, Title Case\n"
+                        "- Identify the business domain from columns and sample data "
+                        "(e.g. Sales, HR, Finance, Supply Chain, Marketing, Operations, E-commerce, Logistics)\n"
+                        "- Include the primary entity or metric being tracked "
+                        "(e.g. Revenue, Orders, Employees, Inventory, Customers, Claims)\n"
+                        "- Use dataset_name as a context clue but do NOT copy it verbatim\n"
+                        "- GOOD examples: 'Sales Revenue Performance', 'Employee Attrition Intelligence', "
+                        "'E-commerce Order Analysis', 'Supply Chain Cost Tracker', "
+                        "'Marketing Campaign ROI', 'Customer Churn Monitor'\n"
+                        "- BAD examples: 'Business Overview', 'Data Analysis Dashboard', "
+                        "'Analytics Report', 'Dataset Overview', 'Business Dashboard'\n"
+                        "- No subtitles, no colons, no punctuation except hyphens\n"
+                        "- Be decisive and specific — use the actual domain vocabulary from the columns"
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
-            temperature=0.2,
+            temperature=0.15,
             stream=False,
-            timeout=12,
+            timeout=15,
         )
         content = ((response.choices[0].message.content) or "").strip()
-        match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        # Strip markdown code fences if present
+        content = _re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("```").strip()
+        match = _re.search(r"\{.*?\}", content, flags=_re.DOTALL)
         parsed = _json.loads(match.group(0) if match else content)
         title = str(parsed.get("title", "")).strip()
         if title:
