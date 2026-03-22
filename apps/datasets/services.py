@@ -868,6 +868,382 @@ def _waterfall_config(labels: list, values: list, label: str, palette: str = "in
     }
 
 
+def _get_ai_client():
+    """Return (client, model) tuple for DeepSeek if configured, else (None, None)."""
+    import importlib.util
+    from django.conf import settings
+
+    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return None, None
+    if importlib.util.find_spec("openai") is None:
+        return None, None
+    openai_module = __import__("openai")
+    model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    return client, model
+
+
+def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Clean a DataFrame using AI guidance when available, falling back to heuristics.
+
+    Returns (cleaned_df, report) where report describes all cleaning actions taken.
+    """
+    import json as _json
+    import re as _re
+
+    report: dict = {
+        "ai_powered": False,
+        "actions": [],
+        "rows_removed": 0,
+        "columns_fixed": [],
+        "missing_filled": {},
+        "outliers_capped": {},
+    }
+
+    client, model = _get_ai_client()
+    cleaning_plan: list[dict] = []
+
+    if client is not None:
+        profile = build_profile_summary(df)
+        sample_info = {
+            "columns": list(df.columns[:50]),
+            "dtypes": {str(c): str(df[c].dtype) for c in df.columns[:50]},
+            "missing_per_column": {str(c): int(df[c].isna().sum()) for c in df.columns[:50]},
+            "total_rows": int(df.shape[0]),
+            "duplicate_rows": int(df.duplicated().sum()),
+            "numeric_columns": profile.numeric_columns[:30],
+            "categorical_columns": profile.categorical_columns[:30],
+            "sample_values": {
+                str(c): df[c].dropna().head(3).astype(str).tolist()
+                for c in df.columns[:20]
+            },
+        }
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a data cleaning expert. Analyze this dataset profile and return a JSON array of cleaning steps. "
+                            "Each step must have keys: action (one of: drop_duplicates, fill_missing, cap_outliers, fix_dtype, drop_column), "
+                            "column (string or null for dataset-wide), strategy (brief strategy string), reason (brief reason). "
+                            "For fill_missing: include fill_value ('mean', 'median', 'mode', or a literal value). "
+                            "For cap_outliers: include percentile_low (int) and percentile_high (int). "
+                            "Return ONLY valid JSON array, no explanation."
+                        ),
+                    },
+                    {"role": "user", "content": _json.dumps(sample_info)},
+                ],
+                temperature=0.1,
+                stream=False,
+                timeout=15,
+            )
+            content = ((response.choices[0].message.content) or "").strip()
+            match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+            cleaning_plan = _json.loads(match.group(0) if match else content)
+            if isinstance(cleaning_plan, list):
+                report["ai_powered"] = True
+        except Exception:
+            cleaning_plan = []
+
+    # Build heuristic plan if AI did not provide one
+    if not cleaning_plan:
+        profile = build_profile_summary(df)
+        if df.duplicated().sum() > 0:
+            cleaning_plan.append({"action": "drop_duplicates", "column": None, "strategy": "drop exact duplicates", "reason": "Exact duplicate rows detected"})
+        for col in profile.numeric_columns:
+            missing = int(df[col].isna().sum())
+            if missing > 0:
+                cleaning_plan.append({"action": "fill_missing", "column": col, "strategy": "median", "fill_value": "median", "reason": f"{missing} missing values"})
+        for col in profile.categorical_columns:
+            missing = int(df[col].isna().sum())
+            if missing > 0:
+                cleaning_plan.append({"action": "fill_missing", "column": col, "strategy": "mode", "fill_value": "mode", "reason": f"{missing} missing values"})
+
+    # Execute cleaning plan
+    cleaned = df.copy()
+    for step in cleaning_plan:
+        action = str(step.get("action", "")).strip()
+        col = step.get("column")
+        try:
+            if action == "drop_duplicates":
+                before = len(cleaned)
+                cleaned = cleaned.drop_duplicates()
+                removed = before - len(cleaned)
+                report["rows_removed"] += removed
+                report["actions"].append(f"Removed {removed} duplicate rows")
+            elif action == "fill_missing" and col and col in cleaned.columns:
+                fill_value = str(step.get("fill_value", "median")).lower()
+                missing_count = int(cleaned[col].isna().sum())
+                if missing_count > 0:
+                    if fill_value == "mean" and pd.api.types.is_numeric_dtype(cleaned[col]):
+                        cleaned[col] = cleaned[col].fillna(cleaned[col].mean())
+                    elif fill_value == "median" and pd.api.types.is_numeric_dtype(cleaned[col]):
+                        cleaned[col] = cleaned[col].fillna(cleaned[col].median())
+                    elif fill_value == "mode":
+                        mode_vals = cleaned[col].mode()
+                        if len(mode_vals) > 0:
+                            cleaned[col] = cleaned[col].fillna(mode_vals[0])
+                    else:
+                        cleaned[col] = cleaned[col].fillna(fill_value)
+                    report["missing_filled"][col] = missing_count
+                    report["actions"].append(f"Filled {missing_count} missing values in '{col}' with {fill_value}")
+                    if col not in report["columns_fixed"]:
+                        report["columns_fixed"].append(col)
+            elif action == "cap_outliers" and col and col in cleaned.columns:
+                if pd.api.types.is_numeric_dtype(cleaned[col]):
+                    pct_low = int(step.get("percentile_low", 1))
+                    pct_high = int(step.get("percentile_high", 99))
+                    lo = cleaned[col].quantile(pct_low / 100)
+                    hi = cleaned[col].quantile(pct_high / 100)
+                    before_count = int(((cleaned[col] < lo) | (cleaned[col] > hi)).sum())
+                    cleaned[col] = cleaned[col].clip(lower=lo, upper=hi)
+                    report["outliers_capped"][col] = before_count
+                    report["actions"].append(f"Capped {before_count} outliers in '{col}' [{pct_low}th–{pct_high}th percentile]")
+            elif action == "fix_dtype" and col and col in cleaned.columns:
+                strategy = str(step.get("strategy", "")).lower()
+                if "date" in strategy or "datetime" in strategy:
+                    cleaned[col] = pd.to_datetime(cleaned[col], errors="coerce")
+                    report["actions"].append(f"Converted '{col}' to datetime")
+                elif "numeric" in strategy or "float" in strategy or "int" in strategy:
+                    cleaned[col] = pd.to_numeric(cleaned[col], errors="coerce")
+                    report["actions"].append(f"Converted '{col}' to numeric")
+                if col not in report["columns_fixed"]:
+                    report["columns_fixed"].append(col)
+            elif action == "drop_column" and col and col in cleaned.columns:
+                cleaned = cleaned.drop(columns=[col])
+                report["actions"].append(f"Dropped column '{col}'")
+        except Exception:
+            pass
+
+    if not report["actions"]:
+        report["actions"].append("Data looks clean — no issues found")
+
+    return cleaned, report
+
+
+def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict]:
+    """Use AI (or heuristics) to suggest the best slicer columns and filter types.
+
+    Returns a list of dicts: {column, filter_type, label, reason}
+    """
+    import json as _json
+    import re as _re
+
+    client, model = _get_ai_client()
+
+    if client is not None:
+        payload = {
+            "columns": list(df.columns[:60]),
+            "dtypes": {str(c): str(df[c].dtype) for c in df.columns[:60]},
+            "numeric_columns": profile.numeric_columns[:30],
+            "categorical_columns": profile.categorical_columns[:30],
+            "cardinality": {
+                str(c): int(df[c].nunique(dropna=True))
+                for c in profile.categorical_columns[:30]
+            },
+            "total_rows": profile.total_rows,
+        }
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a BI expert. Recommend the best dashboard slicers/filters for this dataset. "
+                            "Return a JSON array (max 6 items) where each item has: "
+                            "column (string), filter_type (one of: dropdown, multiselect, range), "
+                            "label (friendly display name), reason (1 sentence why this slicer is useful). "
+                            "Prefer low-cardinality categorical columns for dropdown/multiselect, "
+                            "and numeric columns for range. Return ONLY valid JSON array."
+                        ),
+                    },
+                    {"role": "user", "content": _json.dumps(payload)},
+                ],
+                temperature=0.2,
+                stream=False,
+                timeout=12,
+            )
+            content = ((response.choices[0].message.content) or "").strip()
+            match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+            suggestions = _json.loads(match.group(0) if match else content)
+            if isinstance(suggestions, list) and suggestions:
+                valid = []
+                for s in suggestions:
+                    col = str(s.get("column", "")).strip()
+                    ft = str(s.get("filter_type", "dropdown")).strip()
+                    if col in df.columns and ft in {"dropdown", "multiselect", "range"}:
+                        valid.append({
+                            "column": col,
+                            "filter_type": ft,
+                            "label": str(s.get("label", col)).strip()[:80],
+                            "reason": str(s.get("reason", "")).strip()[:200],
+                        })
+                if valid:
+                    return valid[:6]
+        except Exception:
+            pass
+
+    # Heuristic fallback
+    suggestions = []
+    for col in profile.categorical_columns:
+        cardinality = int(df[col].nunique(dropna=True))
+        if cardinality < 2:
+            continue
+        ft = "multiselect" if cardinality <= 20 else "dropdown"
+        suggestions.append({
+            "column": col,
+            "filter_type": ft,
+            "label": col.replace("_", " ").title(),
+            "reason": f"Categorical column with {cardinality} unique values — good for filtering",
+        })
+        if len(suggestions) >= 4:
+            break
+    for col in profile.numeric_columns[:2]:
+        suggestions.append({
+            "column": col,
+            "filter_type": "range",
+            "label": col.replace("_", " ").title(),
+            "reason": f"Numeric column — range filter allows narrowing the data",
+        })
+    return suggestions[:6]
+
+
+def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) -> str:
+    """Generate AI-powered analysis text for a chart. Returns plain text insight."""
+    import json as _json
+
+    client, model = _get_ai_client()
+    if client is None:
+        return _heuristic_chart_analysis(chart_type, labels, values, title)
+
+    payload = {
+        "chart_type": chart_type,
+        "title": title,
+        "labels": labels[:30],
+        "values": values[:30],
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a concise data analyst. Given chart data, provide 2-4 key insights in plain text "
+                        "(no markdown). Focus on top performers, trends, anomalies, or distributions. "
+                        "Keep your response under 120 words."
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.3,
+            stream=False,
+            timeout=12,
+        )
+        return ((response.choices[0].message.content) or "").strip()
+    except Exception:
+        return _heuristic_chart_analysis(chart_type, labels, values, title)
+
+
+def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title: str) -> str:
+    """Simple heuristic-based chart insight when AI is unavailable."""
+    if not values or not labels:
+        return f"No data available for analysis of '{title}'."
+    numeric_values = []
+    for v in values:
+        try:
+            numeric_values.append(float(v))
+        except (TypeError, ValueError):
+            pass
+    if not numeric_values:
+        return f"'{title}' contains {len(labels)} categories."
+    total = sum(numeric_values)
+    max_val = max(numeric_values)
+    min_val = min(numeric_values)
+    max_label = labels[numeric_values.index(max_val)] if labels else ""
+    avg_val = total / len(numeric_values)
+    if chart_type in ("pie", "doughnut") and total > 0:
+        pct = round(max_val / total * 100, 1)
+        return (
+            f"'{max_label}' dominates with {pct}% of the total. "
+            f"The chart shows {len(labels)} categories with a combined total of {total:,.0f}."
+        )
+    if chart_type in ("bar", "hbar"):
+        return (
+            f"Top category is '{max_label}' ({max_val:,.0f}). "
+            f"Average across {len(numeric_values)} groups: {avg_val:,.1f}. "
+            f"Range: {min_val:,.0f} – {max_val:,.0f}."
+        )
+    if chart_type == "line":
+        trend = "upward" if numeric_values[-1] > numeric_values[0] else "downward"
+        return (
+            f"The trend is {trend} overall. "
+            f"Started at {numeric_values[0]:,.0f}, ended at {numeric_values[-1]:,.0f}. "
+            f"Peak value: {max_val:,.0f}."
+        )
+    return f"'{title}' — {len(numeric_values)} data points, total {total:,.0f}, avg {avg_val:,.1f}."
+
+
+def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
+    """Ask AI to design a complete dashboard layout. Returns widget specs or None."""
+    import json as _json
+    import re as _re
+
+    client, model = _get_ai_client()
+    if client is None:
+        return None
+
+    date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+    payload = {
+        "columns": list(df.columns[:60]),
+        "numeric_columns": profile.numeric_columns[:20],
+        "categorical_columns": profile.categorical_columns[:20],
+        "date_columns": date_cols[:5],
+        "total_rows": profile.total_rows,
+        "duplicate_rows": profile.duplicate_rows,
+        "missing_cells": profile.missing_cells,
+        "allowed_chart_types": ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"],
+        "allowed_sizes": ["sm", "md", "lg"],
+        "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a BI dashboard designer. Design a complete dashboard for this dataset. "
+                        "Return a JSON array of widget specs (max 8). Each spec must have: "
+                        "title (string), chart_type (one of allowed_chart_types), "
+                        "dimension (column name or null), measures (array of column names or []), "
+                        "x_measure (column or null), y_measure (column or null), "
+                        "size (one of allowed_sizes: sm for KPIs, md for standard charts, lg for main/wide charts), "
+                        "palette (one of allowed_palettes). "
+                        "Start with 2-3 KPI widgets (sm), then add variety of chart types. "
+                        "Use different palettes for visual variety. Return ONLY valid JSON array."
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.2,
+            stream=False,
+            timeout=20,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
+        match = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+        specs = _json.loads(match.group(0) if match else content)
+        if isinstance(specs, list) and specs:
+            return specs
+    except Exception:
+        pass
+    return None
+
+
 def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     """Read the saved dataset file and generate real chart widget specs."""
     from pathlib import Path

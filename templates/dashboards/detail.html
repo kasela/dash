@@ -43,6 +43,18 @@
     <span class="hidden md:inline">Text</span>
   </button>
 
+  <!-- AI Data Clean -->
+  <button
+    id="ai-clean-dataset-btn"
+    data-url="{% url 'dashboard-ai-clean-dataset' dashboard.id %}"
+    class="flex items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-medium text-violet-700 shadow-sm transition-colors hover:bg-violet-50"
+    title="AI Data Cleaning Report">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+    </svg>
+    <span class="hidden md:inline">Clean</span>
+  </button>
+
   <!-- Presentation Mode -->
   <button
     id="open-presentation-btn"
@@ -361,6 +373,22 @@
       </div>
     </div>
 
+    <!-- AI Slicer Suggestions -->
+    <div class="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-semibold text-violet-800">✦ AI Slicer Suggestions</p>
+          <p class="text-xs text-violet-600 mt-0.5">Let AI recommend the best filters for this dataset</p>
+        </div>
+        <button id="ai-suggest-slicers-btn"
+          data-url="{% url 'dashboard-ai-suggest-slicers' dashboard.id %}"
+          class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50">
+          Suggest Slicers
+        </button>
+      </div>
+      <div id="ai-slicer-suggestions" class="hidden mt-3 space-y-2"></div>
+    </div>
+
     <!-- Active filters list -->
     <div>
       <p class="mb-2 text-sm font-semibold text-slate-700">Active Filters</p>
@@ -471,6 +499,19 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4M8 15l4 4 4-4"/>
           </svg>
           <span class="width-label text-xs font-semibold">{{ widget.chart_config.layout.size|default:'md'|upper }}</span>
+        </button>
+        {% endif %}
+
+        {% if widget.widget_type not in 'heading,text_canvas,divider' %}
+        <!-- AI Analyze -->
+        <button
+          class="ai-analyze-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-violet-50 hover:text-violet-500"
+          data-widget-id="{{ widget.id }}"
+          data-analyze-url="{% url 'dashboard-ai-analyze-widget' dashboard.id widget.id %}"
+          title="AI Insights">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+          </svg>
         </button>
         {% endif %}
 
@@ -602,6 +643,20 @@
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
     {% endif %}
+
+    <!-- AI Insights Panel (hidden by default, toggled by AI button) -->
+    <div class="ai-insights-panel hidden mt-3 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3" data-widget-id="{{ widget.id }}">
+      <div class="flex items-center gap-2 mb-1.5">
+        <svg class="h-4 w-4 text-violet-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+        <span class="text-xs font-semibold text-violet-700">AI Insights</span>
+        <span class="ai-powered-badge hidden ml-auto text-xs font-medium text-violet-400 bg-violet-100 px-1.5 py-0.5 rounded-full">✦ AI</span>
+      </div>
+      <p class="ai-insights-text text-xs text-slate-600 leading-relaxed">
+        <span class="ai-insights-loading text-slate-400 italic">Analysing…</span>
+      </p>
+    </div>
 
     {% if widget.widget_type not in 'heading,text_canvas,divider' %}
     <button class="widget-resize-handle absolute bottom-2 right-2 h-5 w-5 cursor-se-resize rounded-md border border-slate-200 bg-slate-50 text-slate-300 hover:bg-slate-100 hover:border-slate-400 hover:text-slate-500 transition-colors flex items-center justify-center" data-widget-id="{{ widget.id }}" title="Drag to resize (↕ height · ↔ width)">
@@ -1190,5 +1245,190 @@
     </button>
   </div>
 </div>
+
+<!-- ── AI Data Clean Modal ─────────────────────────────────────────────────── -->
+<div id="ai-clean-overlay" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="ai-clean-modal"
+  style="display:none;position:fixed;top:4rem;left:50%;transform:translateX(-50%);z-index:70;width:100%;max-width:38rem;background:#fff;border-radius:1.25rem;box-shadow:0 25px 60px rgba(0,0,0,0.3);"
+  role="dialog" aria-modal="true" aria-label="AI Data Cleaning Report">
+  <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+    <div>
+      <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+        <svg class="h-5 w-5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+        AI Data Cleaning Report
+      </h2>
+      <p class="text-xs text-slate-500 mt-0.5">Analysis of your dataset's data quality and cleaning actions</p>
+    </div>
+    <button id="close-ai-clean-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div id="ai-clean-content" class="px-6 py-5">
+    <p class="text-sm text-slate-500 text-center py-8">Loading analysis…</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const apiUrlsEl = document.getElementById('dashboard-api-urls');
+  const apiUrls = apiUrlsEl ? JSON.parse(apiUrlsEl.textContent) : {};
+
+  // ── AI Data Cleaning ────────────────────────────────────────────────────────
+  const cleanBtn = document.getElementById('ai-clean-dataset-btn');
+  const cleanModal = document.getElementById('ai-clean-modal');
+  const cleanOverlay = document.getElementById('ai-clean-overlay');
+  const closeCleanBtn = document.getElementById('close-ai-clean-btn');
+  const cleanContent = document.getElementById('ai-clean-content');
+
+  function openAiCleanModal() {
+    cleanModal.style.display = 'block';
+    cleanOverlay.style.display = 'block';
+    cleanContent.innerHTML = '<p class="text-sm text-slate-400 text-center py-8 italic">Analysing dataset…</p>';
+    const url = cleanBtn.dataset.url;
+    fetch(url, {
+      method: 'POST',
+      headers: {'X-CSRFToken': apiUrls.csrfToken, 'Content-Type': 'application/json'},
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.success) { cleanContent.innerHTML = `<p class="text-sm text-red-600">${data.error || 'Failed to run analysis'}</p>`; return; }
+      const report = data.report;
+      const aiPowered = report.ai_powered;
+      const badge = aiPowered ? '<span class="ml-2 inline-block text-xs font-semibold text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full">✦ AI-powered</span>' : '<span class="ml-2 inline-block text-xs font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Heuristic</span>';
+      let html = '<div class="space-y-4">';
+      html += `<div class="grid grid-cols-3 gap-3">
+        <div class="rounded-xl bg-slate-50 p-3 text-center"><p class="text-xl font-bold text-slate-800">${report.rows_removed}</p><p class="text-xs text-slate-500 mt-0.5">Rows removed</p></div>
+        <div class="rounded-xl bg-slate-50 p-3 text-center"><p class="text-xl font-bold text-slate-800">${Object.keys(report.missing_filled || {}).length}</p><p class="text-xs text-slate-500 mt-0.5">Cols imputed</p></div>
+        <div class="rounded-xl bg-slate-50 p-3 text-center"><p class="text-xl font-bold text-slate-800">${Object.keys(report.outliers_capped || {}).length}</p><p class="text-xs text-slate-500 mt-0.5">Cols capped</p></div>
+      </div>`;
+      html += `<div><p class="text-xs font-semibold text-slate-600 mb-2">Cleaning Actions ${badge}</p><ul class="space-y-1.5">`;
+      for (const action of (report.actions || [])) {
+        html += `<li class="flex items-start gap-2 text-sm text-slate-700"><svg class="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>${action}</li>`;
+      }
+      html += '</ul></div></div>';
+      cleanContent.innerHTML = html;
+    })
+    .catch(() => { cleanContent.innerHTML = '<p class="text-sm text-red-600">Request failed.</p>'; });
+  }
+
+  if (cleanBtn) cleanBtn.addEventListener('click', openAiCleanModal);
+  if (closeCleanBtn) closeCleanBtn.addEventListener('click', () => { cleanModal.style.display='none'; cleanOverlay.style.display='none'; });
+  if (cleanOverlay) cleanOverlay.addEventListener('click', () => { cleanModal.style.display='none'; cleanOverlay.style.display='none'; });
+
+  // ── AI Widget Analysis ──────────────────────────────────────────────────────
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.ai-analyze-btn');
+    if (!btn) return;
+    const widgetId = btn.dataset.widgetId;
+    const analyzeUrl = btn.dataset.analyzeUrl;
+    if (!widgetId || !analyzeUrl) return;
+
+    const panel = document.querySelector(`.ai-insights-panel[data-widget-id="${widgetId}"]`);
+    if (!panel) return;
+
+    // Toggle: if visible and content loaded, hide it
+    if (!panel.classList.contains('hidden') && panel.querySelector('.ai-insights-text') && panel.querySelector('.ai-insights-text').textContent.trim()) {
+      panel.classList.add('hidden');
+      return;
+    }
+
+    panel.classList.remove('hidden');
+    const loadingEl = panel.querySelector('.ai-insights-loading');
+    const textEl = panel.querySelector('.ai-insights-text');
+    const badgeEl = panel.querySelector('.ai-powered-badge');
+    if (loadingEl) loadingEl.style.display = 'inline';
+    if (textEl) textEl.textContent = '';
+
+    fetch(analyzeUrl, { headers: {'X-Requested-With': 'XMLHttpRequest'} })
+      .then(r => r.json())
+      .then(data => {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (data.success && textEl) {
+          textEl.textContent = data.analysis || 'No analysis available.';
+          if (data.ai_powered && badgeEl) badgeEl.classList.remove('hidden');
+        } else if (textEl) {
+          textEl.textContent = data.error || 'Analysis failed.';
+        }
+      })
+      .catch(() => {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (textEl) textEl.textContent = 'Request failed.';
+      });
+  });
+
+  // ── AI Slicer Suggestions ───────────────────────────────────────────────────
+  const suggestBtn = document.getElementById('ai-suggest-slicers-btn');
+  const suggestionsContainer = document.getElementById('ai-slicer-suggestions');
+
+  if (suggestBtn) {
+    suggestBtn.addEventListener('click', function () {
+      const url = suggestBtn.dataset.url;
+      suggestBtn.disabled = true;
+      suggestBtn.textContent = 'Loading…';
+      suggestionsContainer.innerHTML = '';
+      suggestionsContainer.classList.remove('hidden');
+
+      fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} })
+        .then(r => r.json())
+        .then(data => {
+          suggestBtn.disabled = false;
+          suggestBtn.textContent = 'Suggest Slicers';
+          if (!data.success || !data.suggestions || !data.suggestions.length) {
+            suggestionsContainer.innerHTML = '<p class="text-xs text-slate-500">No suggestions available for this dataset.</p>';
+            return;
+          }
+          const badge = data.ai_powered ? '<span class="ml-1 text-xs text-violet-400 bg-violet-100 px-1.5 py-0.5 rounded-full">✦ AI</span>' : '';
+          let html = `<p class="text-xs font-semibold text-violet-700 mb-1">Recommended Slicers ${badge}</p>`;
+          for (const s of data.suggestions) {
+            html += `<div class="flex items-start justify-between gap-2 rounded-lg bg-white border border-violet-100 px-3 py-2">
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold text-slate-800 truncate">${s.label}</p>
+                <p class="text-xs text-slate-500 mt-0.5">${s.reason}</p>
+              </div>
+              <button class="add-suggested-slicer-btn flex-shrink-0 rounded-md bg-violet-600 px-2 py-1 text-xs font-semibold text-white hover:bg-violet-700"
+                data-column="${s.column}" data-filter-type="${s.filter_type}" data-label="${s.label}">
+                Add
+              </button>
+            </div>`;
+          }
+          suggestionsContainer.innerHTML = html;
+        })
+        .catch(() => {
+          suggestBtn.disabled = false;
+          suggestBtn.textContent = 'Suggest Slicers';
+          suggestionsContainer.innerHTML = '<p class="text-xs text-red-500">Request failed.</p>';
+        });
+    });
+  }
+
+  // Handle "Add" from AI slicer suggestion — pre-fills the filter form and triggers add
+  if (suggestionsContainer) {
+    suggestionsContainer.addEventListener('click', function (e) {
+      const btn = e.target.closest('.add-suggested-slicer-btn');
+      if (!btn) return;
+      const col = btn.dataset.column;
+      const ft = btn.dataset.filterType;
+      const label = btn.dataset.label;
+      const colSelect = document.getElementById('fm-column');
+      const typeSelect = document.getElementById('fm-type');
+      const labelInput = document.getElementById('fm-label');
+      if (colSelect && typeSelect && labelInput) {
+        for (const opt of colSelect.options) { if (opt.value === col) { colSelect.value = col; break; } }
+        typeSelect.value = ft;
+        labelInput.value = label;
+        const addBtn = document.getElementById('fm-add-btn');
+        if (addBtn) addBtn.click();
+      }
+    });
+  }
+
+})();
+</script>
 
 {% endblock %}
