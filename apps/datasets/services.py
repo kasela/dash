@@ -1267,11 +1267,31 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     specs: list[dict] = []
     position = 1
 
+    version_id = dataset_version.id
+
+    def _make_builder(dimension="", measures=None, measure="", x_measure="", y_measure="", palette="indigo"):
+        return {
+            "dimension": dimension,
+            "measures": measures or [],
+            "measure": measure,
+            "x_measure": x_measure,
+            "y_measure": y_measure,
+            "x_label": "",
+            "y_label": "",
+            "palette": palette,
+            "tooltip_enabled": True,
+            "table_columns": [],
+            "group_by": [],
+            "dataset_version_id": version_id,
+        }
+
     # 1. KPI – total rows
+    kpi_rows_cfg = {"kpi": "rows", "value": f"{profile.total_rows:,}"}
+    kpi_rows_cfg["builder"] = _make_builder(measure="rows")
     specs.append({
         "title": "Total Rows",
         "widget_type": "kpi",
-        "config": {"kpi": "rows", "value": f"{profile.total_rows:,}"},
+        "config": kpi_rows_cfg,
         "position": position,
     })
     position += 1
@@ -1281,10 +1301,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             total = df[measure].sum()
+            kpi_cfg = {"kpi": measure, "value": f"{total:,.0f}"}
+            kpi_cfg["builder"] = _make_builder(measures=[measure], measure=measure)
             specs.append({
                 "title": f"Total {measure}",
                 "widget_type": "kpi",
-                "config": {"kpi": measure, "value": f"{total:,.0f}"},
+                "config": kpi_cfg,
                 "position": position,
             })
             position += 1
@@ -1299,10 +1321,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             top = df.groupby(dim)[measure].sum().nlargest(10)
             labels = [str(l) for l in top.index.tolist()]
             values = [round(float(v), 2) for v in top.values.tolist()]
+            bar_cfg = _bar_config(labels, values, measure)
+            bar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
             specs.append({
                 "title": f"{measure} by {dim}",
                 "widget_type": "bar",
-                "config": _bar_config(labels, values, measure),
+                "config": bar_cfg,
                 "position": position,
             })
             position += 1
@@ -1316,10 +1340,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             vc = df[dim].value_counts().head(6)
             labels = [str(l) for l in vc.index.tolist()]
             values = [int(v) for v in vc.values.tolist()]
+            pie_cfg = _pie_config(labels, values)
+            pie_cfg["builder"] = _make_builder(dimension=dim)
             specs.append({
                 "title": f"Distribution: {dim}",
                 "widget_type": "pie",
-                "config": _pie_config(labels, values),
+                "config": pie_cfg,
                 "position": position,
             })
             position += 1
@@ -1342,10 +1368,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             if len(trend) >= 2:
                 labels = [str(p) for p in trend.index.tolist()]
                 values = [round(float(v), 2) for v in trend.values.tolist()]
+                line_cfg = _line_config(labels, values, measure)
+                line_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
                 specs.append({
                     "title": f"{measure} over time",
                     "widget_type": "line",
-                    "config": _line_config(labels, values, measure),
+                    "config": line_cfg,
                     "position": position,
                 })
                 position += 1
@@ -1360,10 +1388,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             top2 = df.groupby(dim2)[measure].sum().nlargest(8)
             labels = [str(l) for l in top2.index.tolist()]
             values = [round(float(v), 2) for v in top2.values.tolist()]
+            bar2_cfg = _bar_config(labels, values, measure)
+            bar2_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
             specs.append({
                 "title": f"{measure} by {dim2}",
                 "widget_type": "bar",
-                "config": _bar_config(labels, values, measure),
+                "config": bar2_cfg,
                 "position": position,
             })
             position += 1
