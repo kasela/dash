@@ -704,6 +704,9 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     palette = data.get("palette", "indigo").strip()
     if palette not in PALETTES:
         palette = "indigo"
+    tooltip_enabled = data.get("tooltip_enabled", True)
+    if not isinstance(tooltip_enabled, bool):
+        tooltip_enabled = str(tooltip_enabled).lower() not in ("false", "0", "no")
     preview_only = bool(data.get("preview_only", False))
 
     if chart_type not in _VALID_CHART_TYPES:
@@ -907,6 +910,11 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         except Exception as exc:
             return {"error": str(exc), "status": 500}
     if isinstance(config, dict):
+        # Apply tooltip visibility
+        if not tooltip_enabled:
+            opts = config.setdefault("options", {})
+            plugins = opts.setdefault("plugins", {})
+            plugins["tooltip"] = {"enabled": False}
         config["builder"] = {
             "dimension": dimension,
             "measures": measures,
@@ -916,6 +924,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
             "x_label": x_label,
             "y_label": y_label,
             "palette": palette,
+            "tooltip_enabled": tooltip_enabled,
             "table_columns": table_columns,
             "group_by": group_by,
             "dataset_version_id": dataset_version.id if dataset_version else None,

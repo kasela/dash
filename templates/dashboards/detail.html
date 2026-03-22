@@ -21,6 +21,17 @@
     <span class="hidden sm:inline">Add Chart</span>
   </button>
 
+  <!-- Add Section Heading -->
+  <button
+    id="open-heading-builder-btn"
+    class="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+    title="Add a section heading or divider">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8"/>
+    </svg>
+    <span class="hidden md:inline">Section</span>
+  </button>
+
   <!-- Add Text Canvas -->
   <button
     id="open-text-canvas-btn"
@@ -242,6 +253,9 @@
 /* Divider widget – minimal card */
 .widget-card[data-widget-type="divider"] { background: transparent; border-color: transparent; box-shadow: none; padding: 0.5rem 0; }
 .widget-card[data-widget-type="divider"]:hover { box-shadow: none; }
+/* Heading widget – section label, not a chart card */
+.widget-card[data-widget-type="heading"] { background: transparent; border-color: transparent; box-shadow: none; padding: 0.75rem 0 0.25rem; }
+.widget-card[data-widget-type="heading"]:hover { box-shadow: none; }
 /* Insert zones */
 .insert-zone { pointer-events: auto; }
 .insert-zone .insert-zone-btn { transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
@@ -259,7 +273,7 @@
     {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
 
     <!-- Card header -->
-    <div class="mb-1 flex items-center justify-between gap-2 {% if widget.widget_type == 'divider' %}opacity-0 hover:opacity-100 transition-opacity h-4{% endif %}">
+    <div class="mb-1 flex items-center justify-between gap-2 {% if widget.widget_type in 'divider,heading' %}opacity-0 hover:opacity-100 transition-opacity h-4{% endif %}">
       <!-- Drag handle + editable title -->
       <div class="flex items-center gap-1.5 flex-1 min-w-0">
         <span class="widget-drag-handle flex-shrink-0 cursor-grab text-slate-300 hover:text-slate-500 transition-colors select-none px-0.5" title="Drag to reorder">⠿</span>
@@ -365,14 +379,17 @@
       </div>
 
     {% elif widget.widget_type == 'heading' %}
-      <div class="mt-3 py-2">
+      <div class="flex items-center gap-3 py-1">
+        <div class="h-6 w-1 shrink-0 rounded-full
+          {% if widget.chart_config.color == 'slate' %}bg-slate-400{% elif widget.chart_config.color == 'emerald' %}bg-emerald-500{% elif widget.chart_config.color == 'rose' %}bg-rose-500{% elif widget.chart_config.color == 'amber' %}bg-amber-500{% else %}bg-indigo-500{% endif %}
+        "></div>
         <h2
           class="widget-heading-display
           {% if widget.chart_config.font_size == 'lg' %}text-lg{% elif widget.chart_config.font_size == 'xl' %}text-xl{% elif widget.chart_config.font_size == '3xl' %}text-3xl{% else %}text-2xl{% endif %}
           {% if widget.chart_config.color == 'slate' %}text-slate-700{% elif widget.chart_config.color == 'emerald' %}text-emerald-700{% elif widget.chart_config.color == 'rose' %}text-rose-700{% elif widget.chart_config.color == 'amber' %}text-amber-700{% else %}text-indigo-700{% endif %}
-          {% if widget.chart_config.font_family == 'poppins' %}font-['Poppins']{% elif widget.chart_config.font_family == 'serif' %}font-serif{% elif widget.chart_config.font_family == 'mono' %}font-mono{% else %}font-semibold{% endif %}
+          {% if widget.chart_config.font_family == 'poppins' %}font-['Poppins']{% elif widget.chart_config.font_family == 'serif' %}font-serif{% elif widget.chart_config.font_family == 'mono' %}font-mono{% else %}font-bold{% endif %}
           {% if widget.chart_config.align == 'center' %}text-center{% elif widget.chart_config.align == 'right' %}text-right{% else %}text-left{% endif %}
-          ">
+          tracking-tight leading-tight">
           {{ widget.chart_config.text|default:widget.title }}
         </h2>
       </div>
@@ -724,6 +741,18 @@
           </label>
           {% endfor %}
         </div>
+      </div>
+
+      <!-- Tooltip toggle -->
+      <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5">
+        <div>
+          <p class="text-sm font-semibold text-slate-700">Show tooltips</p>
+          <p class="text-xs text-slate-400">Display data values on hover</p>
+        </div>
+        <label class="relative inline-flex cursor-pointer items-center">
+          <input type="checkbox" id="cb-tooltip-enabled" class="sr-only peer" checked>
+          <div class="h-5 w-9 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-indigo-600 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-indigo-300"></div>
+        </label>
       </div>
 
       <!-- Live preview area -->

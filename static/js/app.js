@@ -4,12 +4,17 @@
   // ── Palettes (mirror of services.py PALETTES) ─────────────────────────────
 
   var PALETTES = {
-    indigo:  ['#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#818cf8'],
-    blue:    ['#3b82f6','#60a5fa','#93c5fd','#1d4ed8','#2563eb'],
-    emerald: ['#10b981','#34d399','#6ee7b7','#059669','#065f46'],
-    rose:    ['#f43f5e','#fb7185','#fda4af','#e11d48','#9f1239'],
-    amber:   ['#f59e0b','#fbbf24','#fcd34d','#d97706','#92400e'],
-    slate:   ['#475569','#64748b','#94a3b8','#1e293b','#334155'],
+    indigo:  ['#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#818cf8','#4f46e5','#7c3aed','#9061f9','#a855f7','#d946ef'],
+    blue:    ['#3b82f6','#60a5fa','#93c5fd','#1d4ed8','#2563eb','#0ea5e9','#38bdf8','#7dd3fc','#1e40af','#172554'],
+    emerald: ['#10b981','#34d399','#6ee7b7','#059669','#065f46','#14b8a6','#2dd4bf','#5eead4','#0f766e','#134e4a'],
+    rose:    ['#f43f5e','#fb7185','#fda4af','#e11d48','#9f1239','#f97316','#fb923c','#fdba74','#ea580c','#7c2d12'],
+    amber:   ['#f59e0b','#fbbf24','#fcd34d','#d97706','#92400e','#eab308','#facc15','#fde047','#ca8a04','#713f12'],
+    slate:   ['#475569','#64748b','#94a3b8','#1e293b','#334155','#6b7280','#9ca3af','#d1d5db','#374151','#111827'],
+    vibrant: ['#6366f1','#10b981','#f59e0b','#f43f5e','#3b82f6','#8b5cf6','#14b8a6','#fb923c','#84cc16','#ec4899'],
+    ocean:   ['#0ea5e9','#06b6d4','#22d3ee','#0284c7','#0369a1','#38bdf8','#67e8f9','#0891b2','#155e75','#164e63'],
+    sunset:  ['#f97316','#ef4444','#ec4899','#a855f7','#f59e0b','#fb923c','#f43f5e','#d946ef','#e11d48','#9333ea'],
+    mono:    ['#1e293b','#334155','#475569','#64748b','#94a3b8','#cbd5e1','#e2e8f0','#334155','#0f172a','#475569'],
+    neon:    ['#22d3ee','#a3e635','#fb923c','#f472b6','#c084fc','#34d399','#fbbf24','#f87171','#60a5fa','#4ade80'],
   };
 
   // ── Utilities ─────────────────────────────────────────────────────────────
@@ -644,6 +649,17 @@
       var paletteInput = document.querySelector('input[name="cb_palette"][value="' + builder.palette + '"]');
       if (paletteInput) paletteInput.checked = true;
     }
+    // Restore tooltip toggle
+    var tooltipChk = document.getElementById('cb-tooltip-enabled');
+    if (tooltipChk) {
+      // Read from builder metadata first, else from chart options
+      var tooltipOn = builder.tooltip_enabled !== false;
+      if (cbPendingEdit && cbPendingEdit.config && cbPendingEdit.config.options &&
+          cbPendingEdit.config.options.plugins && cbPendingEdit.config.options.plugins.tooltip) {
+        tooltipOn = cbPendingEdit.config.options.plugins.tooltip.enabled !== false;
+      }
+      tooltipChk.checked = tooltipOn;
+    }
   }
 
   function getSelectedChartType() {
@@ -855,6 +871,7 @@
       table_columns: getSelectedMultiValues('cb-table-columns'),
       group_by: getSelectedMultiValues('cb-group-by'),
       palette: getSelectedPalette(),
+      tooltip_enabled: (document.getElementById('cb-tooltip-enabled') || { checked: true }).checked,
       preview_only: !!previewOnly,
     };
     var versionId = getSelectedDatasetVersionId();
@@ -1218,6 +1235,8 @@
   }
 
   // ── Inline Insert Zones (type anywhere / add sections) ────────────────────
+  // Card-level hover buttons for inserting sections above/below each widget.
+  // Uses absolute positioning so the grid layout is NOT affected.
 
   function initInsertZones() {
     var cfg = getApiConfig();
@@ -1233,38 +1252,28 @@
       activePanel = null;
     }
 
-    function createZone(afterWidgetId) {
-      var zone = document.createElement('div');
-      zone.className = 'insert-zone col-span-full group flex items-center py-1 cursor-default';
-      zone.dataset.afterWidgetId = afterWidgetId || '0';
-      zone.innerHTML =
-        '<div class="flex-1 h-px bg-slate-100 group-hover:bg-indigo-100 transition-colors"></div>' +
-        '<button class="insert-zone-btn mx-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-400 hover:border-indigo-400 hover:text-indigo-600 shadow-sm">' +
-        '<span class="text-sm leading-none font-bold">+</span><span>Add section</span></button>' +
-        '<div class="flex-1 h-px bg-slate-100 group-hover:bg-indigo-100 transition-colors"></div>';
-
-      zone.querySelector('.insert-zone-btn').addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (activePanel) { closePanel(); return; }
-        openQuickPanel(zone, afterWidgetId || '0');
-      });
-      return zone;
-    }
-
-    function openQuickPanel(zone, afterWidgetId) {
+    function openQuickPanel(anchorCard, afterWidgetId) {
       closePanel();
       var panel = document.createElement('div');
-      panel.className = 'insert-panel col-span-full rounded-xl border border-indigo-200 bg-white shadow-md p-3';
+      panel.className = 'insert-floating-panel';
+      panel.style.cssText = 'position:fixed;z-index:80;background:#fff;border:1px solid #c7d2fe;border-radius:0.875rem;box-shadow:0 10px 30px rgba(99,102,241,0.15);padding:0.75rem;min-width:22rem;';
+
       panel.innerHTML =
         '<div class="flex items-center gap-2">' +
-        '<input id="qa-input" type="text" placeholder="Type section name… (press Enter to add)" autocomplete="off"' +
-        ' class="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400">' +
-        '<button id="qa-section-btn" class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors">Section</button>' +
-        '<button id="qa-divider-btn" class="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">Divider</button>' +
-        '<button id="qa-cancel-btn" class="shrink-0 rounded-md px-1.5 py-1 text-slate-300 hover:text-slate-500 text-sm">✕</button>' +
+        '<input id="qa-input" type="text" placeholder="Type section name… (Enter to add heading)" autocomplete="off"' +
+        ' style="flex:1;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.375rem 0.75rem;font-size:0.875rem;outline:none;">' +
+        '<button id="qa-section-btn" style="background:#4f46e5;color:#fff;border:none;border-radius:0.5rem;padding:0.375rem 0.75rem;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;">Section</button>' +
+        '<button id="qa-divider-btn" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.375rem 0.75rem;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;color:#475569;">Divider</button>' +
+        '<button id="qa-cancel-btn" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1rem;padding:0 0.25rem;">✕</button>' +
         '</div>';
 
-      zone.after(panel);
+      // Position below the anchor card
+      document.body.appendChild(panel);
+      var rect = anchorCard.getBoundingClientRect();
+      var panelW = 352;
+      var left = Math.min(rect.left, window.innerWidth - panelW - 16);
+      panel.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+      panel.style.left = Math.max(8, left) + 'px';
       activePanel = panel;
 
       var input = panel.querySelector('#qa-input');
@@ -1273,8 +1282,8 @@
       function submit(type) {
         var text = input.value.trim();
         if (type === 'section' && !text) {
-          input.classList.add('border-red-400');
-          setTimeout(function () { input.classList.remove('border-red-400'); }, 800);
+          input.style.borderColor = '#f43f5e';
+          setTimeout(function () { input.style.borderColor = '#e2e8f0'; }, 800);
           return;
         }
         var url = type === 'section' ? cfg.addHeadingUrl : cfg.addDividerUrl;
@@ -1308,10 +1317,9 @@
         if (e.key === 'Escape') closePanel();
       });
 
-      // Close when clicking outside
       setTimeout(function () {
         document.addEventListener('click', function onDocClick(e) {
-          if (!panel.contains(e.target) && !zone.contains(e.target)) {
+          if (!panel.contains(e.target)) {
             closePanel();
             document.removeEventListener('click', onDocClick);
           }
@@ -1319,17 +1327,36 @@
       }, 50);
     }
 
-    // Insert zones between all widget cards
+    // Add a small absolute-positioned "Insert after" button on each widget card
     var cards = Array.from(grid.querySelectorAll('.widget-card'));
-    // Zone at top (before first widget)
-    if (cards.length > 0) {
-      grid.insertBefore(createZone(null), cards[0]);
-    } else {
-      grid.appendChild(createZone(null));
-    }
-    // Zone after each card
     cards.forEach(function (card) {
-      card.after(createZone(card.dataset.widgetId));
+      var widgetId = card.dataset.widgetId;
+      var insertBtn = document.createElement('button');
+      insertBtn.className = 'card-insert-btn';
+      insertBtn.title = 'Add section or divider after this widget';
+      insertBtn.innerHTML = '<span style="font-size:1rem;line-height:1;">+</span>';
+      insertBtn.style.cssText = [
+        'position:absolute', 'bottom:-12px', 'left:50%', 'transform:translateX(-50%)',
+        'z-index:20', 'background:#fff', 'border:1px solid #c7d2fe', 'border-radius:50%',
+        'width:22px', 'height:22px', 'display:flex', 'align-items:center', 'justify-content:center',
+        'cursor:pointer', 'opacity:0', 'transition:opacity 0.15s', 'color:#6366f1',
+        'font-weight:700', 'box-shadow:0 2px 6px rgba(99,102,241,0.18)',
+      ].join(';');
+
+      card.style.overflow = 'visible';
+      card.appendChild(insertBtn);
+
+      card.addEventListener('mouseenter', function () { insertBtn.style.opacity = '1'; });
+      card.addEventListener('mouseleave', function (e) {
+        if (!insertBtn.contains(e.relatedTarget)) insertBtn.style.opacity = '0';
+      });
+      insertBtn.addEventListener('mouseenter', function () { insertBtn.style.opacity = '1'; });
+      insertBtn.addEventListener('mouseleave', function () { insertBtn.style.opacity = '0'; });
+
+      insertBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openQuickPanel(card, widgetId || '0');
+      });
     });
   }
 
