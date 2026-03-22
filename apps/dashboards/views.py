@@ -1302,14 +1302,41 @@ def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonRespo
 
     # Validate and sanitise each filter entry
     valid_types = {"dropdown", "radio", "multiselect", "range"}
+    categorical_types = {"dropdown", "radio", "multiselect"}
+
+    known_cols: set[str] = set()
+    numeric_cols: set[str] = set()
+    categorical_cols: set[str] = set()
+    dataset_version = dashboard.dataset_version
+    if dataset_version:
+        df = _load_df_from_version(dataset_version)
+        if df is not None:
+            known_cols = set(df.columns)
+            profile = build_profile_summary(df)
+            numeric_cols = set(profile.numeric_columns)
+            categorical_cols = set(profile.categorical_columns)
+
     clean_filters = []
     for f in raw_filters:
         col = str(f.get("column", "")).strip()
         ftype = str(f.get("filter_type", "dropdown")).strip()
         if not col:
             continue
+        if known_cols and col not in known_cols:
+            # Ignore stale filters for columns that no longer exist.
+            continue
         if ftype not in valid_types:
             ftype = "dropdown"
+
+        # Enforce a compatible filter type based on actual column dtype.
+        if col in numeric_cols:
+            ftype = "range"
+        elif col in categorical_cols and ftype == "range":
+            ftype = "dropdown"
+        elif col not in numeric_cols and col not in categorical_cols and ftype not in categorical_types:
+            # Unknown column category (e.g., datetime): default to a categorical-style control.
+            ftype = "dropdown"
+
         clean_filters.append({
             "id": str(f.get("id", col)),
             "column": col,
