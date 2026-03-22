@@ -111,119 +111,168 @@
   </div>
 </div>
 
-<!-- ── Datasets Panel ────────────────────────────────────────────────────────── -->
-<div class="mb-3 flex items-center justify-between">
-  <div class="flex items-center gap-2">
-    <span class="dashboard-section-heading text-blue-700">Datasets</span>
-    <span class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{{ linked_datasets|length }}</span>
-  </div>
-  {% if available_versions %}
-  <button id="open-add-dataset-btn"
-    class="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100">
-    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+<!-- ── Dashboard Toolbar: Datasets · Filters · Shares ──────────────────── -->
+<div class="mb-6 flex flex-wrap items-center gap-2">
+  <button id="open-datasets-modal-btn"
+    class="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
     </svg>
-    Add dataset
+    Datasets
+    <span class="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">{{ linked_datasets|length }}</span>
+  </button>
+
+  <button id="open-filters-modal-btn"
+    class="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700 shadow-sm transition-colors hover:bg-violet-100">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+    </svg>
+    Filters
+    <span id="toolbar-filter-count" class="{% if not filter_config %}hidden{% endif %} rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">{{ filter_config|length }}</span>
+  </button>
+
+  {% if share_links %}
+  <button id="open-shares-modal-btn"
+    class="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-100">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+    </svg>
+    Shares
+    <span class="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{{ share_links|length }}</span>
   </button>
   {% endif %}
 </div>
 
-<div class="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-  {% if linked_datasets %}
-  <div class="grid gap-3 sm:grid-cols-2" id="datasets-list">
-    {% for ds in linked_datasets %}
-    <div class="flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm" id="dataset-card-{{ ds.version_id }}">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-semibold text-slate-900 truncate">{{ ds.label }}</span>
-          {% if ds.is_primary %}
-          <span class="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Primary</span>
+<!-- ── Datasets Modal ─────────────────────────────────────────────────────── -->
+<div id="datasets-modal-overlay" style="display:none;position:fixed;inset:0;z-index:52;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="datasets-modal"
+  style="display:none;position:fixed;top:3rem;left:50%;transform:translateX(-50%);z-index:55;width:100%;max-width:42rem;max-height:85vh;overflow-y:auto;background:#fff;border-radius:1.25rem;box-shadow:0 25px 60px rgba(0,0,0,0.3);"
+  role="dialog" aria-modal="true" aria-label="Datasets">
+  <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 rounded-t-2xl">
+    <div class="flex items-center gap-2">
+      <h2 class="text-base font-bold text-slate-900">Datasets</h2>
+      <span class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{{ linked_datasets|length }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if available_versions %}
+      <button id="open-add-dataset-btn"
+        class="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add dataset
+      </button>
+      {% endif %}
+      <button id="close-datasets-modal-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="px-6 py-5">
+    {% if linked_datasets %}
+    <div class="grid gap-3 sm:grid-cols-2" id="datasets-list">
+      {% for ds in linked_datasets %}
+      <div class="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm" id="dataset-card-{{ ds.version_id }}">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-900 truncate">{{ ds.label }}</span>
+            {% if ds.is_primary %}
+            <span class="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Primary</span>
+            {% endif %}
+          </div>
+          <p class="mt-0.5 text-xs text-slate-500">{{ ds.row_count|default:"–" }} rows · {{ ds.column_count|default:"–" }} cols</p>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0 ml-2">
+          <button
+            class="select-dataset-btn rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+            data-version-id="{{ ds.version_id }}"
+            data-label="{{ ds.label }}"
+            title="Use this dataset in chart builder">
+            Use
+          </button>
+          {% if not ds.is_primary %}
+          <button
+            class="remove-dataset-btn flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+            data-version-id="{{ ds.version_id }}"
+            data-remove-url="{% url 'dashboard-remove-dataset' dashboard.id ds.version_id %}"
+            title="Remove dataset from dashboard">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
           {% endif %}
         </div>
-        <p class="mt-0.5 text-xs text-slate-500">{{ ds.row_count|default:"–" }} rows · {{ ds.column_count|default:"–" }} cols</p>
       </div>
-      <div class="flex items-center gap-1.5 shrink-0 ml-2">
-        <button
-          class="select-dataset-btn rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
-          data-version-id="{{ ds.version_id }}"
-          data-label="{{ ds.label }}"
-          title="Use this dataset in chart builder">
-          Use
-        </button>
-        {% if not ds.is_primary %}
-        <button
-          class="remove-dataset-btn flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-          data-version-id="{{ ds.version_id }}"
-          data-remove-url="{% url 'dashboard-remove-dataset' dashboard.id ds.version_id %}"
-          title="Remove dataset from dashboard">
-          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-        {% endif %}
-      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="text-sm text-blue-700">No datasets linked yet. <a href="{% url 'dataset-upload' %}" class="font-semibold underline">Upload one</a> to get started.</p>
-  {% endif %}
+    {% else %}
+    <p class="text-sm text-slate-500">No datasets linked yet. <a href="{% url 'dataset-upload' %}" class="font-semibold text-indigo-600 underline">Upload one</a> to get started.</p>
+    {% endif %}
 
-  <!-- Add dataset panel (initially hidden) -->
-  {% if available_versions %}
-  <div id="add-dataset-panel" style="display:none;" class="mt-4 rounded-xl border border-blue-200 bg-white p-4">
-    <p class="mb-3 text-sm font-semibold text-slate-700">Link an existing dataset</p>
-    <div class="flex gap-2">
-      <select id="add-dataset-select"
-        class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
-        <option value="">— choose dataset version —</option>
-        {% for v in available_versions %}
-        <option value="{{ v.id }}" data-name="{{ v.dataset.name }}" data-rows="{{ v.row_count }}" data-cols="{{ v.column_count }}">
-          {{ v.dataset.name }} v{{ v.version }} ({{ v.row_count }} rows, {{ v.column_count }} cols)
-        </option>
-        {% endfor %}
-      </select>
-      <button id="confirm-add-dataset-btn"
-        class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
-        Link
-      </button>
-      <button id="cancel-add-dataset-btn"
-        class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-        Cancel
-      </button>
+    {% if available_versions %}
+    <div id="add-dataset-panel" style="display:none;" class="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <p class="mb-3 text-sm font-semibold text-slate-700">Link an existing dataset</p>
+      <div class="flex gap-2">
+        <select id="add-dataset-select"
+          class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="">— choose dataset version —</option>
+          {% for v in available_versions %}
+          <option value="{{ v.id }}" data-name="{{ v.dataset.name }}" data-rows="{{ v.row_count }}" data-cols="{{ v.column_count }}">
+            {{ v.dataset.name }} v{{ v.version }} ({{ v.row_count }} rows, {{ v.column_count }} cols)
+          </option>
+          {% endfor %}
+        </select>
+        <button id="confirm-add-dataset-btn"
+          class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
+          Link
+        </button>
+        <button id="cancel-add-dataset-btn"
+          class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Cancel
+        </button>
+      </div>
+      <p id="add-dataset-error" style="display:none;" class="mt-2 text-xs text-red-600"></p>
+      <p class="mt-2 text-xs text-slate-400">
+        Don't see your dataset?
+        <a href="{% url 'dataset-upload' %}" class="text-indigo-600 hover:underline">Upload a file</a>
+        or
+        <a href="{% url 'dataset-link' %}" class="text-indigo-600 hover:underline">link a URL</a>.
+      </p>
     </div>
-    <p id="add-dataset-error" style="display:none;" class="mt-2 text-xs text-red-600"></p>
-    <p class="mt-2 text-xs text-slate-400">
-      Don't see your dataset?
-      <a href="{% url 'dataset-upload' %}" class="text-indigo-600 hover:underline">Upload a file</a>
-      or
-      <a href="{% url 'dataset-link' %}" class="text-indigo-600 hover:underline">link a URL</a>.
-    </p>
+    {% else %}
+    <div class="mt-3 text-xs text-blue-600">
+      <a href="{% url 'dataset-upload' %}" class="hover:underline">Upload a file</a> or
+      <a href="{% url 'dataset-link' %}" class="hover:underline">link a Google Sheets / Excel URL</a> to add more datasets.
+    </div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="mt-3 text-xs text-blue-600">
-    <a href="{% url 'dataset-upload' %}" class="hover:underline">Upload a file</a> or
-    <a href="{% url 'dataset-link' %}" class="hover:underline">link a Google Sheets / Excel URL</a> to add more datasets.
-  </div>
-  {% endif %}
 </div>
 
-<!-- Share links panel -->
+<!-- ── Shares Modal ───────────────────────────────────────────────────────── -->
 {% if share_links %}
-<div class="mb-3 flex items-center gap-2">
-  <span class="dashboard-section-heading text-indigo-700">Sharing</span>
-  <span class="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">Secure Links</span>
-</div>
-<div class="mb-8 rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-  <div class="mb-3 flex items-center gap-2">
-    <svg class="h-4 w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-    </svg>
-    <h3 class="text-sm font-semibold text-indigo-900">Active share links</h3>
+<div id="shares-modal-overlay" style="display:none;position:fixed;inset:0;z-index:52;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="shares-modal"
+  style="display:none;position:fixed;top:3rem;left:50%;transform:translateX(-50%);z-index:55;width:100%;max-width:42rem;max-height:85vh;overflow-y:auto;background:#fff;border-radius:1.25rem;box-shadow:0 25px 60px rgba(0,0,0,0.3);"
+  role="dialog" aria-modal="true" aria-label="Share Links">
+  <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 rounded-t-2xl">
+    <div class="flex items-center gap-2">
+      <svg class="h-4 w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+      </svg>
+      <h2 class="text-base font-bold text-slate-900">Share Links</h2>
+      <span class="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">{{ share_links|length }} active</span>
+    </div>
+    <button id="close-shares-modal-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
   </div>
-  <div class="space-y-2">
+  <div class="px-6 py-5 space-y-3">
     {% for link in share_links %}
-    <div class="flex items-center gap-3 rounded-xl bg-white px-4 py-2.5 shadow-sm">
+    <div class="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
       <span class="flex-1 truncate text-sm font-mono text-indigo-700">{{ request.scheme }}://{{ request.get_host }}{% url 'dashboard-public-view' link.token %}</span>
       <button
         data-copy="{{ request.scheme }}://{{ request.get_host }}{% url 'dashboard-public-view' link.token %}"
@@ -243,19 +292,22 @@
       </a>
     </div>
     {% endfor %}
+    <p class="text-xs text-slate-400 pt-1">Share these links to give read-only access to your dashboard.</p>
   </div>
 </div>
 {% endif %}
 
-<!-- ── Interactive Filter Panel ──────────────────────────────────────────── -->
-{% if filter_config %}
-<div id="dashboard-filter-panel" class="mb-6 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 p-4 shadow-sm">
-  <div class="mb-3 flex items-center justify-between">
+<!-- ── Filters Modal ──────────────────────────────────────────────────────── -->
+<div id="filters-modal-overlay" style="display:none;position:fixed;inset:0;z-index:52;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="filters-modal"
+  style="display:none;position:fixed;top:3rem;left:50%;transform:translateX(-50%);z-index:55;width:100%;max-width:48rem;max-height:85vh;overflow-y:auto;background:#fff;border-radius:1.25rem;box-shadow:0 25px 60px rgba(0,0,0,0.3);"
+  role="dialog" aria-modal="true" aria-label="Dashboard Filters">
+  <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 rounded-t-2xl">
     <div class="flex items-center gap-2">
       <svg class="h-4 w-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
       </svg>
-      <span class="text-sm font-semibold text-violet-800">Dashboard Filters</span>
+      <h2 class="text-base font-bold text-slate-900">Dashboard Filters</h2>
       <span id="active-filter-count" class="hidden rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">0 active</span>
     </div>
     <div class="flex items-center gap-2">
@@ -263,7 +315,7 @@
         Reset All
       </button>
       <button id="open-filter-manager-btn"
-        class="flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+        class="flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
         title="Manage filters">
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
@@ -271,56 +323,60 @@
         </svg>
         Manage
       </button>
+      <button id="close-filters-modal-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
     </div>
   </div>
-  <div id="filter-controls-wrap" class="flex flex-wrap gap-3">
-    {% for f in filter_config %}
-    <div class="filter-control-item flex-shrink-0" data-filter-id="{{ f.id }}" data-column="{{ f.column }}" data-filter-type="{{ f.filter_type }}">
-      <label class="mb-1 block text-xs font-semibold text-violet-700">{{ f.label }}</label>
-      {% if f.filter_type == 'radio' %}
-      <div class="filter-radio-group flex flex-wrap gap-1.5" data-column="{{ f.column }}">
-        <label class="filter-radio-option">
-          <input type="radio" name="filter_{{ f.id }}" value="__all__" checked class="sr-only">
-          <span class="inline-flex items-center rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 cursor-pointer transition-all has-[:checked]:bg-violet-600 has-[:checked]:text-white has-[:checked]:border-violet-600 hover:border-violet-500">All</span>
-        </label>
-        <!-- JS fills in options -->
+  <div class="px-6 py-5">
+    {% if filter_config %}
+    <div id="filter-controls-wrap" class="flex flex-wrap gap-4">
+      {% for f in filter_config %}
+      <div class="filter-control-item flex-shrink-0" data-filter-id="{{ f.id }}" data-column="{{ f.column }}" data-filter-type="{{ f.filter_type }}">
+        <label class="mb-1 block text-xs font-semibold text-violet-700">{{ f.label }}</label>
+        {% if f.filter_type == 'radio' %}
+        <div class="filter-radio-group flex flex-wrap gap-1.5" data-column="{{ f.column }}">
+          <label class="filter-radio-option">
+            <input type="radio" name="filter_{{ f.id }}" value="__all__" checked class="sr-only">
+            <span class="inline-flex items-center rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 cursor-pointer transition-all has-[:checked]:bg-violet-600 has-[:checked]:text-white has-[:checked]:border-violet-600 hover:border-violet-500">All</span>
+          </label>
+          <!-- JS fills in options -->
+        </div>
+        {% elif f.filter_type == 'range' %}
+        <div class="filter-range-wrap flex items-center gap-2">
+          <input type="range" class="filter-range-input w-28 accent-violet-600" data-column="{{ f.column }}" min="0" max="100" value="0" step="1">
+          <span class="filter-range-value text-xs font-semibold text-violet-700">—</span>
+        </div>
+        {% elif f.filter_type == 'multiselect' %}
+        <select class="filter-multiselect rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" multiple data-column="{{ f.column }}" style="min-height:60px;min-width:140px;max-width:200px;">
+          <option value="__all__" selected>All</option>
+        </select>
+        {% else %}
+        <!-- dropdown (default) -->
+        <select class="filter-dropdown rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" data-column="{{ f.column }}" style="min-width:130px;max-width:200px;">
+          <option value="__all__">All</option>
+        </select>
+        {% endif %}
       </div>
-      {% elif f.filter_type == 'range' %}
-      <div class="filter-range-wrap flex items-center gap-2">
-        <input type="range" class="filter-range-input w-28 accent-violet-600" data-column="{{ f.column }}" min="0" max="100" value="0" step="1">
-        <span class="filter-range-value text-xs font-semibold text-violet-700">—</span>
+      {% endfor %}
+      <div id="filter-loading" style="display:none;" class="flex items-center gap-1.5 text-xs text-violet-500">
+        <div class="h-3 w-3 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600"></div>
+        Updating charts…
       </div>
-      {% elif f.filter_type == 'multiselect' %}
-      <select class="filter-multiselect rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" multiple data-column="{{ f.column }}" style="min-height:60px;min-width:140px;max-width:200px;">
-        <option value="__all__" selected>All</option>
-      </select>
-      {% else %}
-      <!-- dropdown (default) -->
-      <select class="filter-dropdown rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" data-column="{{ f.column }}" style="min-width:130px;max-width:200px;">
-        <option value="__all__">All</option>
-      </select>
-      {% endif %}
     </div>
-    {% endfor %}
-    <div id="filter-loading" style="display:none;" class="flex items-center gap-1.5 text-xs text-violet-500">
-      <div class="h-3 w-3 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600"></div>
-      Updating charts…
+    {% else %}
+    <div class="flex flex-col items-center gap-3 py-10 text-center">
+      <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+      </svg>
+      <p class="text-sm text-slate-500">No interactive filters configured yet.</p>
+      <p class="text-xs text-slate-400">Click <strong>Manage</strong> above to add filter controls.</p>
     </div>
+    {% endif %}
   </div>
 </div>
-{% else %}
-<!-- Empty filter panel (show "Add Filters" invite) -->
-<div id="dashboard-filter-panel-empty" class="mb-6 flex items-center justify-between rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-3.5">
-  <div class="flex items-center gap-2 text-sm text-slate-500">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
-    </svg>
-    <span>No interactive filters configured.</span>
-    <button id="open-filter-manager-btn"
-      class="font-semibold text-violet-600 underline hover:text-violet-700">Add filters →</button>
-  </div>
-</div>
-{% endif %}
 
 <!-- ── Filter Manager Modal ────────────────────────────────────────────────── -->
 <div id="filter-manager-overlay" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>

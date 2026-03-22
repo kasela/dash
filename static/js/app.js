@@ -2382,6 +2382,7 @@
     var active = _buildFilterPayload().length;
     var badge = document.getElementById('active-filter-count');
     var resetBtn = document.getElementById('reset-filters-btn');
+    var toolbarBadge = document.getElementById('toolbar-filter-count');
     if (badge) {
       if (active > 0) {
         badge.textContent = active + ' active';
@@ -2393,6 +2394,17 @@
     if (resetBtn) {
       if (active > 0) resetBtn.classList.remove('hidden');
       else resetBtn.classList.add('hidden');
+    }
+    if (toolbarBadge) {
+      if (active > 0) {
+        toolbarBadge.textContent = active + ' active';
+        toolbarBadge.classList.remove('hidden');
+      } else if (_filterConfig.length > 0) {
+        toolbarBadge.textContent = _filterConfig.length;
+        toolbarBadge.classList.remove('hidden');
+      } else {
+        toolbarBadge.classList.add('hidden');
+      }
     }
   }
 
@@ -2772,6 +2784,45 @@
     }
   }
 
+  // ── Dashboard Panel Modals (Datasets · Shares · Filters) ─────────────────
+
+  function initDashboardPanelModals() {
+    // Generic open/close helper
+    function makeModal(openBtnId, closeBtnId, overlayId, modalId) {
+      var openBtn = document.getElementById(openBtnId);
+      var closeBtn = document.getElementById(closeBtnId);
+      var overlay = document.getElementById(overlayId);
+      var modal = document.getElementById(modalId);
+      if (!modal) return null;
+
+      function open() {
+        modal.style.display = 'block';
+        if (overlay) overlay.style.display = 'block';
+      }
+      function close() {
+        modal.style.display = 'none';
+        if (overlay) overlay.style.display = 'none';
+      }
+
+      if (openBtn) openBtn.addEventListener('click', open);
+      if (closeBtn) closeBtn.addEventListener('click', close);
+      if (overlay) overlay.addEventListener('click', close);
+      return { open: open, close: close };
+    }
+
+    var datasetsM = makeModal('open-datasets-modal-btn', 'close-datasets-modal-btn', 'datasets-modal-overlay', 'datasets-modal');
+    var sharesM   = makeModal('open-shares-modal-btn',   'close-shares-modal-btn',   'shares-modal-overlay',   'shares-modal');
+    var filtersM  = makeModal('open-filters-modal-btn',  'close-filters-modal-btn',  'filters-modal-overlay',  'filters-modal');
+
+    // Close panel modals on Escape (chart builder handles its own Escape)
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if (datasetsM) datasetsM.close();
+      if (sharesM)   sharesM.close();
+      if (filtersM)  filtersM.close();
+    });
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -2799,6 +2850,7 @@
     initTableInteractions();
     initInsertZones();
     initFilterManager();
+    initDashboardPanelModals();
   });
 
 })();
