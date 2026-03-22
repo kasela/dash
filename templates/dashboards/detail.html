@@ -209,6 +209,234 @@
   .widget-loaded {
     animation: widgetFadeIn 0.4s ease forwards;
   }
+
+  /* ── AI Narrative Panel ─────────────────────────────────────────────────── */
+  .narrative-panel {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #1e3a5f 100%);
+    border: 1px solid rgba(139,92,246,0.3);
+    border-radius: 1.25rem;
+    padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 8px 32px rgba(99,102,241,0.18), 0 2px 8px rgba(0,0,0,0.12);
+    position: relative;
+    overflow: hidden;
+  }
+  .narrative-panel::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .narrative-panel::after {
+    content: '';
+    position: absolute;
+    bottom: -20px; left: 10%;
+    width: 120px; height: 120px;
+    background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .narrative-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .narrative-icon {
+    width: 2.25rem; height: 2.25rem;
+    background: rgba(139,92,246,0.25);
+    border: 1px solid rgba(139,92,246,0.4);
+    border-radius: 0.625rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .narrative-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(196,181,253,0.9);
+  }
+  .narrative-subtitle {
+    font-size: 0.65rem;
+    color: rgba(148,163,184,0.7);
+    font-weight: 500;
+    margin-top: 0.1rem;
+  }
+  .narrative-summary {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: rgba(248,250,252,0.92);
+    font-weight: 450;
+    margin-bottom: 1.25rem;
+  }
+  .narrative-findings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.625rem;
+    margin-bottom: 1.25rem;
+  }
+  @media (max-width: 640px) {
+    .narrative-findings { grid-template-columns: 1fr; }
+  }
+  .narrative-finding-item {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+  .narrative-finding-num {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: rgba(167,139,250,0.9);
+    background: rgba(139,92,246,0.2);
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.35rem;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .narrative-finding-text {
+    font-size: 0.75rem;
+    color: rgba(226,232,240,0.88);
+    line-height: 1.55;
+    font-weight: 400;
+  }
+  .narrative-recs {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+  }
+  .narrative-recs-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(251,191,36,0.85);
+    margin-bottom: 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .narrative-rec-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .narrative-rec-icon {
+    width: 1.125rem; height: 1.125rem;
+    background: rgba(251,191,36,0.15);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .narrative-rec-text {
+    font-size: 0.75rem;
+    color: rgba(226,232,240,0.82);
+    line-height: 1.55;
+  }
+  .narrative-health {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.875rem;
+  }
+  .narrative-health-text {
+    font-size: 0.7rem;
+    color: rgba(148,163,184,0.8);
+    font-style: italic;
+  }
+  .narrative-analyst-note {
+    margin-top: 0.75rem;
+    font-size: 0.7rem;
+    color: rgba(167,139,250,0.7);
+    font-style: italic;
+    padding-left: 0.25rem;
+    border-left: 2px solid rgba(139,92,246,0.3);
+  }
+  .narrative-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(148,163,184,0.7);
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    transition: color 0.15s, background 0.15s;
+  }
+  .narrative-toggle-btn:hover {
+    color: rgba(196,181,253,0.9);
+    background: rgba(139,92,246,0.1);
+  }
+
+  /* ── AI Insight inline for KPIs ─────────────────────────────────────────── */
+  .kpi-ai-insight {
+    margin-top: 0.625rem;
+    background: linear-gradient(135deg, rgba(109,40,217,0.05) 0%, rgba(79,70,229,0.05) 100%);
+    border: 1px solid rgba(109,40,217,0.12);
+    border-radius: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .kpi-ai-insight-text {
+    font-size: 0.7rem;
+    color: #4c1d95;
+    line-height: 1.55;
+    font-weight: 400;
+  }
+
+  /* ── Enhanced AI insights panel on charts ───────────────────────────────── */
+  .ai-insights-panel {
+    background: linear-gradient(135deg, #faf5ff 0%, #f0f4ff 100%);
+    border: 1px solid #ddd6fe;
+    border-radius: 0.75rem;
+    margin-top: 0.875rem;
+    padding: 0.875rem 1rem;
+    box-shadow: 0 1px 4px rgba(109,40,217,0.06);
+  }
+  .ai-insights-panel .ai-insights-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .ai-powered-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #7c3aed;
+    background: rgba(109,40,217,0.1);
+    border: 1px solid rgba(109,40,217,0.15);
+    padding: 0.15rem 0.45rem;
+    border-radius: 9999px;
+  }
+
+  /* ── Text canvas narrative widget ───────────────────────────────────────── */
+  .narrative-text-canvas {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0c1628 100%);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 1.25rem;
+    padding: 1.75rem 2rem;
+    box-shadow: 0 8px 32px rgba(99,102,241,0.15);
+    position: relative;
+    overflow: hidden;
+  }
 </style>
 
 {% if dashboard.build_status != 'ready' %}
@@ -960,13 +1188,13 @@
         </div>
         {% endif %}
 
-        <!-- Inline AI insight -->
+        <!-- Inline AI insight for KPI -->
         {% if widget.chart_config.ai_insight %}
-        <div class="mt-2 rounded-lg bg-violet-50 border border-violet-100 px-3 py-2">
-          <div class="flex items-start gap-1.5">
-            <svg class="h-3 w-3 text-violet-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <p class="text-[11px] text-slate-600 leading-relaxed">{{ widget.chart_config.ai_insight }}</p>
-          </div>
+        <div class="kpi-ai-insight">
+          <svg class="h-3 w-3 shrink-0 mt-0.5 text-violet-500" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.992.563-1.929 1.184-2.549a4 4 0 10-6.366 0C7.437 12.07 7.985 13.007 8 14h4z"/>
+          </svg>
+          <p class="kpi-ai-insight-text">{{ widget.chart_config.ai_insight }}</p>
         </div>
         {% endif %}
       </div>
@@ -1033,15 +1261,99 @@
 
     {% elif widget.widget_type == 'text_canvas' %}
       <!-- Text Canvas widget -->
-      <div class="widget-text-canvas-content mt-3 rounded-xl p-4 text-{{ widget.chart_config.text_size|default:'sm' }}
-        {% if widget.chart_config.bg_color == 'slate' %}bg-slate-50 text-slate-700
-        {% elif widget.chart_config.bg_color == 'indigo' %}bg-indigo-50 text-indigo-900
-        {% elif widget.chart_config.bg_color == 'emerald' %}bg-emerald-50 text-emerald-900
-        {% elif widget.chart_config.bg_color == 'rose' %}bg-rose-50 text-rose-900
-        {% elif widget.chart_config.bg_color == 'amber' %}bg-amber-50 text-amber-900
-        {% elif widget.chart_config.bg_color == 'yellow' %}bg-yellow-50 text-yellow-900
-        {% else %}bg-slate-50 text-slate-700{% endif %}
-        leading-relaxed whitespace-pre-wrap break-words">{{ widget.chart_config.content|default:"" }}</div>
+      {% if widget.chart_config.is_narrative and widget.chart_config.narrative_data %}
+        <!-- ── AI Narrative Widget (comprehensive dashboard analysis) ── -->
+        {% with nd=widget.chart_config.narrative_data %}
+        <div class="mt-3 narrative-text-canvas" id="narrative-widget-{{ widget.id }}">
+          <!-- Header -->
+          <div class="narrative-header">
+            <div class="narrative-icon">
+              <svg class="h-4 w-4 text-violet-300" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.992.563-1.929 1.184-2.549a4 4 0 10-6.366 0C7.437 12.07 7.985 13.007 8 14h4z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="narrative-title">AI Comprehensive Analysis</div>
+              <div class="narrative-subtitle">Senior Data Analyst · Generated on load</div>
+            </div>
+            <button class="narrative-toggle-btn ml-auto" onclick="toggleNarrative('{{ widget.id }}')" id="narrative-toggle-{{ widget.id }}">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              Collapse
+            </button>
+          </div>
+
+          <!-- Narrative body -->
+          <div id="narrative-body-{{ widget.id }}">
+            <!-- Executive summary -->
+            {% if nd.executive_summary %}
+            <p class="narrative-summary">{{ nd.executive_summary }}</p>
+            {% endif %}
+
+            <!-- Key findings grid -->
+            {% if nd.key_findings %}
+            <div style="margin-bottom:0.625rem;">
+              <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:rgba(167,139,250,0.85);margin-bottom:0.5rem;display:flex;align-items:center;gap:0.375rem;">
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                Key Findings
+              </div>
+              <div class="narrative-findings">
+                {% for finding in nd.key_findings %}
+                <div class="narrative-finding-item">
+                  <span class="narrative-finding-num">{{ forloop.counter }}</span>
+                  <span class="narrative-finding-text">{{ finding }}</span>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- Strategic recommendations -->
+            {% if nd.strategic_recs %}
+            <div class="narrative-recs">
+              <div class="narrative-recs-title">
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                Strategic Recommendations
+              </div>
+              {% for rec in nd.strategic_recs %}
+              <div class="narrative-rec-item">
+                <div class="narrative-rec-icon">
+                  <svg class="h-2 w-2 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                </div>
+                <span class="narrative-rec-text">{{ rec }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Data health + analyst note -->
+            {% if nd.data_health or nd.analyst_note %}
+            <div style="margin-top:0.875rem;display:flex;flex-direction:column;gap:0.375rem;">
+              {% if nd.data_health %}
+              <div class="narrative-health">
+                <svg class="h-3 w-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span class="narrative-health-text">{{ nd.data_health }}</span>
+              </div>
+              {% endif %}
+              {% if nd.analyst_note %}
+              <div class="narrative-analyst-note">{{ nd.analyst_note }}</div>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endwith %}
+      {% else %}
+        <!-- Standard text canvas -->
+        <div class="widget-text-canvas-content mt-3 rounded-xl p-4 text-{{ widget.chart_config.text_size|default:'sm' }}
+          {% if widget.chart_config.bg_color == 'slate' %}bg-slate-50 text-slate-700
+          {% elif widget.chart_config.bg_color == 'indigo' %}bg-indigo-50 text-indigo-900
+          {% elif widget.chart_config.bg_color == 'emerald' %}bg-emerald-50 text-emerald-900
+          {% elif widget.chart_config.bg_color == 'rose' %}bg-rose-50 text-rose-900
+          {% elif widget.chart_config.bg_color == 'amber' %}bg-amber-50 text-amber-900
+          {% elif widget.chart_config.bg_color == 'yellow' %}bg-yellow-50 text-yellow-900
+          {% else %}bg-slate-50 text-slate-700{% endif %}
+          leading-relaxed whitespace-pre-wrap break-words">{{ widget.chart_config.content|default:"" }}</div>
+      {% endif %}
 
     {% elif widget.widget_type == 'gauge' %}
       <!-- Gauge widget: doughnut half + centred label -->
@@ -1087,9 +1399,10 @@
       </div>
     {% endif %}
 
-    <!-- AI Insights Panel (pre-populated if ai_insight exists, otherwise toggled by AI button) -->
-    <div class="ai-insights-panel {% if not widget.chart_config.ai_insight %}hidden{% endif %} mt-3 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 px-4 py-3 shadow-sm" data-widget-id="{{ widget.id }}">
-      <div class="flex items-center gap-2 mb-2">
+    <!-- AI Insights Panel (pre-populated on load if ai_insight exists, toggled by AI button otherwise) -->
+    {% if widget.widget_type not in 'kpi,heading,divider,text_canvas' %}
+    <div class="ai-insights-panel {% if not widget.chart_config.ai_insight %}hidden{% endif %}" data-widget-id="{{ widget.id }}">
+      <div class="ai-insights-header">
         <div class="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 flex-shrink-0">
           <svg class="h-3 w-3 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
             <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.992.563-1.929 1.184-2.549a4 4 0 10-6.366 0C7.437 12.07 7.985 13.007 8 14h4z"/>
@@ -1097,9 +1410,9 @@
         </div>
         <span class="text-xs font-bold text-violet-800 tracking-wide uppercase">AI Insights</span>
         {% if widget.chart_config.ai_insight %}
-        <span class="ml-auto text-[10px] font-semibold text-violet-500 bg-violet-100 px-2 py-0.5 rounded-full border border-violet-200">✦ Generated</span>
+        <span class="ml-auto ai-powered-label">✦ AI Powered</span>
         {% else %}
-        <span class="ai-powered-badge hidden ml-auto text-[10px] font-semibold text-violet-500 bg-violet-100 px-2 py-0.5 rounded-full border border-violet-200">✦ Generated</span>
+        <span class="ai-powered-badge hidden ml-auto ai-powered-label">✦ AI Powered</span>
         {% endif %}
       </div>
       <p class="ai-insights-text text-xs text-slate-700 leading-relaxed font-[450]">
@@ -1110,6 +1423,7 @@
         {% endif %}
       </p>
     </div>
+    {% endif %}
 
     {% if widget.widget_type not in 'heading,text_canvas,divider' %}
     <button class="widget-resize-handle absolute bottom-2 right-2 h-5 w-5 cursor-se-resize rounded-md border border-slate-200 bg-slate-50 text-slate-300 hover:bg-slate-100 hover:border-slate-400 hover:text-slate-500 transition-colors flex items-center justify-center" data-widget-id="{{ widget.id }}" title="Drag to resize (↕ height · ↔ width)">
@@ -1899,6 +2213,20 @@
   }
 
 })();
+</script>
+
+<!-- ── Narrative Widget Toggle ─────────────────────────────────────────── -->
+<script>
+function toggleNarrative(widgetId) {
+  const body = document.getElementById('narrative-body-' + widgetId);
+  const btn = document.getElementById('narrative-toggle-' + widgetId);
+  if (!body || !btn) return;
+  const isHidden = body.style.display === 'none';
+  body.style.display = isHidden ? '' : 'none';
+  btn.innerHTML = isHidden
+    ? '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg> Collapse'
+    : '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg> Expand';
+}
 </script>
 
 <!-- ── Dashboard Build Status Polling ──────────────────────────────────── -->

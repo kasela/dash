@@ -1188,6 +1188,331 @@ def _get_ai_client():
     return client, model
 
 
+def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
+    """AI-powered column role detection: classifies each column as measure/dimension/date/id.
+
+    Returns dict: {column_name: {role, agg, label, cardinality}}
+
+    Roles:
+    - 'measure': quantitative, aggregatable (revenue, amount, count, score, rate, price)
+    - 'dimension': categorical grouping variables (region, category, name, type, status)
+    - 'date': temporal columns (date, month, year, quarter, period, timestamp)
+    - 'id': identifier/key columns to skip (id, uuid, code, ref, key, index)
+
+    agg: best aggregation ('sum', 'avg', 'count', 'max', 'min', 'group', 'none')
+    cardinality: for dimensions ('low'<10, 'medium'=10-50, 'high'>50), None for others
+    """
+    import json as _json
+    import re as _re
+
+    client, model = _get_ai_client()
+
+    # Build sample values per column
+    col_samples: dict = {}
+    for col in list(df.columns[:50]):
+        try:
+            vals = df[col].dropna().head(5).tolist()
+            col_samples[str(col)] = [str(v)[:50] for v in vals]
+        except Exception:
+            pass
+
+    # Numeric stats
+    col_stats: dict = {}
+    for col in profile.numeric_columns[:20]:
+        try:
+            col_stats[str(col)] = {
+                "min": round(float(df[col].min()), 4),
+                "max": round(float(df[col].max()), 4),
+                "mean": round(float(df[col].mean()), 4),
+                "null_pct": round(float(df[col].isna().mean() * 100), 1),
+            }
+        except Exception:
+            pass
+
+    def _heuristic_roles() -> dict:
+        roles: dict = {}
+        for col in profile.numeric_columns:
+            roles[str(col)] = {
+                "role": "measure", "agg": "sum",
+                "label": _humanize_col(col), "cardinality": None,
+            }
+        for col in profile.categorical_columns:
+            try:
+                card = int(df[col].nunique(dropna=True))
+                tier = "low" if card < 10 else "medium" if card < 50 else "high"
+            except Exception:
+                tier = "medium"
+            roles[str(col)] = {
+                "role": "dimension", "agg": "group",
+                "label": _humanize_col(col), "cardinality": tier,
+            }
+        date_keywords = ["date", "month", "year", "period", "quarter", "time", "timestamp"]
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if any(k in col_lower for k in date_keywords):
+                roles[str(col)] = {
+                    "role": "date", "agg": "none",
+                    "label": _humanize_col(col), "cardinality": None,
+                }
+        return roles
+
+    if client is None:
+        return _heuristic_roles()
+
+    payload = {
+        "columns": [str(c) for c in df.columns[:50]],
+        "sample_values": col_samples,
+        "numeric_cols": [str(c) for c in profile.numeric_columns[:20]],
+        "categorical_cols": [str(c) for c in profile.categorical_columns[:20]],
+        "column_stats": col_stats,
+        "total_rows": int(profile.total_rows),
+    }
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior BI data architect specializing in dimensional modeling and column classification.\n\n"
+                        "Analyze every column provided and classify it into one of four roles:\n"
+                        "1. 'measure': Quantitative, aggregatable values — revenue, sales, count, amount, "
+                        "quantity, score, rate, price, cost, profit, margin, duration, weight, distance\n"
+                        "2. 'dimension': Categorical grouping variables — region, category, name, type, "
+                        "status, segment, product, department, country, channel, brand\n"
+                        "3. 'date': Temporal columns — date, month, year, quarter, period, timestamp, "
+                        "created_at, updated_at, order_date, event_date\n"
+                        "4. 'id': Identifier/key columns to skip in aggregations — id, uuid, code, "
+                        "ref, key, index, serial, row_number, record_id\n\n"
+                        "For each column also specify:\n"
+                        "- agg: best aggregation method ('sum' for totals, 'avg' for averages/rates/ratios, "
+                        "'count' for occurrences, 'max'/'min' for extremes, 'group' for dimensions, 'none' for ids/dates)\n"
+                        "- label: human-friendly business label (e.g. 'total_revenue_usd' → 'Total Revenue (USD)')\n"
+                        "- cardinality: for dimensions only ('low'=<10 unique, 'medium'=10-50, 'high'>50); "
+                        "use null for measures, dates, ids\n\n"
+                        "RETURN ONLY valid JSON (no markdown, no extra text):\n"
+                        "{\"roles\": {\"column_name\": {\"role\": \"measure|dimension|date|id\", "
+                        "\"agg\": \"sum|avg|count|max|min|group|none\", "
+                        "\"label\": \"Business Label\", \"cardinality\": \"low|medium|high|null\"}}}"
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.05,
+            stream=False,
+            timeout=20,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
+        match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        parsed = _json.loads(match.group(0) if match else content)
+        roles = parsed.get("roles", {})
+        if isinstance(roles, dict) and len(roles) > 0:
+            # Merge: ensure all df columns have a role (fallback for any missed)
+            fallback = _heuristic_roles()
+            for col in df.columns:
+                if str(col) not in roles:
+                    roles[str(col)] = fallback.get(str(col), {"role": "dimension", "agg": "group", "label": _humanize_col(col), "cardinality": "medium"})
+            return roles
+    except Exception:
+        pass
+
+    return _heuristic_roles()
+
+
+def ai_generate_comprehensive_insights(
+    df: pd.DataFrame,
+    profile: "ProfileSummary",
+    dashboard_title: str = "",
+    widget_titles: list | None = None,
+) -> dict:
+    """Generate a comprehensive AI-powered dashboard narrative by a senior data analyst.
+
+    Returns dict with keys:
+    - executive_summary: str  (2-3 sentence synthesis of the data story)
+    - key_findings: list[str]  (4-5 specific, numbered findings with data)
+    - strategic_recs: list[str]  (2-3 action-oriented recommendations)
+    - data_health: str  (1 sentence on data quality implications)
+    - analyst_note: str  (expert commentary on business implications)
+    """
+    import json as _json
+    import re as _re
+
+    client, model = _get_ai_client()
+
+    # Build rich statistics context
+    numeric_stats: dict = {}
+    for col in profile.numeric_columns[:12]:
+        try:
+            s = df[col].dropna()
+            numeric_stats[str(col)] = {
+                "sum": round(float(s.sum()), 2),
+                "mean": round(float(s.mean()), 2),
+                "median": round(float(s.median()), 2),
+                "std": round(float(s.std()), 2),
+                "min": round(float(s.min()), 2),
+                "max": round(float(s.max()), 2),
+                "count_non_null": int(s.count()),
+                "human_label": _humanize_col(col),
+            }
+        except Exception:
+            pass
+
+    cat_top_values: dict = {}
+    for col in profile.categorical_columns[:6]:
+        try:
+            vc = df[col].value_counts().head(5)
+            cat_top_values[str(col)] = {
+                "top_values": {str(k): int(v) for k, v in vc.items()},
+                "unique_count": int(df[col].nunique(dropna=True)),
+                "human_label": _humanize_col(col),
+            }
+        except Exception:
+            pass
+
+    date_range_info: dict = {}
+    for col in df.columns:
+        if any(k in str(col).lower() for k in ["date", "month", "year", "period", "quarter"]):
+            try:
+                tmp = pd.to_datetime(df[col], errors="coerce").dropna()
+                if len(tmp) > 0:
+                    date_range_info[str(col)] = {
+                        "min": str(tmp.min().date()),
+                        "max": str(tmp.max().date()),
+                        "span_days": int((tmp.max() - tmp.min()).days),
+                        "human_label": _humanize_col(col),
+                    }
+            except Exception:
+                pass
+
+    def _heuristic_insights() -> dict:
+        top_metric = profile.numeric_columns[0] if profile.numeric_columns else ""
+        label = _humanize_col(top_metric) if top_metric else "records"
+        try:
+            total_val = f"{df[top_metric].sum():,.0f}" if top_metric else str(profile.total_rows)
+        except Exception:
+            total_val = str(profile.total_rows)
+        findings = [
+            f"Dataset contains {profile.total_rows:,} records across {profile.total_columns} dimensions, "
+            f"providing a comprehensive view of {dashboard_title or 'business performance'}.",
+        ]
+        if top_metric:
+            findings.append(
+                f"Primary metric '{label}' totals {total_val}, "
+                f"tracked across {len(profile.categorical_columns)} categorical dimensions."
+            )
+        if profile.categorical_columns:
+            findings.append(
+                f"Key segmentation dimensions include {', '.join(_humanize_col(c) for c in profile.categorical_columns[:3])}, "
+                f"enabling multi-dimensional performance analysis."
+            )
+        if date_range_info:
+            first_date_col = list(date_range_info.values())[0]
+            findings.append(
+                f"Data spans from {first_date_col['min']} to {first_date_col['max']} "
+                f"({first_date_col['span_days']} days), enabling trend analysis."
+            )
+        return {
+            "executive_summary": (
+                f"This {dashboard_title or 'business'} dashboard analyzes {profile.total_rows:,} records "
+                f"across {profile.total_columns} data dimensions. "
+                f"Key metrics and distributions are visualized to support strategic decision-making and performance monitoring."
+            ),
+            "key_findings": findings[:5],
+            "strategic_recs": [
+                f"Prioritize deep-dive analysis into {_humanize_col(profile.suggested_measures[0]) if profile.suggested_measures else 'primary metrics'} to identify growth levers.",
+                f"Segment performance across {_humanize_col(profile.suggested_dimensions[0]) if profile.suggested_dimensions else 'key dimensions'} to uncover variance and opportunity.",
+                "Set up automated refresh schedules to monitor KPI trends and flag anomalies in near real-time.",
+            ],
+            "data_health": (
+                f"Data completeness: {profile.missing_cells} missing cells detected across {profile.total_rows:,} rows "
+                f"({round(profile.missing_cells / max(profile.total_rows * profile.total_columns, 1) * 100, 1)}% missing). "
+                f"{'Consider imputation or exclusion before drawing conclusions.' if profile.missing_cells > 0 else 'Excellent data quality.'}"
+            ),
+            "analyst_note": (
+                f"With {len(profile.numeric_columns)} measurable KPIs and {len(profile.categorical_columns)} "
+                f"segmentation dimensions, this dataset is well-structured for executive-level BI reporting."
+            ),
+        }
+
+    if client is None:
+        return _heuristic_insights()
+
+    payload = {
+        "dashboard_title": str(dashboard_title or "Business Dashboard").strip(),
+        "total_rows": int(profile.total_rows),
+        "total_columns": int(profile.total_columns),
+        "numeric_stats": numeric_stats,
+        "categorical_summaries": cat_top_values,
+        "date_ranges": date_range_info,
+        "widget_titles": [str(t) for t in (widget_titles or [])[:20]],
+        "data_quality": {
+            "duplicate_rows": int(profile.duplicate_rows),
+            "missing_cells": int(profile.missing_cells),
+            "missing_pct": round(profile.missing_cells / max(profile.total_rows * profile.total_columns, 1) * 100, 1),
+        },
+    }
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a world-class Senior Data Analyst and Strategic Advisor with 20+ years of "
+                        "international BI experience across Fortune 500 companies, investment banks, and "
+                        "management consulting firms in North America, Europe, and Asia-Pacific.\n\n"
+                        "TASK: Write a comprehensive, data-driven analytical narrative for this business dashboard.\n\n"
+                        "REQUIREMENTS:\n"
+                        "executive_summary: 2-3 sentences synthesizing the overall data story. "
+                        "MUST mention the primary metric value, key trend, and business implication. "
+                        "Write as an experienced analyst presenting to a C-suite audience.\n\n"
+                        "key_findings: Exactly 4-5 specific, numbered insights. "
+                        "EVERY finding MUST cite a specific number from the provided statistics. "
+                        "Order by business impact (most impactful first). "
+                        "Format: 'Finding [N]: [Specific insight with number and business context].'\n\n"
+                        "strategic_recs: 2-3 action-oriented recommendations. "
+                        "Each MUST specify WHO should do WHAT, by WHEN, and WHY with expected impact. "
+                        "Be concrete, not generic.\n\n"
+                        "data_health: 1 sentence on data completeness and its analytical implications.\n\n"
+                        "analyst_note: 1 sentence expert commentary on what this data reveals about the "
+                        "business's strategic position or operational maturity.\n\n"
+                        "STYLE: Confident, authoritative, data-dense executive tone. "
+                        "Never vague or generic. Always cite specific numbers. "
+                        "Write as if preparing a board-level briefing document.\n\n"
+                        "Return ONLY valid JSON (no markdown, no extra text):\n"
+                        "{\"executive_summary\":\"...\","
+                        "\"key_findings\":[\"Finding 1: ...\",\"Finding 2: ...\"],"
+                        "\"strategic_recs\":[\"...\"],"
+                        "\"data_health\":\"...\","
+                        "\"analyst_note\":\"...\"}"
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.2,
+            stream=False,
+            timeout=30,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
+        match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        parsed = _json.loads(match.group(0) if match else content)
+        result = {
+            "executive_summary": str(parsed.get("executive_summary", "")).strip(),
+            "key_findings": [str(f).strip() for f in (parsed.get("key_findings") or []) if str(f).strip()][:5],
+            "strategic_recs": [str(r).strip() for r in (parsed.get("strategic_recs") or []) if str(r).strip()][:3],
+            "data_health": str(parsed.get("data_health", "")).strip(),
+            "analyst_note": str(parsed.get("analyst_note", "")).strip(),
+        }
+        if result["executive_summary"]:
+            return result
+    except Exception:
+        pass
+
+    return _heuristic_insights()
+
+
 def ai_generate_executive_summary(
     df: pd.DataFrame,
     profile: "ProfileSummary",
@@ -1758,10 +2083,11 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
 
 
 def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
-    """Ask AI to design a schema-agnostic dashboard plan and normalize it to widget specs.
+    """Ask AI to design a schema-agnostic, comprehensive dashboard plan and normalize it to widget specs.
 
     Returns a list of widget specs or None if AI is unavailable.
-    Each spec may include an 'ai_insight' field with a 1-2 sentence preview insight.
+    Each spec includes an 'ai_insight' field with a data-driven analytical insight.
+    Narrative and section headings are injected at appropriate positions.
     """
     import json as _json
     import re as _re
@@ -1772,23 +2098,31 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
-    # Compute sample stats for richer AI context
+    # Compute rich statistical context for AI
     sample_stats: dict = {}
-    for col in profile.numeric_columns[:10]:
+    for col in profile.numeric_columns[:12]:
         try:
-            sample_stats[col] = {
-                "sum": round(float(df[col].sum()), 2),
-                "mean": round(float(df[col].mean()), 2),
-                "min": round(float(df[col].min()), 2),
-                "max": round(float(df[col].max()), 2),
+            s = df[col].dropna()
+            sample_stats[str(col)] = {
+                "sum": round(float(s.sum()), 2),
+                "mean": round(float(s.mean()), 2),
+                "median": round(float(s.median()), 2),
+                "std": round(float(s.std()), 2),
+                "min": round(float(s.min()), 2),
+                "max": round(float(s.max()), 2),
+                "human_label": _humanize_col(col),
             }
         except Exception:
             pass
 
     categorical_cardinality: dict[str, int] = {}
+    categorical_top_values: dict[str, dict] = {}
     for col in profile.categorical_columns[:20]:
         try:
-            categorical_cardinality[str(col)] = int(df[col].nunique(dropna=True))
+            cardinality = int(df[col].nunique(dropna=True))
+            categorical_cardinality[str(col)] = cardinality
+            top_vals = df[col].value_counts().head(5)
+            categorical_top_values[str(col)] = {str(k): int(v) for k, v in top_vals.items()}
         except Exception:
             pass
 
@@ -1796,6 +2130,19 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     for col in list(df.columns[:30]):
         try:
             null_rate[str(col)] = round(float(df[col].isna().mean() * 100), 2)
+        except Exception:
+            pass
+
+    date_ranges: dict = {}
+    for col in date_cols[:3]:
+        try:
+            tmp = pd.to_datetime(df[col], errors="coerce").dropna()
+            if len(tmp) > 0:
+                date_ranges[str(col)] = {
+                    "min": str(tmp.min().date()),
+                    "max": str(tmp.max().date()),
+                    "span_days": int((tmp.max() - tmp.min()).days),
+                }
         except Exception:
             pass
 
@@ -1812,16 +2159,18 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         mode = "operational"
 
     payload = {
-        "columns": list(df.columns[:60]),
-        "numeric_columns": profile.numeric_columns[:20],
-        "categorical_columns": profile.categorical_columns[:20],
-        "date_columns": date_cols[:5],
+        "columns": [str(c) for c in df.columns[:60]],
+        "numeric_columns": [str(c) for c in profile.numeric_columns[:20]],
+        "categorical_columns": [str(c) for c in profile.categorical_columns[:20]],
+        "date_columns": [str(c) for c in date_cols[:5]],
         "sample_rows": summary_rows,
-        "total_rows": profile.total_rows,
-        "duplicate_rows": profile.duplicate_rows,
-        "missing_cells": profile.missing_cells,
+        "total_rows": int(profile.total_rows),
+        "duplicate_rows": int(profile.duplicate_rows),
+        "missing_cells": int(profile.missing_cells),
         "sample_stats": sample_stats,
         "categorical_cardinality": categorical_cardinality,
+        "categorical_top_values": categorical_top_values,
+        "date_ranges": date_ranges,
         "null_rate_pct": null_rate,
         "allowed_chart_types": [
             "kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table",
@@ -1841,13 +2190,42 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         insights = [str(x).strip() for x in (plan.get("insights") or []) if str(x).strip()]
         specs: list[dict] = []
 
-        for i, kpi in enumerate(plan.get("kpis") or []):
-            if not isinstance(kpi, dict):
-                continue
+        # ── Narrative text canvas at position 0 ────────────────────────────
+        narrative = str(plan.get("narrative") or "").strip()
+        if narrative:
+            specs.append({
+                "title": "AI Dashboard Summary",
+                "chart_type": "text_canvas",
+                "dimension": None,
+                "measures": [],
+                "size": "lg",
+                "palette": "indigo",
+                "ai_insight": "",
+                "_narrative_content": narrative,
+                "_is_narrative": True,
+            })
+
+        # ── KPI section ────────────────────────────────────────────────────
+        kpi_heading = str(plan.get("kpi_section_title") or "Key Performance Indicators").strip()
+        kpis = [k for k in (plan.get("kpis") or []) if isinstance(k, dict)]
+        if kpis:
+            specs.append({
+                "title": kpi_heading,
+                "chart_type": "heading",
+                "dimension": None,
+                "measures": [],
+                "size": "lg",
+                "palette": "indigo",
+                "ai_insight": "",
+                "_heading_color": "indigo",
+                "_heading_font_size": "xl",
+            })
+        for i, kpi in enumerate(kpis):
             name = str(kpi.get("name", "")).strip() or f"KPI {i + 1}"
             value_col = str(kpi.get("measure") or kpi.get("column") or "").strip()
             change = str(kpi.get("change", "")).strip()
             insight = str(kpi.get("insight", "")).strip() or (insights[i % len(insights)] if insights else "")
+            full_insight = f"{insight} Period change: {change}." if change and insight else insight
             specs.append({
                 "title": name,
                 "chart_type": "kpi",
@@ -1855,12 +2233,25 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 "measures": [value_col] if value_col else [],
                 "size": "sm",
                 "palette": "indigo",
-                "ai_insight": (f"{insight} Change: {change}" if change and insight else insight),
+                "ai_insight": full_insight[:400],
             })
 
-        for i, chart in enumerate(plan.get("charts") or []):
-            if not isinstance(chart, dict):
-                continue
+        # ── Charts section ─────────────────────────────────────────────────
+        charts = [c for c in (plan.get("charts") or []) if isinstance(c, dict)]
+        chart_heading = str(plan.get("chart_section_title") or "Performance Analysis").strip()
+        if charts:
+            specs.append({
+                "title": chart_heading,
+                "chart_type": "heading",
+                "dimension": None,
+                "measures": [],
+                "size": "lg",
+                "palette": "blue",
+                "ai_insight": "",
+                "_heading_color": "blue",
+                "_heading_font_size": "xl",
+            })
+        for i, chart in enumerate(charts):
             chart_type = str(chart.get("type", "bar")).strip().lower()
             title = str(chart.get("title", "")).strip() or f"Chart {i + 1}"
             dimension = str(chart.get("x") or chart.get("dimension") or "").strip()
@@ -1879,12 +2270,25 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 "y_measure": y_measure,
                 "size": str(chart.get("size") or "md").strip().lower(),
                 "palette": str(chart.get("palette") or "indigo").strip().lower(),
-                "ai_insight": insight,
+                "ai_insight": insight[:400],
             })
 
-        for i, table in enumerate(plan.get("tables") or []):
-            if not isinstance(table, dict):
-                continue
+        # ── Tables section ─────────────────────────────────────────────────
+        tables = [t for t in (plan.get("tables") or []) if isinstance(t, dict)]
+        table_heading = str(plan.get("table_section_title") or "Data Details").strip()
+        if tables:
+            specs.append({
+                "title": table_heading,
+                "chart_type": "heading",
+                "dimension": None,
+                "measures": [],
+                "size": "lg",
+                "palette": "slate",
+                "ai_insight": "",
+                "_heading_color": "slate",
+                "_heading_font_size": "xl",
+            })
+        for i, table in enumerate(tables):
             title = str(table.get("title", "")).strip() or f"Table {i + 1}"
             cols = table.get("columns") or []
             measures = [str(c).strip() for c in cols if str(c).strip()]
@@ -1896,7 +2300,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 "measures": measures,
                 "size": "lg",
                 "palette": "slate",
-                "ai_insight": insight,
+                "ai_insight": insight[:400],
             })
 
         return specs
@@ -1908,48 +2312,72 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                 {
                     "role": "system",
                     "content": (
-                        "You are a world-class BI dashboard designer at a top-tier analytics consultancy. "
-                        "Your dashboards are modern, insight-dense, and built for confident executive decision-making.\n\n"
-                        "Create a schema-agnostic BI plan for the provided dataset.\n"
+                        "You are a world-class Senior BI Dashboard Architect at a top-tier global analytics consultancy. "
+                        "Your dashboards are used by Fortune 500 CEOs, investment committees, and government ministers. "
+                        "They are modern, insight-dense, narratively coherent, and built for confident executive decision-making.\n\n"
+                        "Create a COMPREHENSIVE, schema-agnostic BI dashboard plan for the provided dataset.\n"
                         "Mode is provided in payload: executive | analytical | operational.\n\n"
-                        "TITLE & NAMING RULES (critical — non-negotiable):\n"
-                        "- KPI names: Use business-friendly labels. NOT 'total_revenue' → 'Total Revenue'. NOT 'num_orders' → 'Orders'. Convert snake_case to Title Case.\n"
-                        "- Chart titles: Write natural-language titles that answer a business question.\n"
-                        "  GOOD: 'Revenue by Region', 'Monthly Sales Trend', 'Top 10 Products by Margin', 'Customer Acquisition Funnel'\n"
-                        "  BAD: 'sales_amount by region_name', 'Correlation: qty vs price', 'Distribution: category'\n"
-                        "- Table titles: Describe the analytical view, e.g. 'Top Performers Summary', 'Order Detail Breakdown'\n"
-                        "- Insights: Start with the insight, not the column name. e.g. 'North America drives 42% of revenue' not 'region has high sales_amount'\n\n"
-                        "KPI GENERATION RULES:\n"
-                        "- Always generate 3-5 KPIs covering: primary volume metric, financial metric (if any), rate/ratio (if any), time-based growth (if dates exist)\n"
-                        "- KPI name must be 2-4 words max, business-friendly (e.g. 'Total Revenue', 'Avg Order Value', 'Win Rate', 'MoM Growth')\n"
-                        "- Include change (period-over-period description) and a 1-sentence insight\n\n"
-                        "CHART SELECTION RULES:\n"
-                        "- Date column present → ALWAYS include a line or area chart for trend over time. Title like 'Revenue Growth Over Time'\n"
-                        "- Category (cardinality 3-15) + numeric → bar chart. Title like 'Sales by Region'\n"
-                        "- Category (cardinality > 15) + numeric → hbar with top 10. Title like 'Top 10 Products by Revenue'\n"
-                        "- Part-to-whole (cardinality ≤ 8) → doughnut or polararea. Title like 'Revenue Mix by Segment'\n"
-                        "- Two numerics → scatter. Title like 'Price vs Quantity Relationship'\n"
-                        "- Multiple categories + one numeric → radar. Title like 'Performance Profile by Category'\n"
-                        "- Stage progression → funnel. Title like 'Sales Pipeline Conversion'\n"
-                        "- Cumulative delta → waterfall. Title like 'Revenue Waterfall by Month'\n"
-                        "- Mixed multi-series → mixed (bar + line). Title like 'Revenue & Growth Rate by Quarter'\n\n"
-                        "SIZE RULES: kpi='sm', trend line/area='lg', bar/hbar='md', pie/doughnut='md', table='lg'.\n\n"
-                        "PALETTE RULES: indigo=KPIs/default, emerald=revenue/growth positives, rose=losses/churn/risk, ocean/blue=time-series, amber=distribution/category, vibrant=multi-category.\n\n"
-                        "INSIGHTS RULES:\n"
-                        "- Each insight must cite a specific number from sample_stats or cardinality.\n"
-                        "- Be concrete and business-relevant. Start with what it means, not what the data shows.\n"
-                        "- End with an action recommendation: 'Monitor...', 'Investigate...', 'Prioritize...'\n\n"
-                        "Return ONLY valid JSON object with keys:\n"
-                        "schema, kpis, charts, tables, insights.\n"
-                        "Required shape:\n"
+                        "═══ NAMING RULES (non-negotiable) ═══\n"
+                        "- KPI names: 2-4 business-friendly words. 'total_revenue_usd' → 'Total Revenue'. "
+                        "'num_orders' → 'Orders'. 'avg_order_value' → 'Avg Order Value'.\n"
+                        "- Chart titles: Write a business question being answered. "
+                        "GOOD: 'Revenue by Region', 'Monthly Growth Trend', 'Top 10 Products by Margin'. "
+                        "BAD: 'sales_amount by region_name', 'chart of qty'.\n"
+                        "- Insights: Lead with the finding, cite a specific number. "
+                        "GOOD: 'North America drives 42% of total revenue at $2.1M — the largest regional contributor.' "
+                        "BAD: 'region column shows high sales_amount values'.\n\n"
+                        "═══ NARRATIVE RULES ═══\n"
+                        "- 'narrative': Write a 2-3 sentence executive summary of what this dashboard reveals. "
+                        "Must cite the most important metric value from sample_stats. "
+                        "Structured as: [What the data is about] + [Key finding with number] + [Strategic implication].\n"
+                        "- 'kpi_section_title': A section title like 'Executive KPI Summary' or 'Key Business Metrics'\n"
+                        "- 'chart_section_title': A section title like 'Performance Deep-Dive' or 'Trend & Distribution Analysis'\n"
+                        "- 'table_section_title': A section title like 'Transaction Detail' or 'Raw Data Explorer'\n\n"
+                        "═══ KPI RULES ═══\n"
+                        "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, count, "
+                        "and growth metric (if dates present).\n"
+                        "- 'measure' must be an exact column name from provided numeric_columns.\n"
+                        "- 'insight': 1 sentence citing the actual sum or mean from sample_stats. "
+                        "Example: 'Total revenue of $4.2M represents a strong baseline; focus on high-margin segments.'\n"
+                        "- 'change': Describe a meaningful comparison (e.g. '12% above Q3 average', 'top 20% of performers').\n\n"
+                        "═══ CHART SELECTION RULES ═══\n"
+                        "- Date column present → ALWAYS a line chart for primary trend + area for secondary metric.\n"
+                        "- Category (cardinality 3-12) + numeric → bar. Title: '[Metric] by [Category]'\n"
+                        "- Category (cardinality >12) + numeric → hbar top 10. Title: 'Top 10 [Category] by [Metric]'\n"
+                        "- Part-to-whole (cardinality ≤8) → doughnut. Title: '[Metric] Mix by [Category]'\n"
+                        "- Two numerics with correlation → scatter. Title: '[Metric A] vs [Metric B] Relationship'\n"
+                        "- Multiple categories + numeric → radar. Title: '[Metric] Profile by [Category]'\n"
+                        "- Stage/funnel progression → funnel. Title: '[Process] Conversion Funnel'\n"
+                        "- Cumulative variance → waterfall. Title: '[Metric] Waterfall by [Category]'\n"
+                        "- Time series + rate overlay → mixed. Title: '[Metric] & [Rate] by [Period]'\n"
+                        "- Generate 6-10 charts covering different analytical angles.\n\n"
+                        "═══ SIZE RULES ═══\n"
+                        "kpi='sm', line/area/waterfall='lg', bar/hbar/mixed='md', pie/doughnut/radar/scatter='md', "
+                        "table='lg', funnel='md'.\n\n"
+                        "═══ PALETTE RULES ═══\n"
+                        "indigo=KPIs/neutral, emerald=revenue/growth/positive, rose=loss/churn/negative/risk, "
+                        "ocean=time-series/trends, blue=secondary trends, amber=distribution/ranking, "
+                        "vibrant=multi-category/comparison, sunset=relationships/scatter.\n\n"
+                        "═══ INSIGHT QUALITY RULES ═══\n"
+                        "- EVERY insight must cite at least one specific number from sample_stats or cardinality.\n"
+                        "- Structure: [Key finding with number] → [Business implication] → [Recommended action].\n"
+                        "- Avoid generic phrases like 'shows trends' or 'indicates patterns'.\n"
+                        "- Maximum 120 words per insight. Be punchy and decisive.\n\n"
+                        "Return ONLY valid JSON with these exact keys:\n"
                         "{"
+                        "\"narrative\":\"2-3 sentence executive summary with specific numbers\","
+                        "\"kpi_section_title\":\"Section heading for KPIs\","
+                        "\"chart_section_title\":\"Section heading for charts\","
+                        "\"table_section_title\":\"Section heading for tables\","
                         "\"schema\":{\"columns\":[],\"types\":{}},"
-                        "\"kpis\":[{\"name\":\"...\",\"measure\":\"...\",\"change\":\"...\",\"insight\":\"...\"}],"
-                        "\"charts\":[{\"type\":\"...\",\"title\":\"...\",\"x\":\"...\",\"y\":[\"...\"],\"x_measure\":\"...\",\"y_measure\":\"...\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"...\"}],"
-                        "\"tables\":[{\"title\":\"...\",\"columns\":[],\"insight\":\"...\"}],"
-                        "\"insights\":[\"...\"]"
+                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"exact_column\",\"change\":\"comparison\",\"insight\":\"data-driven sentence\"}],"
+                        "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"exact_column\",\"y\":[\"exact_column\"],\"x_measure\":\"exact_col_or_empty\",\"y_measure\":\"exact_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"data-driven sentence with number\"}],"
+                        "\"tables\":[{\"title\":\"Analytical View Name\",\"columns\":[\"exact_col\"],\"insight\":\"data-driven sentence\"}],"
+                        "\"insights\":[\"Global finding 1\",\"Global finding 2\",\"Global finding 3\"]"
                         "}\n"
-                        "Use exact provided column names for x/y/measure fields only. Chart titles and KPI names must be human-readable. No markdown."
+                        "CRITICAL: Use EXACT column names from the payload for x/y/measure fields. "
+                        "Chart titles, KPI names, and insights must be human-readable and numerically specific. "
+                        "No markdown. No extra text outside the JSON."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
