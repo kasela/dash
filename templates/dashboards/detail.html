@@ -297,6 +297,19 @@
           </svg>
         </button>
         {% endif %}
+        {% if widget.widget_type in 'heading,text_canvas' %}
+        <button
+          class="edit-section-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
+          data-widget-id="{{ widget.id }}"
+          data-widget-type="{{ widget.widget_type }}"
+          data-widget-title="{{ widget.title }}"
+          data-widget-config="{{ widget.chart_config|to_json|escapejs }}"
+          title="Edit">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M4 20l4.5-1 9.7-9.7a1.8 1.8 0 00-2.5-2.5L6 16.5 4 20z"/>
+          </svg>
+        </button>
+        {% endif %}
 
         {% if widget.widget_type not in 'heading,divider' %}
         <!-- Width toggle -->
@@ -798,6 +811,8 @@
   "updateWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "resizeWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "widgetSpanBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "updateHeadingBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "updateTextCanvasBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "addDatasetUrl": "{% url 'dashboard-add-dataset' dashboard.id %}",
   "removeDatasetBaseUrl": "/dashboards/{{ dashboard.id }}/datasets/",
   "csrfToken": "{{ csrf_token }}"
@@ -859,6 +874,118 @@
   <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
     <button id="cancel-text-canvas-btn" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
     <button id="submit-text-canvas-btn" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">Add Text Block</button>
+  </div>
+</div>
+
+<!-- ── Edit Heading Modal ─────────────────────────────────────────────────── -->
+<div id="edit-heading-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="edit-heading-modal"
+  style="display:none;position:fixed;top:5rem;left:50%;transform:translateX(-50%);z-index:50;width:100%;max-width:36rem;background:#fff;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
+  role="dialog" aria-modal="true" aria-label="Edit heading">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+    <h3 class="text-base font-semibold text-slate-900">Edit Heading</h3>
+    <button id="close-edit-heading-btn" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button>
+  </div>
+  <div class="space-y-4 px-5 py-4">
+    <div>
+      <label for="eh-text" class="mb-1 block text-sm font-semibold text-slate-700">Heading text</label>
+      <input id="eh-text" type="text" placeholder="e.g. Q1 Revenue Performance"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500">
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label for="eh-font-size" class="mb-1 block text-xs font-semibold text-slate-600">Size</label>
+        <select id="eh-font-size" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="lg">Large</option>
+          <option value="xl">Extra large</option>
+          <option value="2xl">2XL</option>
+          <option value="3xl">3XL</option>
+        </select>
+      </div>
+      <div>
+        <label for="eh-color" class="mb-1 block text-xs font-semibold text-slate-600">Color</label>
+        <select id="eh-color" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="indigo">Indigo</option>
+          <option value="emerald">Emerald</option>
+          <option value="rose">Rose</option>
+          <option value="amber">Amber</option>
+          <option value="slate">Slate</option>
+        </select>
+      </div>
+      <div>
+        <label for="eh-font-family" class="mb-1 block text-xs font-semibold text-slate-600">Font</label>
+        <select id="eh-font-family" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="inter">Inter</option>
+          <option value="poppins">Poppins</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Mono</option>
+        </select>
+      </div>
+      <div>
+        <label for="eh-align" class="mb-1 block text-xs font-semibold text-slate-600">Align</label>
+        <select id="eh-align" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+    </div>
+    <div id="eh-error" style="display:none;" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+  </div>
+  <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+    <button id="cancel-edit-heading-btn" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+    <button id="submit-edit-heading-btn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">Save Heading</button>
+  </div>
+</div>
+
+<!-- ── Edit Text Canvas Modal ─────────────────────────────────────────────── -->
+<div id="edit-text-canvas-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="edit-text-canvas-modal"
+  style="display:none;position:fixed;top:4rem;left:50%;transform:translateX(-50%);z-index:50;width:100%;max-width:38rem;background:#fff;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
+  role="dialog" aria-modal="true" aria-label="Edit text canvas block">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+    <h3 class="text-base font-semibold text-slate-900">Edit Text Block</h3>
+    <button id="close-edit-text-canvas-btn" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button>
+  </div>
+  <div class="space-y-4 px-5 py-4">
+    <div>
+      <label for="etc-title" class="mb-1 block text-xs font-semibold text-slate-600">Block title</label>
+      <input id="etc-title" type="text" placeholder="e.g. Executive Summary"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+    </div>
+    <div>
+      <label for="etc-content" class="mb-1 block text-sm font-semibold text-slate-700">Content <span class="text-slate-400 font-normal">(plain text, up to 4000 chars)</span></label>
+      <textarea id="etc-content" rows="6" placeholder="Write your notes, summary, or insight here…"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"></textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label for="etc-bg-color" class="mb-1 block text-xs font-semibold text-slate-600">Background</label>
+        <select id="etc-bg-color" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="white">White</option>
+          <option value="slate">Slate</option>
+          <option value="indigo">Indigo</option>
+          <option value="emerald">Emerald</option>
+          <option value="rose">Rose</option>
+          <option value="amber">Amber</option>
+          <option value="yellow">Yellow</option>
+        </select>
+      </div>
+      <div>
+        <label for="etc-text-size" class="mb-1 block text-xs font-semibold text-slate-600">Text size</label>
+        <select id="etc-text-size" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="xs">XS</option>
+          <option value="sm">Small</option>
+          <option value="base">Base</option>
+          <option value="lg">Large</option>
+        </select>
+      </div>
+    </div>
+    <div id="etc-error" style="display:none;" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+  </div>
+  <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+    <button id="cancel-edit-text-canvas-btn" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+    <button id="submit-edit-text-canvas-btn" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">Save Text Block</button>
   </div>
 </div>
 

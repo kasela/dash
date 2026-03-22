@@ -22,6 +22,8 @@ from apps.dashboards.views import (
     dashboard_reorder_widgets,
     dashboard_resize_widget,
     dashboard_rename_widget,
+    dashboard_update_heading,
+    dashboard_update_text_canvas,
     dashboard_update_widget,
     dashboard_update_widget_span,
     landing_page,
@@ -80,6 +82,8 @@ urlpatterns = [
     path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update/", dashboard_update_widget, name="dashboard-update-widget"),
     path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/resize/", dashboard_resize_widget, name="dashboard-resize-widget"),
     path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/span/", dashboard_update_widget_span, name="dashboard-widget-span"),
+    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update-heading/", dashboard_update_heading, name="dashboard-update-heading"),
+    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/update-text-canvas/", dashboard_update_text_canvas, name="dashboard-update-text-canvas"),
 
     # Dataset actions
     path("datasets/upload/", dataset_upload, name="dataset-upload"),

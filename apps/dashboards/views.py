@@ -1119,6 +1119,91 @@ def dashboard_add_text_canvas(request: HttpRequest, dashboard_id: int) -> JsonRe
 
 
 @login_required
+def dashboard_update_heading(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    """Update an existing heading widget's text and styling."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    if widget.widget_type != "heading":
+        return JsonResponse({"error": "Widget is not a heading"}, status=400)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    text = str(data.get("text", "")).strip()
+    if not text:
+        return JsonResponse({"error": "Heading text is required"}, status=400)
+    if len(text) > 200:
+        return JsonResponse({"error": "Heading text too long (max 200 chars)"}, status=400)
+
+    font_size = str(data.get("font_size", widget.chart_config.get("font_size", "2xl"))).strip().lower()
+    if font_size not in {"lg", "xl", "2xl", "3xl"}:
+        font_size = "2xl"
+    color = str(data.get("color", widget.chart_config.get("color", "indigo"))).strip().lower()
+    if color not in {"slate", "indigo", "emerald", "rose", "amber"}:
+        color = "indigo"
+    font_family = str(data.get("font_family", widget.chart_config.get("font_family", "inter"))).strip().lower()
+    if font_family not in {"inter", "poppins", "serif", "mono"}:
+        font_family = "inter"
+    align = str(data.get("align", widget.chart_config.get("align", "left"))).strip().lower()
+    if align not in {"left", "center", "right"}:
+        align = "left"
+
+    widget.chart_config = {
+        **widget.chart_config,
+        "text": text,
+        "font_size": font_size,
+        "color": color,
+        "font_family": font_family,
+        "align": align,
+    }
+    widget.title = text[:80]
+    widget.save(update_fields=["chart_config", "title"])
+    return JsonResponse({"success": True})
+
+
+@login_required
+def dashboard_update_text_canvas(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    """Update an existing text canvas widget's content and styling."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+    if widget.widget_type != "text_canvas":
+        return JsonResponse({"error": "Widget is not a text canvas"}, status=400)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return JsonResponse({"error": "Content is required"}, status=400)
+    if len(content) > 4000:
+        return JsonResponse({"error": "Content too long (max 4000 chars)"}, status=400)
+
+    title = str(data.get("title", widget.title)).strip()[:200] or widget.title
+    bg_color = str(data.get("bg_color", widget.chart_config.get("bg_color", "white"))).strip().lower()
+    if bg_color not in {"white", "slate", "indigo", "emerald", "rose", "amber", "yellow"}:
+        bg_color = "white"
+    text_size = str(data.get("text_size", widget.chart_config.get("text_size", "sm"))).strip().lower()
+    if text_size not in {"xs", "sm", "base", "lg"}:
+        text_size = "sm"
+
+    widget.chart_config = {
+        **widget.chart_config,
+        "content": content,
+        "bg_color": bg_color,
+        "text_size": text_size,
+    }
+    widget.title = title
+    widget.save(update_fields=["chart_config", "title"])
+    return JsonResponse({"success": True})
+
+
+@login_required
 def dashboard_add_divider(request: HttpRequest, dashboard_id: int) -> JsonResponse:
     """Create a visual divider/separator widget between sections."""
     if request.method != "POST":
