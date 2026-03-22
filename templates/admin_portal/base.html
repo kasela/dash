@@ -1,0 +1,186 @@
+{% load static %}
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Admin Portal — DashAI{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fdf4ff', 100: '#fae8ff', 200: '#f5d0fe',
+              500: '#a855f7', 600: '#9333ea', 700: '#7e22ce', 800: '#6b21a8'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-slate-100 text-slate-900 antialiased">
+
+<div class="flex h-full overflow-hidden">
+
+  <!-- Mobile sidebar backdrop -->
+  <div id="sidebar-overlay" class="fixed inset-0 z-20 hidden bg-black/60 lg:hidden" aria-hidden="true"></div>
+
+  <!-- ── Admin Sidebar ─────────────────────────────────────────────────── -->
+  <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-30 flex w-64 -translate-x-full flex-col bg-slate-950 transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0">
+
+    <!-- Logo -->
+    <div class="flex h-16 shrink-0 items-center gap-3 border-b border-slate-800 px-5">
+      <a href="{% url 'admin-overview' %}" class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600 text-sm font-bold text-white shadow">A</span>
+        <div>
+          <span class="block text-sm font-bold text-white">DashAI</span>
+          <span class="block text-[10px] font-medium text-purple-400 uppercase tracking-widest">Admin Portal</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 overflow-y-auto px-3 py-5 space-y-1">
+      <p class="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Management</p>
+
+      <a href="{% url 'admin-overview' %}"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_overview_class %}text-slate-400 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        Overview
+      </a>
+
+      <a href="{% url 'admin-users' %}"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_users_class %}text-slate-400 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+        Users
+      </a>
+
+      <a href="{% url 'admin-subscriptions' %}"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_subs_class %}text-slate-400 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+        </svg>
+        Subscriptions
+      </a>
+
+      <a href="{% url 'admin-plans' %}"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium {% block nav_plans_class %}text-slate-400 hover:bg-slate-800 hover:text-white{% endblock %} transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+        </svg>
+        Plans & Features
+      </a>
+
+      <div class="my-4 border-t border-slate-800"></div>
+      <p class="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Navigation</p>
+
+      <a href="{% url 'app-home' %}"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Back to App
+      </a>
+
+      <a href="/admin/"
+        class="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors">
+        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Django Admin
+      </a>
+    </nav>
+
+    <!-- Admin user info -->
+    <div class="shrink-0 border-t border-slate-800 px-4 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-600 text-sm font-semibold text-white">
+          {{ user.username|slice:":1"|upper }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-white">{{ user.username }}</p>
+          <p class="truncate text-xs text-purple-400">Staff Admin</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main area ──────────────────────────────────────────────────────── -->
+  <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+
+    <!-- Top bar -->
+    <header class="flex h-16 shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-5 md:px-8">
+      <button id="sidebar-toggle" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors lg:hidden">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+
+      <div class="flex-1 min-w-0 text-sm font-medium text-slate-500">
+        <span class="text-purple-600 font-semibold">Admin Portal</span>
+        {% block breadcrumb %}{% endblock %}
+      </div>
+
+      <div class="flex items-center gap-3">
+        {% block topbar_actions %}{% endblock %}
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
+          <span class="h-1.5 w-1.5 rounded-full bg-purple-500"></span>
+          Staff
+        </span>
+      </div>
+    </header>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="px-5 pt-4 md:px-8 space-y-2">
+      {% for message in messages %}
+      <div class="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium
+        {% if message.tags == 'success' %}bg-emerald-50 text-emerald-800 border border-emerald-200
+        {% elif message.tags == 'error' %}bg-red-50 text-red-800 border border-red-200
+        {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Page content -->
+    <main class="flex-1 overflow-y-auto px-5 py-8 md:px-8">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script>
+  // Mobile sidebar toggle
+  const toggle = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('app-sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      sidebar.classList.toggle('-translate-x-full');
+      overlay.classList.toggle('hidden');
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener('click', () => {
+      sidebar.classList.add('-translate-x-full');
+      overlay.classList.add('hidden');
+    });
+  }
+</script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
