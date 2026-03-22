@@ -2544,6 +2544,7 @@
         _fetchFilterColumns(function (data) {
           fmColumn.innerHTML = '<option value="">— select column —</option>';
           var allCols = (data.dimensions || []).concat(data.measures || []);
+          _syncAddFilterTypeOptions('', fmType.value || 'dropdown');
           allCols.forEach(function (col) {
             var meta = _filterColumnMeta[col] || {};
             var opt = document.createElement('option');
@@ -2554,17 +2555,14 @@
           if (allCols.length === 0) {
             fmColumn.innerHTML = '<option value="">No columns available</option>';
           }
+          // Re-render once metadata is loaded so saved filters show accurate type options.
+          renderFmList();
         });
         // Update type options based on column type (bind once)
         if (!fmColumn._changeListenerBound) {
           fmColumn._changeListenerBound = true;
           fmColumn.addEventListener('change', function () {
-            var meta = _filterColumnMeta[fmColumn.value] || {};
-            if (meta.type === 'numeric') {
-              fmType.value = 'range';
-            } else {
-              if (fmType.value === 'range') fmType.value = 'dropdown';
-            }
+            _syncAddFilterTypeOptions(fmColumn.value, fmType.value);
             if (!fmLabel.value && fmColumn.value) fmLabel.value = fmColumn.value;
           });
         }
@@ -2577,6 +2575,32 @@
     }
 
     var TYPE_LABELS = { dropdown: 'Dropdown', radio: 'Radio', multiselect: 'Multi-select', range: 'Range slider' };
+    var CATEGORICAL_TYPES = ['dropdown', 'radio', 'multiselect'];
+
+    function _allowedFilterTypesForColumn(column) {
+      var meta = _filterColumnMeta[column] || {};
+      if (meta.type === 'numeric') return ['range'];
+      if (meta.type === 'categorical') return CATEGORICAL_TYPES.slice();
+      // Column metadata may not be loaded yet (e.g., when modal first opens).
+      // In that case keep all options visible and avoid coercing saved values.
+      return ['dropdown', 'radio', 'multiselect', 'range'];
+    }
+
+    function _renderFilterTypeSelectOptions(types, selected) {
+      return types.map(function (t) {
+        var sel = selected === t ? ' selected' : '';
+        return '<option value="' + t + '"' + sel + '>' + TYPE_LABELS[t] + '</option>';
+      }).join('');
+    }
+
+    function _syncAddFilterTypeOptions(column, preferredType) {
+      if (!fmType) return;
+      var allowed = _allowedFilterTypesForColumn(column);
+      fmType.innerHTML = _renderFilterTypeSelectOptions(allowed, preferredType);
+      if (!allowed.includes(fmType.value)) {
+        fmType.value = allowed[0] || 'dropdown';
+      }
+    }
 
     function renderFmList() {
       if (!fmList) return;
@@ -2587,14 +2611,11 @@
       }
       if (fmNoFilters) fmNoFilters.style.display = 'none';
       pendingFilters.forEach(function (f, idx) {
-        var meta = _filterColumnMeta[f.column] || {};
-        var isNumeric = meta.type === 'numeric';
-        // Type options (disable incompatible ones)
-        var typeOpts = ['dropdown', 'radio', 'multiselect', 'range'].map(function (t) {
-          var disabled = (t === 'range' && !isNumeric) || (t !== 'range' && isNumeric) ? ' disabled' : '';
-          var sel = f.filter_type === t ? ' selected' : '';
-          return '<option value="' + t + '"' + sel + disabled + '>' + TYPE_LABELS[t] + '</option>';
-        }).join('');
+        var allowedTypes = _allowedFilterTypesForColumn(f.column);
+        if (!allowedTypes.includes(f.filter_type)) {
+          f.filter_type = allowedTypes[0] || 'dropdown';
+        }
+        var typeOpts = _renderFilterTypeSelectOptions(allowedTypes, f.filter_type);
 
         var row = document.createElement('div');
         row.className = 'fm-filter-row rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm space-y-2';
@@ -2656,6 +2677,11 @@
         if (!col) {
           if (fmAddError) { fmAddError.textContent = 'Please select a column.'; fmAddError.style.display = ''; }
           return;
+        }
+        var allowedTypes = _allowedFilterTypesForColumn(col);
+        if (!allowedTypes.includes(ftype)) {
+          ftype = allowedTypes[0] || 'dropdown';
+          _syncAddFilterTypeOptions(col, ftype);
         }
         if (fmAddError) fmAddError.style.display = 'none';
         var id = col + '_' + Date.now();
