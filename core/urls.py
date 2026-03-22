@@ -55,6 +55,11 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
+def service_worker_js(request):
+    # Return a no-op worker to avoid noisy 404s when browsers probe /service-worker.js.
+    return HttpResponse("self.addEventListener('install', () => self.skipWaiting());", content_type="application/javascript")
+
+
 sitemaps = {"static": StaticViewSitemap}
 
 urlpatterns = [
@@ -69,6 +74,7 @@ urlpatterns = [
 
     # SEO
     path("robots.txt", robots_txt, name="robots-txt"),
+    path("service-worker.js", service_worker_js, name="service-worker"),
     path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="sitemap"),
 
     # Authenticated app
