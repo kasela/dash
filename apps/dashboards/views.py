@@ -37,6 +37,7 @@ from apps.datasets.services import (
     ai_suggest_slicers,
     ai_analyze_chart,
     ai_generate_dashboard_specs,
+    ai_generate_dashboard_title,
     _compute_kpi_trend,
 )
 
@@ -431,10 +432,23 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
             )
             return redirect("app-home")
 
+    default_title = f"{dataset_version.dataset.name} Overview"
+    dashboard_title = default_title
+
+    # Try AI-powered dashboard generation first, fall back to heuristics
+    df = _load_df_from_version(dataset_version)
+    ai_specs = None
+    if df is not None:
+        profile = build_profile_summary(df)
+        ai_title = ai_generate_dashboard_title(df, profile, dataset_version.dataset.name)
+        if ai_title:
+            dashboard_title = ai_title
+        ai_specs = ai_generate_dashboard_specs(df, profile)
+
     dashboard = Dashboard.objects.create(
         workspace=dataset_version.dataset.workspace,
         dataset_version=dataset_version,
-        title=f"{dataset_version.dataset.name} Overview",
+        title=dashboard_title,
     )
     # Link as the primary dataset in the multi-dataset list
     DashboardDataset.objects.get_or_create(
@@ -442,13 +456,6 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         dataset_version=dataset_version,
         defaults={"label": dataset_version.dataset.name},
     )
-
-    # Try AI-powered dashboard generation first, fall back to heuristics
-    df = _load_df_from_version(dataset_version)
-    ai_specs = None
-    if df is not None:
-        profile = build_profile_summary(df)
-        ai_specs = ai_generate_dashboard_specs(df, profile)
 
     if ai_specs is not None and df is not None:
         widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile)
