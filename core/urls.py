@@ -29,6 +29,9 @@ from apps.dashboards.views import (
     dashboard_save_filters,
     dashboard_apply_filters,
     dashboard_get_filter_columns,
+    dashboard_ai_analyze_widget,
+    dashboard_ai_suggest_slicers,
+    dashboard_ai_clean_dataset,
     landing_page,
     pricing_page,
 )
@@ -103,4 +106,9 @@ urlpatterns = [
     path("dashboards/<int:dashboard_id>/filters/save/", dashboard_save_filters, name="dashboard-save-filters"),
     path("dashboards/<int:dashboard_id>/filters/apply/", dashboard_apply_filters, name="dashboard-apply-filters"),
     path("dashboards/<int:dashboard_id>/filters/columns/", dashboard_get_filter_columns, name="dashboard-filter-columns"),
+
+    # AI-powered endpoints
+    path("dashboards/<int:dashboard_id>/widgets/<int:widget_id>/ai-analyze/", dashboard_ai_analyze_widget, name="dashboard-ai-analyze-widget"),
+    path("dashboards/<int:dashboard_id>/ai/suggest-slicers/", dashboard_ai_suggest_slicers, name="dashboard-ai-suggest-slicers"),
+    path("dashboards/<int:dashboard_id>/ai/clean-dataset/", dashboard_ai_clean_dataset, name="dashboard-ai-clean-dataset"),
 ]

@@ -33,6 +33,10 @@ from apps.datasets.services import (
     apply_df_filters,
     build_profile_summary,
     generate_widget_specs_from_version,
+    ai_clean_dataframe,
+    ai_suggest_slicers,
+    ai_analyze_chart,
+    ai_generate_dashboard_specs,
 )
 
 from .models import Dashboard, DashboardDataset, DashboardShareLink, DashboardWidget
@@ -425,7 +429,32 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         defaults={"label": dataset_version.dataset.name},
     )
 
-    widget_specs = generate_widget_specs_from_version(dataset_version)
+    # Try AI-powered dashboard generation first, fall back to heuristics
+    df = _load_df_from_version(dataset_version)
+    ai_specs = None
+    if df is not None:
+        profile = build_profile_summary(df)
+        ai_specs = ai_generate_dashboard_specs(df, profile)
+
+    if ai_specs is not None and df is not None:
+        widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile)
+        # Save suggested slicers automatically
+        slicer_suggestions = ai_suggest_slicers(df, profile)
+        if slicer_suggestions:
+            auto_filters = [
+                {
+                    "id": s["column"],
+                    "column": s["column"],
+                    "filter_type": s["filter_type"],
+                    "label": s["label"],
+                    "version_id": None,
+                }
+                for s in slicer_suggestions
+            ]
+            dashboard.filter_config = auto_filters
+            dashboard.save(update_fields=["filter_config"])
+    else:
+        widget_specs = generate_widget_specs_from_version(dataset_version)
 
     if widget_specs:
         for spec in widget_specs:
@@ -453,6 +482,97 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
         )
 
     return redirect("dashboard-detail", dashboard_id=dashboard.id)
+
+
+def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
+    """Convert AI-generated dashboard spec list into concrete widget specs with chart configs."""
+    specs = []
+    position = 1
+    for spec in ai_specs:
+        chart_type = str(spec.get("chart_type", "bar")).lower()
+        title = str(spec.get("title", "Widget")).strip() or "Widget"
+        dimension = str(spec.get("dimension") or "").strip()
+        measures = spec.get("measures") or []
+        if isinstance(measures, str):
+            measures = [measures]
+        measures = [str(m).strip() for m in measures if str(m).strip()]
+        measure = measures[0] if measures else ""
+        x_measure = str(spec.get("x_measure") or "").strip()
+        y_measure = str(spec.get("y_measure") or "").strip()
+        palette = str(spec.get("palette") or "indigo").strip()
+        if palette not in PALETTES:
+            palette = "indigo"
+        size = str(spec.get("size") or "md").strip()
+        if size not in {"sm", "md", "lg"}:
+            size = "md"
+        config: dict = {}
+        try:
+            if chart_type == "kpi":
+                if measure and measure in df.columns:
+                    total = df[measure].sum()
+                    config = {"kpi": measure, "value": f"{total:,.0f}", "layout": {"size": size}}
+                else:
+                    config = {"kpi": "rows", "value": f"{profile.total_rows:,}", "layout": {"size": size}}
+            elif chart_type in ("bar",) and dimension and measure and dimension in df.columns and measure in df.columns:
+                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                config = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, palette)
+                config["layout"] = {"size": size}
+            elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
+                top = df.groupby(dimension)[measure].sum().nlargest(10)
+                config = _hbar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, palette)
+                config["layout"] = {"size": size}
+            elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
+                tmp = df[[dimension, measure]].copy()
+                try:
+                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp = tmp.dropna(subset=[dimension])
+                    trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
+                except Exception:
+                    trend = tmp.groupby(dimension)[measure].sum()
+                config = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, palette)
+                config["layout"] = {"size": size}
+            elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
+                tmp = df[[dimension, measure]].copy()
+                try:
+                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
+                    tmp = tmp.dropna(subset=[dimension])
+                    trend = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
+                except Exception:
+                    trend = tmp.groupby(dimension)[measure].sum()
+                config = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, palette)
+                config["layout"] = {"size": size}
+            elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
+                vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
+                fn = _pie_config if chart_type == "pie" else _doughnut_config
+                config = fn([str(l) for l in vc.index], [round(float(v), 2) for v in vc.values], palette)
+                config["layout"] = {"size": size}
+            elif chart_type == "scatter" and x_measure and y_measure and x_measure in df.columns and y_measure in df.columns:
+                tmp = df[[x_measure, y_measure]].dropna().head(500)
+                config = _scatter_config([round(float(v), 4) for v in tmp[x_measure]], [round(float(v), 4) for v in tmp[y_measure]], x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
+                config["layout"] = {"size": size}
+            elif chart_type == "radar" and dimension and measure and dimension in df.columns and measure in df.columns:
+                top = df.groupby(dimension)[measure].sum().nlargest(8)
+                config = _radar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, palette)
+                config["layout"] = {"size": size}
+            elif chart_type == "table":
+                cols = [c for c in (([dimension] + measures) if dimension else measures) if c and c in df.columns]
+                if not cols:
+                    cols = [str(c) for c in df.columns[:5]]
+                preview = df[cols].head(50).fillna("")
+                rows = [[str(v) for v in row] for row in preview.values.tolist()]
+                config = {"columns": cols, "rows": rows, "layout": {"size": size}}
+        except Exception:
+            config = {}
+        if not config:
+            continue
+        specs.append({
+            "title": title,
+            "widget_type": chart_type if chart_type != "table" else "table",
+            "config": config,
+            "position": position,
+        })
+        position += 1
+    return specs
 
 
 @login_required
@@ -1575,3 +1695,78 @@ def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> Jso
             pass
 
     return JsonResponse({"columns": columns, "filter_config": dashboard.filter_config or []})
+
+
+@login_required
+def dashboard_ai_analyze_widget(request: HttpRequest, dashboard_id: int, widget_id: int) -> JsonResponse:
+    """Return AI-generated analysis text for a specific widget's chart data."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    widget = get_object_or_404(DashboardWidget, id=widget_id, dashboard=dashboard)
+
+    chart_config = widget.chart_config or {}
+    chart_type = widget.widget_type
+    title = widget.title
+
+    # Extract labels and values from the Chart.js config
+    labels: list = []
+    values: list = []
+    try:
+        data = chart_config.get("data", {})
+        labels = data.get("labels", [])
+        datasets = data.get("datasets", [])
+        if datasets:
+            values = datasets[0].get("data", [])
+    except Exception:
+        pass
+
+    # For KPI widgets
+    if chart_type == "kpi":
+        kpi_value = chart_config.get("value", "N/A")
+        kpi_col = chart_config.get("kpi", "")
+        analysis = f"KPI '{kpi_col}': {kpi_value}. This is a key metric summarised across the entire dataset."
+        return JsonResponse({"success": True, "analysis": analysis, "ai_powered": False})
+
+    analysis = ai_analyze_chart(chart_type, labels, values, title)
+    from django.conf import settings
+    ai_powered = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    return JsonResponse({"success": True, "analysis": analysis, "ai_powered": ai_powered})
+
+
+@login_required
+def dashboard_ai_suggest_slicers(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Return AI-suggested slicers for this dashboard's primary dataset."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    dataset_version = _get_default_dataset_version(dashboard)
+    if not dataset_version:
+        return JsonResponse({"error": "No dataset linked to this dashboard"}, status=400)
+
+    df = _load_df_from_version(dataset_version)
+    if df is None:
+        return JsonResponse({"error": "Could not load dataset file"}, status=500)
+
+    profile = build_profile_summary(df)
+    suggestions = ai_suggest_slicers(df, profile)
+    from django.conf import settings
+    ai_powered = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    return JsonResponse({"success": True, "suggestions": suggestions, "ai_powered": ai_powered})
+
+
+@login_required
+def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Run AI data cleaning on the primary dataset and return a cleaning report."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    dataset_version = _get_default_dataset_version(dashboard)
+    if not dataset_version:
+        return JsonResponse({"error": "No dataset linked to this dashboard"}, status=400)
+
+    df = _load_df_from_version(dataset_version)
+    if df is None:
+        return JsonResponse({"error": "Could not load dataset file"}, status=500)
+
+    _, report = ai_clean_dataframe(df)
+    from django.conf import settings
+    report["ai_powered"] = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    return JsonResponse({"success": True, "report": report})
