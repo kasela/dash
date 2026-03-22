@@ -1215,17 +1215,26 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                         "kpi_meta": {"format": "count", "icon": "people"},
                     }
                 elif measure in df.columns:
-                    total = df[measure].sum()
                     human_measure = _humanize_col(measure)
                     kpi_meta = _detect_kpi_meta(measure)
+                    numeric_series = pd.to_numeric(df[measure], errors="coerce")
+                    has_numeric = bool(numeric_series.notna().any())
+                    if has_numeric:
+                        total = float(numeric_series.fillna(0).sum())
+                        value_display = f"{total:,.0f}"
+                    else:
+                        # Non-numeric columns should still yield a stable KPI instead of a server error.
+                        value_display = f"{int(df[measure].astype(str).str.strip().ne('').sum()):,}"
+                        kpi_meta = {"format": "count", "icon": "people"}
                     config = {
                         "kpi": human_measure,
-                        "value": f"{total:,.0f}",
+                        "value": value_display,
                         "kpi_meta": kpi_meta,
                     }
-                    trend = _compute_kpi_trend(df, measure)
-                    if trend:
-                        config["trend"] = trend
+                    if has_numeric:
+                        trend = _compute_kpi_trend(df, measure)
+                        if trend:
+                            config["trend"] = trend
                 else:
                     config = {
                         "kpi": _humanize_col(measure),
