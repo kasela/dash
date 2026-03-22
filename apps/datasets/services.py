@@ -1200,7 +1200,9 @@ def _get_ai_client():
         return None, None
     openai_module = __import__("openai")
     model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-    max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 1))
+    # Default retries to 0 to avoid long retry chains in background tasks.
+    # Operators can opt back in by setting DEEPSEEK_MAX_RETRIES > 0.
+    max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0))
     client = openai_module.OpenAI(
         api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -2113,10 +2115,12 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     """
     import json as _json
     import re as _re
+    from django.conf import settings
 
     client, model = _get_ai_client()
     if client is None:
         return None
+    specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 18))
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
@@ -2412,7 +2416,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
             ],
             temperature=0.15,
             stream=False,
-            timeout=35,
+            timeout=specs_timeout,
         )
         content = ((response.choices[0].message.content) or "").strip()
         if content.startswith("["):
