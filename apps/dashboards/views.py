@@ -407,6 +407,14 @@ def _load_df_from_version(dataset_version) -> pd.DataFrame | None:
     return None
 
 
+def _get_default_dataset_version(dashboard: Dashboard):
+    """Return primary dataset_version, or first linked dataset version as fallback."""
+    if dashboard.dataset_version_id:
+        return dashboard.dataset_version
+    first_link = dashboard.dataset_links.select_related("dataset_version").order_by("added_at").first()
+    return first_link.dataset_version if first_link else None
+
+
 @login_required
 def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
     """Return column metadata for a dataset linked to a dashboard.
@@ -432,7 +440,7 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
             return JsonResponse({"error": "Dataset not linked to this dashboard"}, status=403)
         dataset_version = get_object_or_404(DatasetVersion, id=version_id)
     else:
-        dataset_version = dashboard.dataset_version
+        dataset_version = _get_default_dataset_version(dashboard)
 
     if not dataset_version:
         return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": [], "version_id": None})
@@ -690,7 +698,7 @@ def _resolve_dataset_version(dashboard: Dashboard, data: dict):
         if not dv:
             return None, "Dataset version not found"
         return dv, None
-    return dashboard.dataset_version, None
+    return _get_default_dataset_version(dashboard), None
 
 
 def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
@@ -1302,14 +1310,41 @@ def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonRespo
 
     # Validate and sanitise each filter entry
     valid_types = {"dropdown", "radio", "multiselect", "range"}
+    categorical_types = {"dropdown", "radio", "multiselect"}
+
+    known_cols: set[str] = set()
+    numeric_cols: set[str] = set()
+    categorical_cols: set[str] = set()
+    dataset_version = _get_default_dataset_version(dashboard)
+    if dataset_version:
+        df = _load_df_from_version(dataset_version)
+        if df is not None:
+            known_cols = set(df.columns)
+            profile = build_profile_summary(df)
+            numeric_cols = set(profile.numeric_columns)
+            categorical_cols = set(profile.categorical_columns)
+
     clean_filters = []
     for f in raw_filters:
         col = str(f.get("column", "")).strip()
         ftype = str(f.get("filter_type", "dropdown")).strip()
         if not col:
             continue
+        if known_cols and col not in known_cols:
+            # Ignore stale filters for columns that no longer exist.
+            continue
         if ftype not in valid_types:
             ftype = "dropdown"
+
+        # Enforce a compatible filter type based on actual column dtype.
+        if col in numeric_cols:
+            ftype = "range"
+        elif col in categorical_cols and ftype == "range":
+            ftype = "dropdown"
+        elif col not in numeric_cols and col not in categorical_cols and ftype not in categorical_types:
+            # Unknown column category (e.g., datetime): default to a categorical-style control.
+            ftype = "dropdown"
+
         clean_filters.append({
             "id": str(f.get("id", col)),
             "column": col,
@@ -1392,7 +1427,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
 def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
     """Return columns available for filtering (dimension columns with their unique values)."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
-    dataset_version = dashboard.dataset_version
+    dataset_version = _get_default_dataset_version(dashboard)
     if not dataset_version:
         return JsonResponse({"columns": []})
 
