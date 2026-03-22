@@ -2083,12 +2083,16 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
     return f"'{title}' — {len(numeric_values)} data points, total {total:,.0f}, avg {avg_val:,.1f}."
 
 
-def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
+def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", column_roles: dict | None = None) -> list[dict] | None:
     """Ask AI to design a schema-agnostic, comprehensive dashboard plan and normalize it to widget specs.
 
     Returns a list of widget specs or None if AI is unavailable.
     Each spec includes an 'ai_insight' field with a data-driven analytical insight.
     Narrative and section headings are injected at appropriate positions.
+
+    column_roles: optional dict from ai_detect_column_roles — {col: {role, agg, label, cardinality}}.
+    When provided, the AI receives pre-classified column roles so it can make better
+    decisions about which columns to use as measures, dimensions, dates, and which to skip.
     """
     import json as _json
     import re as _re
@@ -2159,6 +2163,21 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     if profile.total_rows and int(profile.total_rows) > 150000:
         mode = "operational"
 
+    # Build a compact column_roles summary for the AI payload.
+    # Only include columns that have a useful role (skip 'id' role entirely).
+    roles_summary: dict = {}
+    if column_roles:
+        for col, meta in column_roles.items():
+            role = str(meta.get("role") or "").strip()
+            if role == "id":
+                continue  # IDs are not useful for charting
+            roles_summary[str(col)] = {
+                "role": role,
+                "agg": str(meta.get("agg") or "").strip(),
+                "label": str(meta.get("label") or _humanize_col(col)).strip(),
+                "cardinality": meta.get("cardinality"),
+            }
+
     payload = {
         "columns": [str(c) for c in df.columns[:60]],
         "numeric_columns": [str(c) for c in profile.numeric_columns[:20]],
@@ -2173,6 +2192,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
         "categorical_top_values": categorical_top_values,
         "date_ranges": date_ranges,
         "null_rate_pct": null_rate,
+        "column_roles": roles_summary,
         "allowed_chart_types": [
             "kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table",
             "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
@@ -2339,6 +2359,15 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "- 'kpi_section_title': A section title like 'Executive KPI Summary' or 'Key Business Metrics'\n"
                         "- 'chart_section_title': A section title like 'Performance Deep-Dive' or 'Trend & Distribution Analysis'\n"
                         "- 'table_section_title': A section title like 'Transaction Detail' or 'Raw Data Explorer'\n\n"
+                        "═══ COLUMN ROLES ═══\n"
+                        "The payload contains 'column_roles': a pre-classified map of {column: {role, agg, label, cardinality}}.\n"
+                        "- role='measure': use as y/measure fields in charts and as KPI measures. Use the specified 'agg' (sum/avg/count/nunique).\n"
+                        "- role='dimension': use as x/dimension fields for grouping. Prefer low/medium cardinality for pie/doughnut; "
+                        "high cardinality for hbar top-10.\n"
+                        "- role='date': use as the time axis for line/area/mixed charts. Never use as a measure.\n"
+                        "- Use the pre-classified 'label' as the human-readable name in chart titles and KPI names.\n"
+                        "- If column_roles is empty or a column is absent, fall back to numeric_columns as measures "
+                        "and categorical_columns as dimensions.\n\n"
                         "═══ KPI RULES ═══\n"
                         "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, count, "
                         "and growth metric (if dates present). For distinct entity counts (unique suppliers, customers, products), "
