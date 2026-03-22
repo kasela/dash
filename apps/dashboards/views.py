@@ -444,15 +444,15 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
     profile = build_profile_summary(df)
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
-    # Include unique values per categorical column (for filter dropdowns), capped at 200
+    # Include unique values per categorical column (for filter dropdowns), capped at 200 per col
     unique_values: dict = {}
-    for col in profile.categorical_columns[:20]:
+    for col in profile.categorical_columns:
         vals = df[col].dropna().astype(str).unique().tolist()
         unique_values[col] = sorted(vals[:200])
 
     # Range info for numeric columns (for range sliders)
     range_info: dict = {}
-    for col in profile.numeric_columns[:20]:
+    for col in profile.numeric_columns:
         try:
             mn = float(df[col].min())
             mx = float(df[col].max())
