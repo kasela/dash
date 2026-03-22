@@ -39,6 +39,15 @@ class DashboardWidget(models.Model):
         SCATTER = "scatter", "Scatter"
         RADAR = "radar", "Radar"
         TABLE = "table", "Table"
+        HEADING = "heading", "Heading"
+        TEXT_CANVAS = "text_canvas", "Text Canvas"
+        # Pro / Plus chart types
+        BUBBLE = "bubble", "Bubble"
+        POLARAREA = "polararea", "Polar Area"
+        MIXED = "mixed", "Mixed"
+        FUNNEL = "funnel", "Funnel"
+        GAUGE = "gauge", "Gauge"
+        WATERFALL = "waterfall", "Waterfall"
 
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="widgets")
     source_dataset_version = models.ForeignKey(

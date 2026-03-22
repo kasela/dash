@@ -20,13 +20,38 @@
     </svg>
     <span class="hidden sm:inline">Add Chart</span>
   </button>
+
+  <!-- Add Heading -->
   <button
     id="open-heading-builder-btn"
-    class="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700">
+    class="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+    title="Add text heading">
     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/>
     </svg>
-    <span class="hidden sm:inline">Add Heading</span>
+    <span class="hidden md:inline">Heading</span>
+  </button>
+
+  <!-- Add Text Canvas -->
+  <button
+    id="open-text-canvas-btn"
+    class="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+    title="Add freeform text canvas block">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    </svg>
+    <span class="hidden md:inline">Text</span>
+  </button>
+
+  <!-- Presentation Mode -->
+  <button
+    id="open-presentation-btn"
+    class="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+    title="Presentation mode">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+    </svg>
+    <span class="hidden md:inline">Present</span>
   </button>
 
   <!-- Share button -->
@@ -214,21 +239,39 @@
 <div class="mb-3 flex items-center gap-2">
   <span class="dashboard-section-heading text-emerald-700">Dashboard Widgets</span>
   <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Analysis Canvas</span>
+  <span class="ml-1 text-xs text-slate-400">Drag ⠿ to reorder</span>
 </div>
+
+<style>
+.widget-card { transition: box-shadow 0.15s; }
+.widget-card.drag-over { box-shadow: 0 0 0 2px #6366f1, 0 8px 24px rgba(99,102,241,0.15); }
+.widget-card[draggable=true] { cursor: grab; }
+.widget-drag-handle { cursor: grab; touch-action: none; }
+.gauge-display { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+.gauge-value-label { position: absolute; bottom: 10%; font-size: 1.5rem; font-weight: 800; color: #1e293b; }
+.gauge-meta-label { position: absolute; bottom: -4px; font-size: 0.65rem; color: #94a3b8; }
+</style>
+
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
   {% for widget in widgets %}
-  <div class="widget-card relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'sm' %}sm:col-span-1{% elif widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
+  <div class="widget-card relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm {% if widget.chart_config.layout.size == 'lg' %}sm:col-span-2{% else %}sm:col-span-1{% endif %}"
+    data-widget-id="{{ widget.id }}"
+    data-widget-size="{{ widget.chart_config.layout.size|default:'md' }}"
+    draggable="false"
+    {% if widget.chart_config.layout.height %}style="min-height:{{ widget.chart_config.layout.height }}px"{% endif %}>
+
     <!-- Card header -->
     <div class="mb-1 flex items-center justify-between gap-2">
-      <!-- Editable title -->
-      <div class="flex-1 min-w-0">
+      <!-- Drag handle + editable title -->
+      <div class="flex items-center gap-1.5 flex-1 min-w-0">
+        <span class="widget-drag-handle flex-shrink-0 cursor-grab text-slate-300 hover:text-slate-500 transition-colors select-none px-0.5" title="Drag to reorder">⠿</span>
         <h3 class="widget-title font-semibold text-slate-900 truncate cursor-pointer hover:text-indigo-600 transition-colors" title="Click to rename" data-widget-id="{{ widget.id }}">{{ widget.title }}</h3>
         <input class="widget-title-input hidden w-full rounded-md border border-indigo-400 px-2 py-0.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500" type="text" value="{{ widget.title }}" data-widget-id="{{ widget.id }}">
       </div>
       <!-- Action buttons -->
       <div class="flex items-center gap-1 shrink-0">
-        <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
-        {% if widget.widget_type != 'heading' %}
+        <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase tracking-wide">{{ widget.widget_type }}</span>
+        {% if widget.widget_type not in 'heading,text_canvas' %}
         <button
           class="edit-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
           data-widget-id="{{ widget.id }}"
@@ -241,12 +284,21 @@
           </svg>
         </button>
         {% endif %}
-        <select class="widget-size-select rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500" data-widget-id="{{ widget.id }}" title="Card size">
-          <option value="sm" {% if widget.chart_config.layout.size == 'sm' %}selected{% endif %}>S</option>
-          <option value="md" {% if widget.chart_config.layout.size == 'md' or not widget.chart_config.layout.size %}selected{% endif %}>M</option>
-          <option value="lg" {% if widget.chart_config.layout.size == 'lg' %}selected{% endif %}>L</option>
-        </select>
-        {% if widget.widget_type not in 'kpi,table,heading' %}
+
+        <!-- Width toggle button (replaces old size dropdown) -->
+        {% if widget.widget_type != 'heading' %}
+        <button
+          class="widget-width-btn flex h-7 items-center justify-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 text-slate-500 transition-colors hover:border-indigo-400 hover:text-indigo-600"
+          data-widget-id="{{ widget.id }}"
+          title="Width: {{ widget.chart_config.layout.size|default:'md'|upper }}">
+          <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4M8 15l4 4 4-4"/>
+          </svg>
+          <span class="width-label text-xs font-semibold">{{ widget.chart_config.layout.size|default:'md'|upper }}</span>
+        </button>
+        {% endif %}
+
+        {% if widget.widget_type not in 'kpi,table,heading,text_canvas' %}
         <!-- Maximize -->
         <button
           class="maximize-widget-btn flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500"
@@ -283,32 +335,40 @@
     {% if widget.widget_type == 'kpi' %}
       <!-- KPI widget -->
       <div class="mt-4 flex items-baseline gap-2">
-        <span class="text-5xl font-extrabold text-indigo-600">{{ widget.chart_config.value|default:"–" }}</span>
+        <span class="widget-kpi-value text-5xl font-extrabold text-indigo-600">{{ widget.chart_config.value|default:"–" }}</span>
         <span class="text-base text-slate-500">{{ widget.chart_config.kpi|default:"" }}</span>
       </div>
 
     {% elif widget.widget_type == 'table' %}
-      <!-- Table widget placeholder -->
-      <div class="mt-3 overflow-auto rounded-lg border border-slate-100">
+      <!-- Table widget with search + sort -->
+      <div class="widget-table-wrap mt-3">
         {% if widget.chart_config.rows %}
-        <table class="min-w-full text-xs">
-          <thead class="bg-slate-50 text-slate-600">
-            <tr>
-              {% for column in widget.chart_config.columns %}
-                <th class="px-3 py-2 text-left font-semibold">{{ column }}</th>
+        <div class="mb-2">
+          <input type="text" class="table-search-input w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 placeholder-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400" placeholder="Search rows…">
+        </div>
+        <div class="overflow-auto rounded-lg border border-slate-100 max-h-96">
+          <table class="min-w-full text-xs">
+            <thead class="sticky top-0 bg-slate-50 text-slate-600 shadow-sm">
+              <tr>
+                {% for column in widget.chart_config.columns %}
+                  <th class="px-3 py-2 text-left font-semibold whitespace-nowrap select-none" data-sort-col="{{ forloop.counter0 }}">
+                    {{ column }}
+                    <span class="sort-icon ml-0.5 text-slate-300 text-[10px]">↕</span>
+                  </th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in widget.chart_config.rows %}
+              <tr class="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+                {% for cell in row %}
+                  <td class="px-3 py-2 text-slate-700 whitespace-nowrap">{{ cell }}</td>
+                {% endfor %}
+              </tr>
               {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in widget.chart_config.rows %}
-            <tr class="border-t border-slate-100">
-              {% for cell in row %}
-                <td class="px-3 py-2 text-slate-700">{{ cell }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
         {% else %}
         <p class="p-4 text-sm text-slate-400">Table data unavailable</p>
         {% endif %}
@@ -326,15 +386,48 @@
           {{ widget.chart_config.text|default:widget.title }}
         </h2>
       </div>
+
+    {% elif widget.widget_type == 'text_canvas' %}
+      <!-- Text Canvas widget -->
+      <div class="widget-text-canvas-content mt-3 rounded-xl p-4 text-{{ widget.chart_config.text_size|default:'sm' }}
+        {% if widget.chart_config.bg_color == 'slate' %}bg-slate-50 text-slate-700
+        {% elif widget.chart_config.bg_color == 'indigo' %}bg-indigo-50 text-indigo-900
+        {% elif widget.chart_config.bg_color == 'emerald' %}bg-emerald-50 text-emerald-900
+        {% elif widget.chart_config.bg_color == 'rose' %}bg-rose-50 text-rose-900
+        {% elif widget.chart_config.bg_color == 'amber' %}bg-amber-50 text-amber-900
+        {% elif widget.chart_config.bg_color == 'yellow' %}bg-yellow-50 text-yellow-900
+        {% else %}bg-slate-50 text-slate-700{% endif %}
+        leading-relaxed whitespace-pre-wrap break-words">{{ widget.chart_config.content|default:"" }}</div>
+
+    {% elif widget.widget_type == 'gauge' %}
+      <!-- Gauge widget: doughnut half + centred label -->
+      <div class="mt-3 gauge-display widget-chart-wrap {% if not widget.chart_config.layout.height %}h-52{% endif %}"
+        data-widget-chart="{{ widget.chart_config|to_json }}"
+        data-widget-id="{{ widget.id }}"
+        {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
+        <canvas></canvas>
+        {% if widget.chart_config.gauge_meta %}
+        <div class="gauge-value-label">{{ widget.chart_config.gauge_meta.value|floatformat:0 }}</div>
+        <div class="gauge-meta-label">{{ widget.chart_config.gauge_meta.label }} (max {{ widget.chart_config.gauge_meta.max|floatformat:0 }})</div>
+        {% endif %}
+        <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
+      </div>
+
     {% else %}
-      <!-- Chart widget -->
-      <div class="mt-3 widget-chart-wrap {% if not widget.chart_config.layout.height %}{% if widget.chart_config.layout.size == 'sm' %}h-48{% elif widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}{% endif %}" data-widget-chart="{{ widget.chart_config|to_json }}" data-widget-id="{{ widget.id }}" {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
+      <!-- Standard chart widget -->
+      <div class="mt-3 widget-chart-wrap {% if not widget.chart_config.layout.height %}{% if widget.chart_config.layout.size == 'lg' %}h-80{% else %}h-60{% endif %}{% endif %}"
+        data-widget-chart="{{ widget.chart_config|to_json }}"
+        data-widget-id="{{ widget.id }}"
+        {% if widget.chart_config.layout.height %}style="height:{{ widget.chart_config.layout.height }}px"{% endif %}>
         <canvas></canvas>
         <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
       </div>
     {% endif %}
-    {% if widget.widget_type != 'heading' %}
-    <button class="widget-resize-handle absolute bottom-2 right-2 h-4 w-4 cursor-se-resize rounded-sm border border-slate-300 bg-slate-50 text-slate-400 hover:bg-slate-100" data-widget-id="{{ widget.id }}" title="Drag to resize"></button>
+
+    {% if widget.widget_type not in 'heading,text_canvas' %}
+    <button class="widget-resize-handle absolute bottom-2 right-2 h-5 w-5 cursor-se-resize rounded-md border border-slate-200 bg-slate-50 text-slate-300 hover:bg-slate-100 hover:border-slate-400 hover:text-slate-500 transition-colors flex items-center justify-center" data-widget-id="{{ widget.id }}" title="Drag to resize height">
+      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 16 16"><path d="M11 1a1 1 0 011 1v12a1 1 0 01-2 0V2a1 1 0 011-1zm-6 4a1 1 0 011 1v8a1 1 0 01-2 0V6a1 1 0 011-1zm12 4a1 1 0 011 1v4a1 1 0 01-2 0v-4a1 1 0 011-1z"/></svg>
+    </button>
     {% endif %}
   </div>
   {% endfor %}
@@ -480,14 +573,23 @@
       <div>
         <label class="mb-2 block text-sm font-semibold text-slate-700">Chart type</label>
         <div class="grid grid-cols-3 gap-2" id="cb-type-selector">
-          {% for ctype, icon, label in chart_types %}
-          <label class="cb-type-option flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-slate-200 p-2.5 text-center transition-colors hover:border-indigo-400 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50">
-            <input type="radio" name="cb_chart_type" value="{{ ctype }}" class="sr-only" {% if forloop.first %}checked{% endif %}>
+          {% for ctype, icon, label, pro_required in chart_types %}
+          <label class="cb-type-option flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-slate-200 p-2.5 text-center transition-colors hover:border-indigo-400 has-[:checked]:border-indigo-600 has-[:checked]:bg-indigo-50 relative {% if pro_required and not is_pro %}opacity-60{% endif %}">
+            <input type="radio" name="cb_chart_type" value="{{ ctype }}" class="sr-only" {% if forloop.first %}checked{% endif %} {% if pro_required and not is_pro %}disabled{% endif %}>
             <span class="text-lg">{{ icon }}</span>
             <span class="text-xs font-medium text-slate-600 leading-tight">{{ label }}</span>
+            {% if pro_required %}
+            <span class="absolute -top-1 -right-1 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-amber-900 shadow-sm">PRO</span>
+            {% endif %}
           </label>
           {% endfor %}
         </div>
+        {% if not is_pro %}
+        <p class="mt-2 text-xs text-amber-600">
+          <span class="font-semibold">PRO</span> chart types require a Pro or Enterprise plan.
+          <a href="{% url 'pricing' %}" class="underline hover:text-amber-700">Upgrade →</a>
+        </p>
+        {% endif %}
       </div>
 
       <!-- Dataset selector (shown when multiple datasets are linked) -->
@@ -660,10 +762,13 @@
   "columnsUrl": "{% url 'dashboard-get-columns' dashboard.id %}",
   "addWidgetUrl": "{% url 'dashboard-add-widget' dashboard.id %}",
   "addHeadingUrl": "{% url 'dashboard-add-heading' dashboard.id %}",
+  "addTextCanvasUrl": "{% url 'dashboard-add-text-canvas' dashboard.id %}",
+  "reorderWidgetsUrl": "{% url 'dashboard-reorder-widgets' dashboard.id %}",
   "renameDashboardUrl": "{% url 'dashboard-rename' dashboard.id %}",
   "renameWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "updateWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "resizeWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "widgetSpanBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "addDatasetUrl": "{% url 'dashboard-add-dataset' dashboard.id %}",
   "removeDatasetBaseUrl": "/dashboards/{{ dashboard.id }}/datasets/",
   "csrfToken": "{{ csrf_token }}"
@@ -676,5 +781,105 @@
   {% for pname in palette_names %}"{{ pname }}": ["#6366f1","#8b5cf6","#a78bfa","#818cf8","#4f46e5"]{% if not forloop.last %},{% endif %}{% endfor %}
 }
 </script>
+
+<!-- ── Text Canvas Builder Modal ──────────────────────────────────────────── -->
+<div id="text-canvas-overlay" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="text-canvas-modal"
+  style="display:none;position:fixed;top:4rem;left:50%;transform:translateX(-50%);z-index:50;width:100%;max-width:38rem;background:#fff;border-radius:1rem;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);"
+  role="dialog" aria-modal="true" aria-label="Add text canvas block">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+    <h3 class="text-base font-semibold text-slate-900">Add Text Canvas Block</h3>
+    <button id="close-text-canvas-btn" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button>
+  </div>
+  <div class="space-y-4 px-5 py-4">
+    <div>
+      <label for="tc-title" class="mb-1 block text-xs font-semibold text-slate-600">Block title</label>
+      <input id="tc-title" type="text" placeholder="e.g. Executive Summary"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+    </div>
+    <div>
+      <label for="tc-content" class="mb-1 block text-sm font-semibold text-slate-700">Content <span class="text-slate-400 font-normal">(plain text, up to 4000 chars)</span></label>
+      <textarea id="tc-content" rows="6" placeholder="Write your notes, summary, or insight here…"
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"></textarea>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label for="tc-bg-color" class="mb-1 block text-xs font-semibold text-slate-600">Background</label>
+        <select id="tc-bg-color" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="white" selected>White</option>
+          <option value="slate">Slate</option>
+          <option value="indigo">Indigo</option>
+          <option value="emerald">Emerald</option>
+          <option value="rose">Rose</option>
+          <option value="amber">Amber</option>
+          <option value="yellow">Yellow</option>
+        </select>
+      </div>
+      <div>
+        <label for="tc-text-size" class="mb-1 block text-xs font-semibold text-slate-600">Text size</label>
+        <select id="tc-text-size" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+          <option value="xs">XS</option>
+          <option value="sm" selected>Small</option>
+          <option value="base">Base</option>
+          <option value="lg">Large</option>
+        </select>
+      </div>
+    </div>
+    <div id="tc-error" style="display:none;" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+  </div>
+  <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+    <button id="cancel-text-canvas-btn" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+    <button id="submit-text-canvas-btn" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">Add Text Block</button>
+  </div>
+</div>
+
+<!-- ── Presentation Mode Overlay ─────────────────────────────────────────── -->
+<div id="presentation-overlay"
+  style="display:none;position:fixed;inset:0;z-index:90;background:rgba(2,6,23,0.97);flex-direction:column;"
+  role="dialog" aria-modal="true" aria-label="Presentation mode">
+
+  <!-- Header bar -->
+  <div class="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-6">
+    <div class="flex items-center gap-3">
+      <span class="text-indigo-400 font-bold text-sm uppercase tracking-widest">Present</span>
+      <span id="presentation-counter" class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-300">– / –</span>
+    </div>
+    <h2 id="presentation-widget-title" class="text-base font-semibold text-white truncate max-w-md text-center"></h2>
+    <button id="presentation-close-btn"
+      class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Chart area -->
+  <div class="relative flex-1 p-8" style="min-height:0;">
+    <canvas id="presentation-canvas" style="display:none;max-height:100%;"></canvas>
+    <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
+    <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
+    <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
+  </div>
+
+  <!-- Navigation bar -->
+  <div class="flex h-20 shrink-0 items-center justify-center gap-6 border-t border-white/10 px-6">
+    <button id="presentation-prev-btn"
+      class="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>
+    <div class="text-center">
+      <p class="text-xs text-slate-500">Use ← → arrow keys to navigate</p>
+      <p class="text-xs text-slate-600 mt-0.5">Press Esc to exit</p>
+    </div>
+    <button id="presentation-next-btn"
+      class="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+</div>
 
 {% endblock %}
