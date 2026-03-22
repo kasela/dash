@@ -1475,7 +1475,7 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
 
 
 def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict] | None:
-    """Ask AI to design an advanced dashboard layout with 3 KPIs + 8+ charts.
+    """Ask AI to design an advanced dashboard layout with 4 KPIs + 10 charts.
 
     Returns a list of widget specs or None if AI is unavailable.
     Each spec may include an 'ai_insight' field with a 1-2 sentence preview insight.
@@ -1542,17 +1542,18 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "Your dashboards are modern, dense with signal, and built for confident decision-making.\n\n"
                         "TASK: Design a comprehensive executive dashboard for the dataset profile provided.\n"
                         "Focus on decision-readiness: each widget should answer a concrete business question.\n\n"
-                        "OUTPUT: Return a JSON array of EXACTLY 11 widget specs in this strict order:\n"
-                        "  Position 1-3: THREE KPI cards (chart_type='kpi', size='sm') — pick the 3 most business-critical numeric metrics "
+                        "OUTPUT: Return a JSON array of EXACTLY 14 widget specs in this strict order:\n"
+                        "  Position 1-4: FOUR KPI cards (chart_type='kpi', size='sm') — pick the 4 most business-critical numeric metrics "
                         "  (prefer revenue/sales/profit/count; use sum as the KPI value, not average).\n"
-                        "  Position 4-11: EIGHT chart widgets with MAXIMUM variety:\n"
+                        "  Position 5-14: TEN chart widgets with MAXIMUM variety:\n"
                         "    - At least 1 'line' or 'area' for time-series trends (use a date column as dimension)\n"
                         "    - At most 1 'pie' or 'doughnut' and only when category count is low (<=6)\n"
                         "    - At least 1 'hbar' for ranked comparison (top N)\n"
                         "    - At least 1 'scatter' for correlation analysis (two numeric columns)\n"
                         "    - At least 1 'bar' for group comparison\n"
-                        "    - At least 1 'radar' or 'table' for multi-dimensional view\n"
-                        "    - The remaining 2 can be any type — choose what best reveals the data story\n"
+                        "    - At least 1 'radar' and at least 1 'table' for multi-dimensional and detailed views\n"
+                        "    - Include at least 1 chart focused on anomalies/outliers and 1 on segment performance\n"
+                        "    - The remaining charts can be any type — choose what best reveals the data story\n"
                         "    - Prefer line/hbar/bar/table over pie when data is high-cardinality or long-tail.\n\n"
                         "REQUIRED KEYS for every widget:\n"
                         "  title: concise, business-friendly title with decision framing (e.g. 'Regions Driving Margin Erosion')\n"
@@ -1563,7 +1564,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "  y_measure: exact numeric column name for scatter y-axis (null otherwise)\n"
                         "  size: 'sm' for KPIs, 'lg' for time-series/main charts, 'md' for standard charts\n"
                         "  palette: from allowed_palettes — VARY palettes across widgets, no two consecutive same\n"
-                        "  ai_insight: 1-2 sentences of specific, data-grounded insight + one action-oriented implication. "
+                        "  ai_insight: 2-3 sentences of specific, data-grounded insight + one action-oriented implication. "
                         "  Reference actual column names and what the chart will reveal (e.g. 'This chart exposes which product "
                         "  category drives the highest revenue — expect Electronics or similar high-ASP categories to dominate.')\n\n"
                         "STRICT RULES:\n"
