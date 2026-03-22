@@ -200,7 +200,7 @@ def admin_users(request):
 
     # Annotate with dashboard / dataset counts
     qs = qs.annotate(
-        dashboard_count=Count("profile__user__workspaces__dashboards", distinct=True),
+        dashboard_count=Count("owned_workspaces__dashboards", distinct=True),
     )
 
     context = {
