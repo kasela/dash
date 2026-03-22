@@ -1070,6 +1070,154 @@ def _get_ai_client():
     return client, model
 
 
+def ai_generate_executive_summary(
+    df: pd.DataFrame,
+    profile: "ProfileSummary",
+    dashboard_title: str = "",
+    widget_titles: list | None = None,
+) -> dict:
+    """Generate a structured executive summary for the dashboard and PDF export.
+
+    Returns a dict with keys:
+      headline     – 1 punchy sentence capturing the main story
+      findings     – list of 3-5 bullet strings (quantified insights)
+      opportunities – list of 2-3 recommendation strings
+      data_quality  – short string about data health
+      generated_at  – ISO timestamp string
+    """
+    import json as _json
+    import re as _re
+    from datetime import datetime
+
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    fallback = {
+        "headline": f"{dashboard_title or 'Dashboard'} — Data Summary",
+        "findings": [],
+        "opportunities": [],
+        "data_quality": (
+            f"{profile.total_rows:,} rows, {profile.total_columns} columns. "
+            f"{profile.duplicate_rows} duplicate rows, {profile.missing_cells} missing cells."
+        ),
+        "generated_at": generated_at,
+    }
+
+    client, model = _get_ai_client()
+    if client is None:
+        # Heuristic fallback findings
+        findings = []
+        for m in profile.suggested_measures[:3]:
+            try:
+                total = df[m].sum()
+                avg = df[m].mean()
+                findings.append(f"{m}: total {total:,.0f} · avg {avg:,.1f} per record")
+            except Exception:
+                pass
+        for d in profile.suggested_dimensions[:2]:
+            try:
+                top = df[d].value_counts().index[0]
+                count = int(df[d].value_counts().values[0])
+                findings.append(f"Most common {d}: '{top}' ({count:,} records)")
+            except Exception:
+                pass
+        fallback["findings"] = findings
+        return fallback
+
+    # Rich statistical context
+    stats: dict = {}
+    for m in profile.suggested_measures[:8]:
+        try:
+            col = df[m].dropna()
+            stats[m] = {
+                "sum": round(float(col.sum()), 2),
+                "mean": round(float(col.mean()), 2),
+                "median": round(float(col.median()), 2),
+                "min": round(float(col.min()), 2),
+                "max": round(float(col.max()), 2),
+                "std": round(float(col.std()), 2),
+            }
+        except Exception:
+            pass
+
+    top_values: dict = {}
+    for d in profile.suggested_dimensions[:5]:
+        try:
+            vc = df[d].value_counts(dropna=True)
+            top_values[d] = [
+                {"value": str(idx), "count": int(cnt)}
+                for idx, cnt in zip(vc.index[:5], vc.values[:5])
+            ]
+        except Exception:
+            pass
+
+    date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+    date_range: dict = {}
+    if date_cols:
+        try:
+            tmp = pd.to_datetime(df[date_cols[0]], errors="coerce").dropna()
+            if len(tmp) > 0:
+                date_range = {
+                    "column": date_cols[0],
+                    "from": str(tmp.min().date()),
+                    "to": str(tmp.max().date()),
+                    "periods": int(tmp.dt.to_period("M").nunique()),
+                }
+        except Exception:
+            pass
+
+    payload = {
+        "dashboard_title": dashboard_title,
+        "widget_titles": (widget_titles or [])[:15],
+        "total_rows": profile.total_rows,
+        "total_columns": profile.total_columns,
+        "duplicate_rows": profile.duplicate_rows,
+        "missing_cells": profile.missing_cells,
+        "numeric_columns": profile.numeric_columns[:10],
+        "categorical_columns": profile.categorical_columns[:10],
+        "numeric_stats": stats,
+        "top_category_values": top_values,
+        "date_range": date_range,
+    }
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior business intelligence consultant writing the executive summary for a management dashboard report.\n\n"
+                        "TASK: Produce a concise, insight-rich executive summary suitable for a PDF cover page.\n\n"
+                        "RULES:\n"
+                        "- headline: ONE sentence (max 20 words) capturing the main story with a specific number.\n"
+                        "- findings: 4-5 bullet strings. Each must cite specific numbers from the stats provided. Be concrete.\n"
+                        "- opportunities: 2-3 actionable recommendation strings (start with a verb like 'Investigate', 'Monitor', 'Prioritise').\n"
+                        "- data_quality: ONE short sentence about data health (rows, duplicates, missing values).\n"
+                        "- No generic observations. No markdown. Just the JSON object.\n\n"
+                        "OUTPUT FORMAT — return ONLY valid JSON:\n"
+                        '{"headline":"...","findings":["...","...","..."],"opportunities":["...","..."],"data_quality":"..."}'
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.15,
+            stream=False,
+            timeout=20,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
+        match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        parsed = _json.loads(match.group(0) if match else content)
+        return {
+            "headline": str(parsed.get("headline", fallback["headline"])).strip()[:300],
+            "findings": [str(f).strip() for f in (parsed.get("findings") or []) if str(f).strip()][:6],
+            "opportunities": [str(o).strip() for o in (parsed.get("opportunities") or []) if str(o).strip()][:4],
+            "data_quality": str(parsed.get("data_quality", fallback["data_quality"])).strip()[:400],
+            "generated_at": generated_at,
+        }
+    except Exception:
+        return fallback
+
+
 def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Clean a DataFrame using AI guidance when available, falling back to heuristics.
 
@@ -1362,16 +1510,15 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
 
 
 def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) -> str:
-    """Generate AI-powered analysis text for a chart. Returns plain text insight."""
+    """Generate AI-powered analysis text for a chart. Returns (insight_text, is_ai_powered)."""
     import json as _json
 
     client, model = _get_ai_client()
     if client is None:
         return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
-    import statistics as _stats
     numeric_vals = []
-    for v in values[:30]:
+    for v in values[:50]:
         try:
             numeric_vals.append(float(v))
         except (TypeError, ValueError):
@@ -1381,27 +1528,43 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
     if numeric_vals:
         total = sum(numeric_vals)
         avg = total / len(numeric_vals)
+        sorted_idx = sorted(range(len(numeric_vals)), key=lambda x: -numeric_vals[x])
         stat_context = {
             "total": round(total, 2),
             "average": round(avg, 2),
             "max": round(max(numeric_vals), 2),
             "min": round(min(numeric_vals), 2),
-            "max_label": labels[numeric_vals.index(max(numeric_vals))] if labels else "",
-            "top_3_labels": [labels[i] for i in sorted(range(len(numeric_vals)), key=lambda x: -numeric_vals[x])[:3]] if labels else [],
+            "max_label": labels[sorted_idx[0]] if labels and sorted_idx else "",
+            "min_label": labels[sorted_idx[-1]] if labels and sorted_idx else "",
+            "top_3_labels": [labels[i] for i in sorted_idx[:3] if i < len(labels)],
+            "bottom_3_labels": [labels[i] for i in sorted_idx[-3:] if i < len(labels)],
             "data_points": len(numeric_vals),
+            "spread_ratio": round(max(numeric_vals) / max(min(numeric_vals), 0.001), 1) if numeric_vals else 0,
         }
         if len(numeric_vals) >= 2:
             stat_context["trend_direction"] = "upward" if numeric_vals[-1] > numeric_vals[0] else "downward"
             pct_change = round((numeric_vals[-1] - numeric_vals[0]) / abs(numeric_vals[0]) * 100, 1) if numeric_vals[0] != 0 else 0
             stat_context["start_to_end_pct_change"] = pct_change
-        if total > 0 and chart_type in ("pie", "doughnut"):
+            # Detect volatility
+            if len(numeric_vals) >= 4:
+                import statistics as _st
+                try:
+                    cv = _st.stdev(numeric_vals) / avg * 100 if avg != 0 else 0
+                    stat_context["coefficient_of_variation_pct"] = round(cv, 1)
+                except Exception:
+                    pass
+        if total > 0 and chart_type in ("pie", "doughnut", "polararea"):
             stat_context["top_pct_of_total"] = round(max(numeric_vals) / total * 100, 1)
+            if len(numeric_vals) >= 2:
+                stat_context["top2_combined_pct"] = round(sum(sorted(numeric_vals, reverse=True)[:2]) / total * 100, 1)
+        # Above/below average count
+        stat_context["above_avg_count"] = sum(1 for v in numeric_vals if v > avg)
 
     payload = {
         "chart_type": chart_type,
         "title": title,
-        "labels": labels[:30],
-        "values": values[:30],
+        "labels": labels[:40],
+        "values": [round(float(v), 2) if isinstance(v, (int, float)) else v for v in values[:40]],
         "statistics": stat_context,
     }
     try:
@@ -1411,24 +1574,26 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
                 {
                     "role": "system",
                     "content": (
-                        "You are a sharp business data analyst writing executive-level chart commentary.\n\n"
-                        "TASK: Write 2-3 punchy, specific insights for the chart data provided. "
-                        "Use the pre-computed statistics to be numerically precise — cite specific values, labels, and percentages.\n\n"
+                        "You are a sharp business data analyst writing executive-level chart commentary for a professional dashboard report.\n\n"
+                        "TASK: Write 2-3 punchy, numerically specific insights for the chart. "
+                        "Use pre-computed statistics to cite precise values, labels, and percentages.\n\n"
                         "RULES:\n"
-                        "- Write in plain text, no markdown, no bullet points, no headers.\n"
-                        "- Each sentence must contain at least one specific number or label from the data.\n"
-                        "- For bar/hbar: highlight top performer, bottom performer, and spread.\n"
-                        "- For line/area: identify trend direction, peak period, and magnitude of change.\n"
-                        "- For pie/doughnut: state the dominant segment's share and compare top 2.\n"
-                        "- For scatter: comment on correlation direction and any clusters.\n"
-                        "- Keep total response under 100 words. Be direct and confident."
+                        "- Plain text only — no markdown, no bullet points, no headers.\n"
+                        "- Every sentence must contain at least one specific number or label from the data.\n"
+                        "- bar/hbar: highlight top performer, gap between top and bottom, count above average.\n"
+                        "- line/area: trend direction, peak period, magnitude of change, any reversal points.\n"
+                        "- pie/doughnut/polararea: dominant segment share, top-2 combined share, smallest segment.\n"
+                        "- scatter/bubble: correlation direction, any visible cluster or outlier.\n"
+                        "- kpi: compare to average, contextualise the magnitude.\n"
+                        "- End with ONE forward-looking sentence: what to watch or action to take.\n"
+                        "- Keep total under 120 words. Be direct, confident, and specific."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
-            temperature=0.2,
+            temperature=0.15,
             stream=False,
-            timeout=12,
+            timeout=15,
         )
         return ((response.choices[0].message.content) or "").strip(), True
     except Exception:
@@ -1640,18 +1805,21 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "- If 2+ numeric: ratios/correlation candidates\n"
                         "- If date exists: growth/trend KPIs\n"
                         "- If category + numeric: top/bottom performers\n\n"
-                        "Chart logic hints:\n"
-                        "- time -> line/area\n"
-                        "- category+numeric -> bar/hbar\n"
-                        "- relationship of two numerics -> scatter/bubble\n"
-                        "- part-to-whole with low cardinality -> pie/doughnut/polararea\n"
-                        "- multi-dimension -> mixed/radar/table\n"
-                        "- stage flow -> funnel; cumulative deltas -> waterfall\n\n"
-                        "Boosters:\n"
-                        "- Avoid generic insights.\n"
-                        "- Quantify findings.\n"
-                        "- Prioritize business relevance and decision clarity.\n"
-                        "- Prefer advanced charts only when supported by columns.\n\n"
+                        "CHART SELECTION RULES:\n"
+                        "- Date column present → ALWAYS include a line or area chart for trend over time.\n"
+                        "- Category (cardinality 3-15) + numeric → bar chart.\n"
+                        "- Category (cardinality > 15) + numeric → hbar with top 10.\n"
+                        "- Part-to-whole (cardinality ≤ 8) → doughnut or polararea.\n"
+                        "- Two numerics → scatter.\n"
+                        "- Multiple categories + one numeric → radar for profile comparison.\n"
+                        "- Stage progression → funnel; cumulative delta → waterfall.\n"
+                        "- Mixed multi-series → mixed (bar + line combo).\n\n"
+                        "SIZE RULES: kpi='sm', trend line/area='lg', bar/hbar='md', pie/doughnut='md', table='lg'.\n\n"
+                        "PALETTE RULES: indigo=KPIs, emerald=growth/revenue, rose=losses/risk, ocean/blue=time-series, amber/vibrant=distribution.\n\n"
+                        "INSIGHTS RULES:\n"
+                        "- Each insight must cite a specific number from sample_stats or cardinality.\n"
+                        "- Be concrete and business-relevant. Avoid generic statements.\n"
+                        "- Prioritize decision clarity: what should the reader DO with this data?\n\n"
                         "Return ONLY valid JSON object with keys:\n"
                         "schema, kpis, charts, tables, insights.\n"
                         "Required shape:\n"
