@@ -997,7 +997,7 @@
       });
   }
 
-  // ── Dynamic Drag Resize (height) ─────────────────────────────────────────
+  // ── Dynamic Drag Resize (height + width) ──────────────────────────────────
 
   function initWidgetDragResize() {
     var cfg = getApiConfig();
@@ -1006,31 +1006,49 @@
     document.querySelectorAll('.widget-resize-handle').forEach(function (handle) {
       var widgetId = handle.dataset.widgetId;
 
-      function startResize(startY) {
+      function startResize(startX, startY) {
         var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
         if (!card) return;
         var wrap = card.querySelector('.widget-chart-wrap');
         var startHeight = wrap ? wrap.offsetHeight : (card.offsetHeight || 260);
+        var startSize = card.dataset.widgetSize || 'md';
+        var pendingWidth = null;
         card.style.userSelect = 'none';
 
         // Live resize indicator
         var indicator = document.createElement('div');
-        indicator.className = 'resize-indicator';
-        indicator.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#a78bfa);border-radius:0 0 1rem 1rem;opacity:0.8;pointer-events:none;z-index:5;transition:none;';
+        indicator.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#a78bfa);border-radius:0 0 1rem 1rem;opacity:0.8;pointer-events:none;z-index:5;';
         card.appendChild(indicator);
 
-        function doResize(currentY) {
-          var next = Math.max(140, Math.min(1200, startHeight + (currentY - startY)));
-          if (wrap) wrap.style.height = next + 'px';
-          card.style.minHeight = (next + 60) + 'px';
-          // Update chart if exists
+        function doResize(currentX, currentY) {
+          // Height resize (Y axis)
+          var nextH = Math.max(140, Math.min(1200, startHeight + (currentY - startY)));
+          if (wrap) wrap.style.height = nextH + 'px';
+          card.style.minHeight = (nextH + 60) + 'px';
+
+          // Width resize (X axis) – snap between md and lg
+          var dx = currentX - startX;
+          if (dx > 80 && startSize !== 'lg' && pendingWidth !== 'lg') {
+            pendingWidth = 'lg';
+            card.classList.remove('sm:col-span-1', 'sm:col-span-2');
+            card.classList.add('sm:col-span-2');
+            var wl = card.querySelector('.width-label');
+            if (wl) wl.textContent = 'LG';
+          } else if (dx < -80 && startSize === 'lg' && pendingWidth !== 'md') {
+            pendingWidth = 'md';
+            card.classList.remove('sm:col-span-1', 'sm:col-span-2');
+            card.classList.add('sm:col-span-1');
+            var wl2 = card.querySelector('.width-label');
+            if (wl2) wl2.textContent = 'MD';
+          }
+
           var entry = widgetCharts[widgetId];
           if (entry && entry.chart) {
             try { entry.chart.resize(); } catch (_) {}
           }
         }
 
-        function endResize(finalY) {
+        function endResize(finalX, finalY) {
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
           document.removeEventListener('touchmove', onTouchMove);
@@ -1038,12 +1056,13 @@
           card.style.userSelect = '';
           if (indicator.parentElement) indicator.remove();
           var finalHeight = Math.max(140, Math.min(1200, startHeight + (finalY - startY)));
-          var currentSize = card.dataset.widgetSize || 'md';
+          var finalSize = pendingWidth || startSize;
+          if (pendingWidth) card.dataset.widgetSize = pendingWidth;
           fetch(cfg.resizeWidgetBaseUrl + widgetId + '/resize/', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-            body: JSON.stringify({ size: currentSize, height: finalHeight }),
+            body: JSON.stringify({ size: finalSize, height: finalHeight }),
           })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -1052,12 +1071,12 @@
             .catch(function () {});
         }
 
-        function onMouseMove(e) { doResize(e.clientY); }
-        function onMouseUp(e) { endResize(e.clientY); }
-        function onTouchMove(e) { if (e.touches[0]) doResize(e.touches[0].clientY); }
+        function onMouseMove(e) { doResize(e.clientX, e.clientY); }
+        function onMouseUp(e) { endResize(e.clientX, e.clientY); }
+        function onTouchMove(e) { if (e.touches[0]) doResize(e.touches[0].clientX, e.touches[0].clientY); }
         function onTouchEnd(e) {
-          var y = e.changedTouches[0] ? e.changedTouches[0].clientY : startY;
-          endResize(y);
+          var t = e.changedTouches[0];
+          endResize(t ? t.clientX : startX, t ? t.clientY : startY);
         }
 
         document.addEventListener('mousemove', onMouseMove);
@@ -1068,11 +1087,11 @@
 
       handle.addEventListener('mousedown', function (e) {
         e.preventDefault();
-        startResize(e.clientY);
+        startResize(e.clientX, e.clientY);
       });
 
       handle.addEventListener('touchstart', function (e) {
-        if (e.touches[0]) startResize(e.touches[0].clientY);
+        if (e.touches[0]) startResize(e.touches[0].clientX, e.touches[0].clientY);
       }, { passive: true });
     });
   }
@@ -1198,6 +1217,122 @@
     });
   }
 
+  // ── Inline Insert Zones (type anywhere / add sections) ────────────────────
+
+  function initInsertZones() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    var grid = document.getElementById('widgets-grid');
+    if (!grid) return;
+
+    var activePanel = null;
+
+    function closePanel() {
+      if (activePanel && activePanel.parentElement) activePanel.remove();
+      activePanel = null;
+    }
+
+    function createZone(afterWidgetId) {
+      var zone = document.createElement('div');
+      zone.className = 'insert-zone col-span-full group flex items-center py-1 cursor-default';
+      zone.dataset.afterWidgetId = afterWidgetId || '0';
+      zone.innerHTML =
+        '<div class="flex-1 h-px bg-slate-100 group-hover:bg-indigo-100 transition-colors"></div>' +
+        '<button class="insert-zone-btn mx-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-400 hover:border-indigo-400 hover:text-indigo-600 shadow-sm">' +
+        '<span class="text-sm leading-none font-bold">+</span><span>Add section</span></button>' +
+        '<div class="flex-1 h-px bg-slate-100 group-hover:bg-indigo-100 transition-colors"></div>';
+
+      zone.querySelector('.insert-zone-btn').addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (activePanel) { closePanel(); return; }
+        openQuickPanel(zone, afterWidgetId || '0');
+      });
+      return zone;
+    }
+
+    function openQuickPanel(zone, afterWidgetId) {
+      closePanel();
+      var panel = document.createElement('div');
+      panel.className = 'insert-panel col-span-full rounded-xl border border-indigo-200 bg-white shadow-md p-3';
+      panel.innerHTML =
+        '<div class="flex items-center gap-2">' +
+        '<input id="qa-input" type="text" placeholder="Type section name… (press Enter to add)" autocomplete="off"' +
+        ' class="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400">' +
+        '<button id="qa-section-btn" class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors">Section</button>' +
+        '<button id="qa-divider-btn" class="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors">Divider</button>' +
+        '<button id="qa-cancel-btn" class="shrink-0 rounded-md px-1.5 py-1 text-slate-300 hover:text-slate-500 text-sm">✕</button>' +
+        '</div>';
+
+      zone.after(panel);
+      activePanel = panel;
+
+      var input = panel.querySelector('#qa-input');
+      setTimeout(function () { input.focus(); }, 10);
+
+      function submit(type) {
+        var text = input.value.trim();
+        if (type === 'section' && !text) {
+          input.classList.add('border-red-400');
+          setTimeout(function () { input.classList.remove('border-red-400'); }, 800);
+          return;
+        }
+        var url = type === 'section' ? cfg.addHeadingUrl : cfg.addDividerUrl;
+        var payload = type === 'section'
+          ? { text: text, font_size: '2xl', color: 'slate', font_family: 'inter', align: 'left', after_widget_id: afterWidgetId }
+          : { label: text, after_widget_id: afterWidgetId };
+        fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify(payload),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.success) {
+              showToast(type === 'section' ? 'Section added' : 'Divider added', 'success');
+              closePanel();
+              setTimeout(function () { window.location.reload(); }, 300);
+            } else {
+              showToast(data.error || 'Failed to add', 'error');
+            }
+          })
+          .catch(function () { showToast('Network error', 'error'); });
+      }
+
+      panel.querySelector('#qa-section-btn').addEventListener('click', function () { submit('section'); });
+      panel.querySelector('#qa-divider-btn').addEventListener('click', function () { submit('divider'); });
+      panel.querySelector('#qa-cancel-btn').addEventListener('click', closePanel);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submit('section'); }
+        if (e.key === 'Escape') closePanel();
+      });
+
+      // Close when clicking outside
+      setTimeout(function () {
+        document.addEventListener('click', function onDocClick(e) {
+          if (!panel.contains(e.target) && !zone.contains(e.target)) {
+            closePanel();
+            document.removeEventListener('click', onDocClick);
+          }
+        });
+      }, 50);
+    }
+
+    // Insert zones between all widget cards
+    var cards = Array.from(grid.querySelectorAll('.widget-card'));
+    // Zone at top (before first widget)
+    if (cards.length > 0) {
+      grid.insertBefore(createZone(null), cards[0]);
+    } else {
+      grid.appendChild(createZone(null));
+    }
+    // Zone after each card
+    cards.forEach(function (card) {
+      card.after(createZone(card.dataset.widgetId));
+    });
+  }
+
   // ── Presentation Mode ────────────────────────────────────────────────────
 
   var presentationChart = null;
@@ -1220,9 +1355,30 @@
     if (!openBtn || !overlay) return;
 
     function buildWidgetList() {
-      presentationWidgets = Array.from(document.querySelectorAll('.widget-card')).map(function (card) {
+      // Exclude divider widgets from presentation (they're visual separators only)
+      presentationWidgets = Array.from(document.querySelectorAll('.widget-card')).filter(function (card) {
+        return card.dataset.widgetType !== 'divider';
+      }).map(function (card) {
         return card.dataset.widgetId;
       }).filter(Boolean);
+    }
+
+    function clearPresentationAreas() {
+      if (presentationChart) {
+        try { presentationChart.destroy(); } catch (_) {}
+        presentationChart = null;
+      }
+      if (canvas) {
+        canvas.style.display = 'none';
+        // Clear canvas context to avoid Chart.js reuse issues
+        try {
+          var ctx = canvas.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        } catch (_) {}
+      }
+      if (tableWrap) { tableWrap.style.display = 'none'; tableWrap.innerHTML = ''; }
+      if (kpiWrap) { kpiWrap.style.display = 'none'; kpiWrap.innerHTML = ''; }
+      if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; }
     }
 
     function renderSlide(index) {
@@ -1243,45 +1399,67 @@
       }
       if (titleEl) titleEl.textContent = titleText;
 
-      // Destroy previous chart
-      if (presentationChart) { try { presentationChart.destroy(); } catch (_) {} presentationChart = null; }
-      if (canvas) canvas.style.display = 'none';
-      if (tableWrap) { tableWrap.style.display = 'none'; tableWrap.innerHTML = ''; }
-      if (kpiWrap) { kpiWrap.style.display = 'none'; kpiWrap.innerHTML = ''; }
-      if (textWrap) { textWrap.style.display = 'none'; textWrap.innerHTML = ''; }
+      clearPresentationAreas();
 
+      // Chart widget
       var entry = widgetCharts[widgetId];
       if (entry && entry.config && canvas) {
         canvas.style.display = 'block';
-        var cfg = JSON.parse(JSON.stringify(entry.config));
-        if (!cfg.options) cfg.options = {};
-        cfg.options.responsive = true;
-        cfg.options.maintainAspectRatio = false;
-        cfg.options.animation = { duration: 400, easing: 'easeInOutQuart' };
-        try { presentationChart = new Chart(canvas, cfg); } catch (_) {}
+        // Deep clone config to avoid mutation
+        var slideCfg;
+        try { slideCfg = JSON.parse(JSON.stringify(entry.config)); } catch (_) { slideCfg = entry.config; }
+        if (!slideCfg.options) slideCfg.options = {};
+        slideCfg.options.responsive = true;
+        slideCfg.options.maintainAspectRatio = false;
+        slideCfg.options.animation = { duration: 400, easing: 'easeInOutQuart' };
+        // Use requestAnimationFrame to ensure canvas is ready
+        requestAnimationFrame(function () {
+          try { presentationChart = new Chart(canvas, slideCfg); } catch (e) {
+            console.warn('DashAI: presentation chart error', e);
+            canvas.style.display = 'none';
+            if (textWrap) {
+              textWrap.style.display = 'flex';
+              textWrap.innerHTML = '<p style="color:#94a3b8;font-size:0.9rem;">Unable to render chart</p>';
+            }
+          }
+        });
         return;
       }
 
-      // KPI or table widget
-      if (card) {
-        var kpiEl = card.querySelector('.widget-kpi-value');
-        if (kpiEl && kpiWrap) {
-          kpiWrap.style.display = 'flex';
-          kpiWrap.innerHTML = kpiEl.parentElement.innerHTML;
-          return;
-        }
-        var tbl = card.querySelector('table');
-        if (tbl && tableWrap) {
-          tableWrap.style.display = 'block';
-          tableWrap.innerHTML = tbl.parentElement.innerHTML;
-          return;
-        }
-        var textContent = card.querySelector('.widget-text-canvas-content');
-        if (textContent && textWrap) {
-          textWrap.style.display = 'block';
-          textWrap.innerHTML = textContent.innerHTML;
-          return;
-        }
+      if (!card) return;
+
+      // KPI widget
+      var kpiEl = card.querySelector('.widget-kpi-value');
+      if (kpiEl && kpiWrap) {
+        kpiWrap.style.display = 'flex';
+        kpiWrap.innerHTML = kpiEl.parentElement.innerHTML;
+        return;
+      }
+
+      // Table widget
+      var tbl = card.querySelector('table');
+      if (tbl && tableWrap) {
+        tableWrap.style.display = 'block';
+        tableWrap.innerHTML = tbl.parentElement.innerHTML;
+        return;
+      }
+
+      // Text canvas widget
+      var textContent = card.querySelector('.widget-text-canvas-content');
+      if (textContent && textWrap) {
+        textWrap.style.display = 'block';
+        textWrap.innerHTML = textContent.innerHTML;
+        return;
+      }
+
+      // Heading widget – show text prominently
+      var headingEl = card.querySelector('.widget-heading-display');
+      if (headingEl && textWrap) {
+        textWrap.style.display = 'flex';
+        textWrap.style.alignItems = 'center';
+        textWrap.style.justifyContent = 'center';
+        textWrap.innerHTML = '<div style="font-size:2.5rem;font-weight:800;color:#e2e8f0;text-align:center;">' + headingEl.textContent + '</div>';
+        return;
       }
     }
 
@@ -1781,6 +1959,7 @@
     initPresentationMode();
     initTextCanvasBuilder();
     initTableInteractions();
+    initInsertZones();
   });
 
 })();

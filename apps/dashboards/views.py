@@ -970,7 +970,7 @@ def dashboard_resize_widget(request: HttpRequest, dashboard_id: int, widget_id: 
             height = int(raw_height)
         except (TypeError, ValueError):
             return JsonResponse({"error": "Invalid height"}, status=400)
-        if height < 180 or height > 900:
+        if height < 100 or height > 1200:
             return JsonResponse({"error": "Height out of range"}, status=400)
     cfg = widget.chart_config or {}
     layout = cfg.get("layout", {})
@@ -1104,6 +1104,38 @@ def dashboard_add_text_canvas(request: HttpRequest, dashboard_id: int) -> JsonRe
         title=title,
         widget_type="text_canvas",
         position=max_pos + 1,
+        chart_config=config,
+    )
+    return JsonResponse({"success": True, "widget_id": widget.id})
+
+
+@login_required
+def dashboard_add_divider(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Create a visual divider/separator widget between sections."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    label = str(data.get("label", "")).strip()[:100]
+    after_widget_id = data.get("after_widget_id")
+    insert_pos = 1
+    if after_widget_id not in (None, "", 0, "0"):
+        try:
+            after_id = int(after_widget_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid after_widget_id"}, status=400)
+        after_widget = get_object_or_404(DashboardWidget, id=after_id, dashboard=dashboard)
+        insert_pos = after_widget.position + 1
+    dashboard.widgets.filter(position__gte=insert_pos).update(position=models.F("position") + 1)
+    config = {"label": label, "layout": {"size": "lg"}}
+    widget = DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title=label or "—",
+        widget_type="divider",
+        position=insert_pos,
         chart_config=config,
     )
     return JsonResponse({"success": True, "widget_id": widget.id})
