@@ -54,6 +54,12 @@
 </div>
 {% endif %}
 
+{% if transform_note %}
+<div class="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-3 text-sm font-medium text-indigo-800 shadow-sm">
+  ✓ {{ transform_note }} Saved as a new version.
+</div>
+{% endif %}
+
 <!-- ── File summary card ─────────────────────────────────────────────────── -->
 <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
   <div class="flex flex-wrap items-start justify-between gap-4">
@@ -97,7 +103,7 @@
         {% csrf_token %}
         <button type="submit" class="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-px">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-          Create dashboard
+          Create AI-Named Dashboard
         </button>
       </form>
     {% else %}
@@ -305,12 +311,82 @@
 </div>
 {% endif %}
 
+<!-- ── Data transform studio ───────────────────────────────────────────── -->
+{% if dataset_version %}
+<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="mb-4">
+    <h3 class="text-sm font-bold text-slate-900">Prepare Data Before AI Charts</h3>
+    <p class="mt-1 text-xs text-slate-500">Promote a row to header, set column data types, or create derived columns (sum, multiply, left, mid, right).</p>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-3">
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="promote_header">
+      <p class="text-xs font-semibold text-slate-700">Promote Row as Header</p>
+      <input type="number" name="header_row_index" min="0" value="0"
+        class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+      <button type="submit" class="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-white hover:bg-slate-900">Apply</button>
+    </form>
+
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="set_type">
+      <p class="text-xs font-semibold text-slate-700">Identify Column Type</p>
+      <select name="column_name" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <select name="target_type" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <option value="text">Text</option>
+        <option value="date">Date</option>
+        <option value="number">Number</option>
+        <option value="currency">Currency</option>
+      </select>
+      <button type="submit" class="mt-2 w-full rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">Set Type</button>
+    </form>
+
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_column">
+      <p class="text-xs font-semibold text-slate-700">Add New Column</p>
+      <input type="text" name="new_column_name" placeholder="new_column"
+        class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" required>
+      <select name="operation" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <option value="sum">Sum</option>
+        <option value="multiply">Multiply</option>
+        <option value="left">Left</option>
+        <option value="mid">Mid</option>
+        <option value="right">Right</option>
+      </select>
+      <select name="column_a" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <select name="column_b" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        <input type="number" name="start" value="0" min="0" placeholder="start" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <input type="number" name="length" value="3" min="0" placeholder="length" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+      </div>
+      <button type="submit" class="mt-2 w-full rounded-lg bg-emerald-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Create Column</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <!-- ── Data preview table with row selection ─────────────────────────────── -->
 <div class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden" id="preview-table-card">
   <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
     <div class="flex items-center gap-3">
       <h3 class="text-sm font-bold text-slate-900">Data preview</h3>
       <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">First {{ rows|length }} rows</span>
+      <span class="hidden sm:inline rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-medium text-indigo-700">Right-click rows/headers for quick actions</span>
     </div>
     {% if dataset_version %}
     <div class="flex items-center gap-2">
@@ -365,13 +441,13 @@
           </th>
           {% endif %}
           {% for header in headers %}
-            <th class="whitespace-nowrap border-b border-slate-200 px-4 py-2.5 text-left text-xs font-semibold text-slate-700">{{ header }}</th>
+            <th data-col-name="{{ header }}" class="preview-header-cell whitespace-nowrap border-b border-slate-200 px-4 py-2.5 text-left text-xs font-semibold text-slate-700">{{ header }}</th>
           {% endfor %}
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100" id="preview-tbody">
         {% for row in rows %}
-          <tr class="hover:bg-slate-50 transition-colors cursor-pointer" data-row-index="{{ forloop.counter0 }}" onclick="{% if dataset_version %}toggleRowSelection(this){% endif %}">
+          <tr class="preview-row hover:bg-slate-50 transition-colors cursor-pointer" data-row-index="{{ forloop.counter0 }}" onclick="{% if dataset_version %}toggleRowSelection(this){% endif %}">
             {% if dataset_version %}
             <td class="px-3 py-2" onclick="event.stopPropagation(); toggleRowSelection(this.closest('tr'))">
               <input type="checkbox" class="row-checkbox h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer" data-index="{{ forloop.counter0 }}" />
@@ -389,9 +465,180 @@
   </div>
 </div>
 
+{% if dataset_version %}
+<!-- Context menu -->
+<div id="data-context-menu" class="hidden fixed z-[120] min-w-[220px] rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+  <button id="ctx-promote-header-btn" class="hidden w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100">
+    Promote This Row as Header
+  </button>
+  <div id="ctx-type-group" class="hidden">
+    <p class="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Set Data Type</p>
+    <button data-type="text" class="ctx-set-type-btn w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100">Text</button>
+    <button data-type="date" class="ctx-set-type-btn w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100">Date</button>
+    <button data-type="number" class="ctx-set-type-btn w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100">Number</button>
+    <button data-type="currency" class="ctx-set-type-btn w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100">Currency</button>
+  </div>
+  <button id="ctx-add-column-btn" class="hidden mt-1 w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+    Add New Column…
+  </button>
+</div>
+
+<!-- Add column modal -->
+<div id="add-column-overlay" class="hidden fixed inset-0 z-[120] bg-slate-900/50"></div>
+<div id="add-column-modal" class="hidden fixed left-1/2 top-20 z-[130] w-full max-w-md -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+    <h4 class="text-sm font-bold text-slate-900">Add Derived Column</h4>
+    <button type="button" id="close-add-column-modal" class="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100">✕</button>
+  </div>
+  <form id="ctx-add-column-form" class="space-y-3 px-5 py-4">
+    <input type="text" name="new_column_name" required placeholder="e.g. total_sales"
+      class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+    <select name="operation" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      <option value="sum">Sum</option>
+      <option value="multiply">Multiply</option>
+      <option value="left">Left</option>
+      <option value="mid">Mid</option>
+      <option value="right">Right</option>
+    </select>
+    <select name="column_a" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+    </select>
+    <select name="column_b" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+    </select>
+    <div class="grid grid-cols-2 gap-2">
+      <input type="number" name="start" min="0" value="0" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="start">
+      <input type="number" name="length" min="0" value="3" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="length">
+    </div>
+    <div class="flex justify-end gap-2 pt-1">
+      <button type="button" id="cancel-add-column-modal" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
+      <button type="submit" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">Create</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <script>
 (function () {
   var selectedIndices = new Set();
+  var transformUrl = "{% if dataset_version %}{% url 'dataset-transform-version' dataset_version.id %}{% endif %}";
+  var ctxMenu = document.getElementById('data-context-menu');
+  var activeRowIndex = null;
+  var activeColumn = null;
+
+  function csrfToken() {
+    var input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    return input ? input.value : '';
+  }
+
+  function postTransform(values) {
+    if (!transformUrl) return;
+    values.csrfmiddlewaretoken = csrfToken();
+    htmx.ajax('POST', transformUrl, {
+      target: '#upload-result',
+      swap: 'innerHTML',
+      values: values
+    });
+  }
+
+  function hideContextMenu() {
+    if (ctxMenu) ctxMenu.classList.add('hidden');
+  }
+
+  function openAddColumnModal(defaultColumn) {
+    var overlay = document.getElementById('add-column-overlay');
+    var modal = document.getElementById('add-column-modal');
+    var form = document.getElementById('ctx-add-column-form');
+    if (!overlay || !modal || !form) return;
+    if (defaultColumn && form.column_a) form.column_a.value = defaultColumn;
+    if (defaultColumn && form.column_b) form.column_b.value = defaultColumn;
+    overlay.classList.remove('hidden');
+    modal.classList.remove('hidden');
+  }
+
+  function closeAddColumnModal() {
+    var overlay = document.getElementById('add-column-overlay');
+    var modal = document.getElementById('add-column-modal');
+    if (overlay) overlay.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  document.querySelectorAll('.preview-row').forEach(function (row) {
+    row.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      activeRowIndex = parseInt(row.getAttribute('data-row-index'), 10);
+      activeColumn = null;
+      if (!ctxMenu) return;
+      document.getElementById('ctx-promote-header-btn').classList.remove('hidden');
+      document.getElementById('ctx-type-group').classList.add('hidden');
+      document.getElementById('ctx-add-column-btn').classList.add('hidden');
+      ctxMenu.style.left = e.pageX + 'px';
+      ctxMenu.style.top = e.pageY + 'px';
+      ctxMenu.classList.remove('hidden');
+    });
+  });
+
+  document.querySelectorAll('.preview-header-cell').forEach(function (th) {
+    th.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      activeColumn = th.getAttribute('data-col-name');
+      activeRowIndex = null;
+      if (!ctxMenu) return;
+      document.getElementById('ctx-promote-header-btn').classList.add('hidden');
+      document.getElementById('ctx-type-group').classList.remove('hidden');
+      document.getElementById('ctx-add-column-btn').classList.remove('hidden');
+      ctxMenu.style.left = e.pageX + 'px';
+      ctxMenu.style.top = e.pageY + 'px';
+      ctxMenu.classList.remove('hidden');
+    });
+  });
+
+  var promoteBtn = document.getElementById('ctx-promote-header-btn');
+  if (promoteBtn) {
+    promoteBtn.addEventListener('click', function () {
+      hideContextMenu();
+      if (activeRowIndex === null) return;
+      postTransform({ action: 'promote_header', header_row_index: activeRowIndex });
+    });
+  }
+
+  document.querySelectorAll('.ctx-set-type-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      hideContextMenu();
+      if (!activeColumn) return;
+      postTransform({ action: 'set_type', column_name: activeColumn, target_type: btn.dataset.type || 'text' });
+    });
+  });
+
+  var addColumnBtn = document.getElementById('ctx-add-column-btn');
+  if (addColumnBtn) {
+    addColumnBtn.addEventListener('click', function () {
+      hideContextMenu();
+      openAddColumnModal(activeColumn);
+    });
+  }
+
+  var addColForm = document.getElementById('ctx-add-column-form');
+  if (addColForm) {
+    addColForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var formData = new FormData(addColForm);
+      var values = { action: 'add_column' };
+      formData.forEach(function (v, k) { values[k] = v; });
+      closeAddColumnModal();
+      postTransform(values);
+    });
+  }
+
+  ['close-add-column-modal', 'cancel-add-column-modal', 'add-column-overlay'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', closeAddColumnModal);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!ctxMenu) return;
+    if (!ctxMenu.contains(e.target)) hideContextMenu();
+  });
 
   window.toggleRowSelection = function (row) {
     var idx = parseInt(row.getAttribute('data-row-index'), 10);
