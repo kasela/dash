@@ -2576,39 +2576,69 @@
       if (overlay) overlay.style.display = 'none';
     }
 
+    var TYPE_LABELS = { dropdown: 'Dropdown', radio: 'Radio', multiselect: 'Multi-select', range: 'Range slider' };
+
     function renderFmList() {
       if (!fmList) return;
+      fmList.querySelectorAll('.fm-filter-row').forEach(function (r) { r.remove(); });
       if (pendingFilters.length === 0) {
         if (fmNoFilters) fmNoFilters.style.display = '';
-        fmList.querySelectorAll('.fm-filter-row').forEach(function (r) { r.remove(); });
         return;
       }
       if (fmNoFilters) fmNoFilters.style.display = 'none';
-      fmList.querySelectorAll('.fm-filter-row').forEach(function (r) { r.remove(); });
       pendingFilters.forEach(function (f, idx) {
+        var meta = _filterColumnMeta[f.column] || {};
+        var isNumeric = meta.type === 'numeric';
+        // Type options (disable incompatible ones)
+        var typeOpts = ['dropdown', 'radio', 'multiselect', 'range'].map(function (t) {
+          var disabled = (t === 'range' && !isNumeric) || (t !== 'range' && isNumeric) ? ' disabled' : '';
+          var sel = f.filter_type === t ? ' selected' : '';
+          return '<option value="' + t + '"' + sel + disabled + '>' + TYPE_LABELS[t] + '</option>';
+        }).join('');
+
         var row = document.createElement('div');
-        row.className = 'fm-filter-row flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm';
+        row.className = 'fm-filter-row rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm space-y-2';
         row.innerHTML = [
-          '<div class="flex items-center gap-3 min-w-0">',
-          '  <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">',
-          '    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>',
+          '<div class="flex items-center gap-2">',
+          '  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-700">',
+          '    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>',
           '  </div>',
-          '  <div class="min-w-0">',
-          '    <p class="text-sm font-semibold text-slate-900 truncate">' + escapeHtml(f.label || f.column) + '</p>',
-          '    <p class="text-xs text-slate-500">' + escapeHtml(f.column) + ' &bull; ' + escapeHtml(f.filter_type) + '</p>',
+          '  <span class="text-xs font-semibold text-slate-500 truncate flex-1">' + escapeHtml(f.column) + '</span>',
+          '  <button class="fm-remove-btn ml-auto flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500" data-idx="' + idx + '" title="Remove">',
+          '    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+          '  </button>',
+          '</div>',
+          '<div class="grid grid-cols-2 gap-2">',
+          '  <div>',
+          '    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Label</label>',
+          '    <input type="text" class="fm-edit-label w-full rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-violet-500 focus:outline-none" value="' + escapeHtml(f.label || f.column) + '" data-idx="' + idx + '">',
+          '  </div>',
+          '  <div>',
+          '    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Type</label>',
+          '    <select class="fm-edit-type w-full rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-violet-500 focus:outline-none" data-idx="' + idx + '">' + typeOpts + '</select>',
           '  </div>',
           '</div>',
-          '<button class="fm-remove-btn flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500" data-idx="' + idx + '" title="Remove filter">',
-          '  <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
-          '</button>',
         ].join('');
         fmList.insertBefore(row, fmNoFilters);
       });
+
+      // Wire up remove buttons
       fmList.querySelectorAll('.fm-remove-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
-          var idx = parseInt(btn.dataset.idx);
-          pendingFilters.splice(idx, 1);
+          pendingFilters.splice(parseInt(btn.dataset.idx), 1);
           renderFmList();
+        });
+      });
+      // Wire up inline label edit
+      fmList.querySelectorAll('.fm-edit-label').forEach(function (inp) {
+        inp.addEventListener('input', function () {
+          pendingFilters[parseInt(inp.dataset.idx)].label = inp.value;
+        });
+      });
+      // Wire up inline type edit
+      fmList.querySelectorAll('.fm-edit-type').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+          pendingFilters[parseInt(sel.dataset.idx)].filter_type = sel.value;
         });
       });
     }
@@ -2653,6 +2683,8 @@
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save Filters';
             if (data.success) {
+              // Update in-memory config so reopening the modal shows correct filters
+              _filterConfig = data.filters || pendingFilters;
               showToast('Filters saved — reloading…', 'success');
               setTimeout(function () { window.location.reload(); }, 600);
             } else {
