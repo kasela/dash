@@ -477,9 +477,9 @@
   var cbEditingWidgetId = null;
   var cbPendingEdit = null;
 
-  var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'radar', 'bubble', 'mixed', 'waterfall', 'funnel']);
+  var AXIS_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'scatter', 'map', 'radar', 'bubble', 'mixed', 'waterfall', 'funnel']);
   var MULTI_MEASURE_TYPES = new Set(['bar', 'line', 'mixed']);
-  var SCATTER_TYPES = new Set(['scatter', 'bubble']);
+  var SCATTER_TYPES = new Set(['scatter', 'map', 'bubble']);
   var DIMENSION_TYPES = new Set(['bar', 'line', 'area', 'pie', 'doughnut', 'hbar', 'radar', 'table', 'polararea', 'funnel', 'waterfall', 'mixed']);
   var MEASURE_TYPES = new Set(['bar', 'line', 'area', 'hbar', 'radar', 'kpi', 'pie', 'table', 'polararea', 'funnel', 'gauge', 'waterfall', 'mixed']);
   var PRO_TYPES = new Set(['bubble', 'polararea', 'mixed', 'funnel', 'gauge', 'waterfall']);
@@ -723,7 +723,7 @@
     if (type === 'kpi' && measure) titleInput.value = 'Total ' + measure;
     else if (type === 'pie' && dim) titleInput.value = 'Distribution: ' + dim;
     else if (type === 'doughnut' && dim) titleInput.value = 'Breakdown: ' + dim;
-    else if ((type === 'scatter' || type === 'bubble') && xm && ym) titleInput.value = xm + ' vs ' + ym;
+    else if ((type === 'scatter' || type === 'map' || type === 'bubble') && xm && ym) titleInput.value = xm + ' vs ' + ym;
     else if (type === 'radar' && dim) titleInput.value = dim + ' Radar';
     else if (type === 'polararea' && dim) titleInput.value = 'Polar: ' + dim;
     else if (type === 'funnel' && dim) titleInput.value = dim + ' Funnel';
@@ -857,8 +857,8 @@
       showCbValidationError('Select a dimension column for this chart.');
       return false;
     }
-    if ((type === 'scatter' || type === 'bubble') && (!xm || !ym)) {
-      showCbValidationError('Select both X and Y numeric columns for the scatter/bubble chart.');
+    if ((type === 'scatter' || type === 'map' || type === 'bubble') && (!xm || !ym)) {
+      showCbValidationError('Select both X and Y numeric columns for the scatter/map/bubble chart.');
       return false;
     }
     if (type === 'gauge' && !measure) {

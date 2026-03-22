@@ -58,7 +58,7 @@ _FALLBACK_CHART = {
 }
 
 _VALID_CHART_TYPES = {
-    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table",
+    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table", "map",
     # Pro/Plus chart types
     "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
 }
@@ -237,6 +237,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
         ("doughnut",  "🍩", "Doughnut",   False),
         ("hbar",      "↔️", "Horiz. Bar", False),
         ("scatter",   "✦",  "Scatter",    False),
+        ("map",       "🗺️", "Map",        False),
         ("radar",     "🕸️", "Radar",      False),
         ("table",     "🧾", "Table",      False),
         ("kpi",       "🔢", "KPI",        False),
@@ -848,13 +849,21 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                     return {"error": "dimension is required for doughnut charts", "status": 400}
                 vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
                 config = _doughnut_config([str(l) for l in vc.index.tolist()], [round(float(v), 2) for v in vc.values.tolist()], palette)
-            elif chart_type == "scatter":
+            elif chart_type in {"scatter", "map"}:
                 if not x_measure or not y_measure:
-                    return {"error": "x_measure and y_measure are required for scatter charts", "status": 400}
+                    return {"error": "x_measure and y_measure are required for scatter/map charts", "status": 400}
                 if x_measure not in df.columns or y_measure not in df.columns:
                     return {"error": "Selected columns not found in dataset", "status": 400}
                 tmp = df[[x_measure, y_measure]].dropna().head(500)
-                config = _scatter_config([round(float(v), 4) for v in tmp[x_measure].tolist()], [round(float(v), 4) for v in tmp[y_measure].tolist()], x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
+                subtitle = f"{x_measure} vs {y_measure}" if chart_type == "scatter" else f"Map points: {x_measure} / {y_measure}"
+                config = _scatter_config(
+                    [round(float(v), 4) for v in tmp[x_measure].tolist()],
+                    [round(float(v), 4) for v in tmp[y_measure].tolist()],
+                    x_measure,
+                    y_measure,
+                    palette,
+                    subtitle,
+                )
             elif chart_type == "radar":
                 if not dimension or not measure:
                     return {"error": "dimension and measure are required for radar charts", "status": 400}
@@ -1378,7 +1387,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
         filters = []
 
     _CHART_WIDGET_TYPES = {
-        "bar", "line", "area", "hbar", "pie", "doughnut", "scatter",
+        "bar", "line", "area", "hbar", "pie", "doughnut", "scatter", "map",
         "radar", "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall", "kpi",
     }
 
