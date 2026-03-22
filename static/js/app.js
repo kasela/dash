@@ -2424,6 +2424,26 @@
           var widgetSlides = presentationSlides.slice();
           var dashboardTitleEl = document.getElementById('dashboard-title');
           var dashboardTitle = dashboardTitleEl ? dashboardTitleEl.textContent.trim() : 'Dashboard Presentation';
+          var widgetMeta = widgetSlides.map(function (s) {
+            var card = document.querySelector('.widget-card[data-widget-id="' + s.widgetId + '"]');
+            var wType = card ? (card.dataset.widgetType || '') : '';
+            var wTitleEl = card ? card.querySelector('.widget-title') : null;
+            var wTitle = wTitleEl ? wTitleEl.textContent.trim() : (s.widgetId || 'Widget');
+            var insightEl = card ? card.querySelector('.ai-insights-text') : null;
+            var insightText = insightEl ? (insightEl.textContent || '').trim() : '';
+            return { slide: s, type: wType, title: wTitle, insight: insightText, card: card };
+          });
+
+          var chartCandidates = widgetMeta.filter(function (m) {
+            return m.type && ['table', 'kpi', 'heading', 'text_canvas', 'divider'].indexOf(m.type) === -1;
+          });
+          chartCandidates.sort(function (a, b) { return (b.insight || '').length - (a.insight || '').length; });
+          var selectedCharts = chartCandidates.slice(0, 4);
+          var selectedChartIds = selectedCharts.map(function (m) { return m.slide.widgetId; });
+
+          var kpiCandidates = widgetMeta.filter(function (m) { return m.type === 'kpi'; }).slice(0, 3);
+          var tableCandidate = widgetMeta.find(function (m) { return m.type === 'table'; });
+
           var deck = [
             {
               kind: 'text',
@@ -2434,10 +2454,42 @@
           if (data && data.success && data.summary) {
             deck.push({ kind: 'text', title: 'Executive Summary', content: data.summary });
           }
-          widgetSlides.forEach(function (s) { deck.push(s); });
-          var chartIds = widgetSlides.filter(function (s) { return s.kind === 'widget'; }).map(function (s) { return s.widgetId; }).slice(0, 4);
-          if (chartIds.length >= 2) {
-            deck.push({ kind: 'multi_chart', title: 'Cross-Chart Comparison', widgetIds: chartIds });
+
+          if (kpiCandidates.length) {
+            var kpiLines = [];
+            kpiCandidates.forEach(function (m) {
+              if (!m.card) return;
+              var valueEl = m.card.querySelector('.widget-kpi-value');
+              var value = valueEl ? valueEl.textContent.trim() : 'N/A';
+              kpiLines.push('• ' + m.title + ': ' + value);
+            });
+            if (kpiLines.length) deck.push({ kind: 'text', title: 'KPI Highlights', content: kpiLines.join('\n') });
+          }
+
+          selectedCharts.forEach(function (m) {
+            deck.push(m.slide);
+            if (m.insight) {
+              deck.push({
+                kind: 'text',
+                title: m.title + ' Insight',
+                content: m.insight,
+              });
+            }
+          });
+
+          if (tableCandidate) {
+            deck.push(tableCandidate.slide);
+            if (tableCandidate.card) {
+              var rows = Array.from(tableCandidate.card.querySelectorAll('tbody tr')).slice(0, 3);
+              if (rows.length) {
+                var rowText = rows.map(function (r) { return Array.from(r.querySelectorAll('td')).slice(0, 4).map(function (td) { return td.textContent.trim(); }).join(' | '); }).join('\n');
+                deck.push({ kind: 'text', title: 'Table Findings', content: rowText });
+              }
+            }
+          }
+
+          if (selectedChartIds.length >= 2) {
+            deck.push({ kind: 'multi_chart', title: 'Cross-Chart Comparison', widgetIds: selectedChartIds });
           }
           deck.push({
             kind: 'text',
