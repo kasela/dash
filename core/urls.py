@@ -26,6 +26,9 @@ from apps.dashboards.views import (
     dashboard_update_text_canvas,
     dashboard_update_widget,
     dashboard_update_widget_span,
+    dashboard_save_filters,
+    dashboard_apply_filters,
+    dashboard_get_filter_columns,
     landing_page,
     pricing_page,
 )
@@ -95,4 +98,9 @@ urlpatterns = [
     path("dashboards/<int:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
     path("dashboards/<int:dashboard_id>/datasets/add/", dashboard_add_dataset, name="dashboard-add-dataset"),
     path("dashboards/<int:dashboard_id>/datasets/<int:version_id>/remove/", dashboard_remove_dataset, name="dashboard-remove-dataset"),
+
+    # Dashboard interactive filters
+    path("dashboards/<int:dashboard_id>/filters/save/", dashboard_save_filters, name="dashboard-save-filters"),
+    path("dashboards/<int:dashboard_id>/filters/apply/", dashboard_apply_filters, name="dashboard-apply-filters"),
+    path("dashboards/<int:dashboard_id>/filters/columns/", dashboard_get_filter_columns, name="dashboard-filter-columns"),
 ]

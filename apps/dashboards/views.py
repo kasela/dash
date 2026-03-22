@@ -26,6 +26,7 @@ from apps.datasets.services import (
     _radar_config,
     _scatter_config,
     _waterfall_config,
+    apply_df_filters,
     build_profile_summary,
     generate_widget_specs_from_version,
 )
@@ -293,6 +294,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
             "linked_datasets": linked_datasets,
             "available_versions": available_versions,
             "is_pro": is_pro,
+            "filter_config": dashboard.filter_config or [],
         },
     )
 
@@ -442,12 +444,30 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
     profile = build_profile_summary(df)
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
+    # Include unique values per categorical column (for filter dropdowns), capped at 200
+    unique_values: dict = {}
+    for col in profile.categorical_columns[:20]:
+        vals = df[col].dropna().astype(str).unique().tolist()
+        unique_values[col] = sorted(vals[:200])
+
+    # Range info for numeric columns (for range sliders)
+    range_info: dict = {}
+    for col in profile.numeric_columns[:20]:
+        try:
+            mn = float(df[col].min())
+            mx = float(df[col].max())
+            range_info[col] = {"min": round(mn, 4), "max": round(mx, 4)}
+        except Exception:
+            pass
+
     return JsonResponse({
         "dimensions": profile.categorical_columns,
         "measures": profile.numeric_columns,
         "date_cols": date_cols,
         "all_cols": [str(c) for c in df.columns],
         "version_id": dataset_version.id,
+        "unique_values": unique_values,
+        "range_info": range_info,
     })
 
 
@@ -708,6 +728,8 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     if not isinstance(tooltip_enabled, bool):
         tooltip_enabled = str(tooltip_enabled).lower() not in ("false", "0", "no")
     preview_only = bool(data.get("preview_only", False))
+    # filters: list of {column, filter_type, value} to apply to df
+    filters = data.get("filters", [])
 
     if chart_type not in _VALID_CHART_TYPES:
         return {"error": "Invalid chart type", "status": 400}
@@ -729,9 +751,13 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
     if chart_type == "kpi":
         if measure and dataset_version:
             df = _load_df_from_version(dataset_version)
-            if df is not None and measure in df.columns:
-                total = df[measure].sum()
-                config = {"kpi": measure, "value": f"{total:,.0f}"}
+            if df is not None:
+                df = apply_df_filters(df, filters)
+                if measure in df.columns:
+                    total = df[measure].sum()
+                    config = {"kpi": measure, "value": f"{total:,.0f}"}
+                else:
+                    config = {"kpi": measure, "value": "N/A"}
             else:
                 config = {"kpi": measure, "value": "N/A"}
         else:
@@ -742,6 +768,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         df = _load_df_from_version(dataset_version)
         if df is None:
             return {"error": "Could not load dataset file", "status": 500}
+        df = apply_df_filters(df, filters)
         try:
             if chart_type == "bar":
                 if not dimension or not measures:
@@ -1256,3 +1283,145 @@ def dashboard_update_widget_span(request: HttpRequest, dashboard_id: int, widget
     widget.chart_config = cfg
     widget.save(update_fields=["chart_config"])
     return JsonResponse({"success": True, "size": size})
+
+
+@login_required
+def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Persist the filter configuration for this dashboard."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    raw_filters = data.get("filters", [])
+    if not isinstance(raw_filters, list):
+        return JsonResponse({"error": "filters must be a list"}, status=400)
+
+    # Validate and sanitise each filter entry
+    valid_types = {"dropdown", "radio", "multiselect", "range"}
+    clean_filters = []
+    for f in raw_filters:
+        col = str(f.get("column", "")).strip()
+        ftype = str(f.get("filter_type", "dropdown")).strip()
+        if not col:
+            continue
+        if ftype not in valid_types:
+            ftype = "dropdown"
+        clean_filters.append({
+            "id": str(f.get("id", col)),
+            "column": col,
+            "filter_type": ftype,
+            "label": str(f.get("label", col)).strip()[:80],
+            "version_id": f.get("version_id"),
+        })
+
+    dashboard.filter_config = clean_filters
+    dashboard.save(update_fields=["filter_config"])
+    return JsonResponse({"success": True, "filters": clean_filters})
+
+
+@login_required
+def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Return updated chart configs for all chart-type widgets with filters applied.
+
+    POST body: { "filters": [{column, filter_type, value}, ...] }
+    Returns: { "widgets": { "<widget_id>": <chart_config>, ... } }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    filters = data.get("filters", [])
+    if not isinstance(filters, list):
+        filters = []
+
+    _CHART_WIDGET_TYPES = {
+        "bar", "line", "area", "hbar", "pie", "doughnut", "scatter",
+        "radar", "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall", "kpi",
+    }
+
+    widgets = dashboard.widgets.order_by("position")
+    result: dict = {}
+
+    for widget in widgets:
+        if widget.widget_type not in _CHART_WIDGET_TYPES:
+            continue
+        builder = (widget.chart_config or {}).get("builder")
+        if not builder:
+            continue
+
+        # Build a synthetic request dict for _build_widget_config
+        rebuild_data = {
+            "chart_type": widget.widget_type,
+            "title": widget.title,
+            "dimension": builder.get("dimension", ""),
+            "measures": builder.get("measures", []),
+            "measure": builder.get("measure", ""),
+            "x_measure": builder.get("x_measure", ""),
+            "y_measure": builder.get("y_measure", ""),
+            "x_label": builder.get("x_label", ""),
+            "y_label": builder.get("y_label", ""),
+            "table_columns": builder.get("table_columns", []),
+            "group_by": builder.get("group_by", []),
+            "palette": builder.get("palette", "indigo"),
+            "tooltip_enabled": builder.get("tooltip_enabled", True),
+            "preview_only": True,
+            "filters": filters,
+        }
+        # Use the widget's source dataset version if available, else dashboard primary
+        if widget.source_dataset_version_id:
+            rebuild_data["dataset_version_id"] = widget.source_dataset_version_id
+        elif builder.get("dataset_version_id"):
+            rebuild_data["dataset_version_id"] = builder["dataset_version_id"]
+
+        rebuilt = _build_widget_config(dashboard, rebuild_data)
+        if not rebuilt.get("error"):
+            result[str(widget.id)] = rebuilt.get("config", {})
+
+    return JsonResponse({"success": True, "widgets": result})
+
+
+@login_required
+def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Return columns available for filtering (dimension columns with their unique values)."""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    dataset_version = dashboard.dataset_version
+    if not dataset_version:
+        return JsonResponse({"columns": []})
+
+    df = _load_df_from_version(dataset_version)
+    if df is None:
+        return JsonResponse({"columns": []})
+
+    profile = build_profile_summary(df)
+    columns = []
+
+    for col in profile.categorical_columns[:30]:
+        vals = df[col].dropna().astype(str).unique().tolist()
+        columns.append({
+            "column": col,
+            "type": "categorical",
+            "unique_values": sorted(vals[:200]),
+        })
+
+    for col in profile.numeric_columns[:20]:
+        try:
+            mn = float(df[col].min())
+            mx = float(df[col].max())
+            columns.append({
+                "column": col,
+                "type": "numeric",
+                "min": round(mn, 4),
+                "max": round(mx, 4),
+            })
+        except Exception:
+            pass
+
+    return JsonResponse({"columns": columns, "filter_config": dashboard.filter_config or []})
