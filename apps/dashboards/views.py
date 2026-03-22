@@ -1,8 +1,11 @@
 import json
 import math
 from pathlib import Path
+import re
+from urllib import request as urlrequest, error as urlerror
 
 import pandas as pd
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
@@ -59,12 +62,100 @@ _FALLBACK_CHART = {
 }
 
 _VALID_CHART_TYPES = {
-    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table", "map",
+    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table", "map", "smart",
     # Pro/Plus chart types
     "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
 }
 
 _PRO_CHART_TYPES = {"bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"}
+
+
+def _fallback_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
+    """Heuristic fallback used when DeepSeek is not configured/available."""
+    profile = build_profile_summary(df)
+    dims = [str(c) for c in profile.categorical_columns]
+    nums = [str(c) for c in profile.numeric_columns]
+    if dims and nums:
+        return {"chart_type": "bar", "dimension": dims[0], "measures": [nums[0]], "title": prompt or f"{nums[0]} by {dims[0]}"}
+    if len(nums) >= 2:
+        return {"chart_type": "scatter", "x_measure": nums[0], "y_measure": nums[1], "title": prompt or f"{nums[0]} vs {nums[1]}"}
+    if nums:
+        return {"chart_type": "kpi", "measures": [nums[0]], "title": prompt or f"Total {nums[0]}"}
+    if dims:
+        return {"chart_type": "pie", "dimension": dims[0], "title": prompt or f"Distribution: {dims[0]}"}
+    return {"chart_type": "table", "title": prompt or "Smart Table"}
+
+
+def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
+    """Ask DeepSeek for best chart + fields; returns normalized recommendation."""
+    clean_prompt = (prompt or "").strip()
+    if not clean_prompt:
+        clean_prompt = "Suggest the best chart for this dataset."
+    profile = build_profile_summary(df)
+    payload = {
+        "prompt": clean_prompt,
+        "columns": [str(c) for c in df.columns.tolist()[:200]],
+        "dimensions": [str(c) for c in profile.categorical_columns[:80]],
+        "measures": [str(c) for c in profile.numeric_columns[:80]],
+        "allowed_chart_types": sorted(list(_VALID_CHART_TYPES - {"smart"})),
+    }
+    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return _fallback_smart_chart(df, clean_prompt)
+    req_body = {
+        "model": getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a BI assistant. Return ONLY JSON with keys: "
+                    "chart_type, title, dimension, measures, x_measure, y_measure. "
+                    "chart_type must be one of allowed_chart_types."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload)},
+        ],
+        "temperature": 0.2,
+    }
+    req = urlrequest.Request(
+        "https://api.deepseek.com/chat/completions",
+        data=json.dumps(req_body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=12) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        content = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+        parsed = json.loads(match.group(0) if match else content)
+    except (urlerror.URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError):
+        return _fallback_smart_chart(df, clean_prompt)
+
+    rec_type = str(parsed.get("chart_type", "bar")).strip().lower()
+    if rec_type not in _VALID_CHART_TYPES or rec_type == "smart":
+        rec_type = "bar"
+    rec_dimension = str(parsed.get("dimension", "")).strip()
+    rec_measures = parsed.get("measures", [])
+    if isinstance(rec_measures, str):
+        rec_measures = [rec_measures]
+    if not isinstance(rec_measures, list):
+        rec_measures = []
+    rec_measures = [str(m).strip() for m in rec_measures if str(m).strip()]
+    rec_x = str(parsed.get("x_measure", "")).strip()
+    rec_y = str(parsed.get("y_measure", "")).strip()
+    rec_title = str(parsed.get("title", "")).strip() or clean_prompt
+    return {
+        "chart_type": rec_type,
+        "dimension": rec_dimension,
+        "measures": rec_measures,
+        "x_measure": rec_x,
+        "y_measure": rec_y,
+        "title": rec_title,
+    }
 
 
 def landing_page(request: HttpRequest) -> HttpResponse:
@@ -231,6 +322,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
 
     # (type_key, icon, label, pro_required)
     chart_types = [
+        ("smart",     "🤖", "Smart AI",   False),
         ("bar",       "📊", "Bar",        False),
         ("line",      "📈", "Line",       False),
         ("area",      "🏔️", "Area",       False),
@@ -781,6 +873,20 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         if df is None:
             return {"error": "Could not load dataset file", "status": 500}
         df = apply_df_filters(df, filters)
+        if chart_type == "smart":
+            ai_prompt = str(data.get("ai_prompt", "")).strip() or title
+            rec = _deepseek_smart_chart(df, ai_prompt)
+            chart_type = rec.get("chart_type", "bar")
+            title = rec.get("title", title)
+            if rec.get("dimension"):
+                dimension = rec["dimension"]
+            if rec.get("measures"):
+                measures = rec["measures"]
+                measure = measures[0]
+            if rec.get("x_measure"):
+                x_measure = rec["x_measure"]
+            if rec.get("y_measure"):
+                y_measure = rec["y_measure"]
         try:
             if chart_type == "bar":
                 if not dimension or not measures:
