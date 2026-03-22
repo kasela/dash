@@ -565,6 +565,21 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile) -> list[dict]:
             config = {}
         if not config:
             continue
+        # Attach builder metadata so dashboard_apply_filters can rebuild with active filters
+        config["builder"] = {
+            "dimension": dimension,
+            "measures": measures,
+            "measure": measure,
+            "x_measure": x_measure,
+            "y_measure": y_measure,
+            "x_label": "",
+            "y_label": "",
+            "palette": palette,
+            "tooltip_enabled": True,
+            "table_columns": config.get("columns", []) if chart_type == "table" else [],
+            "group_by": [],
+            "dataset_version_id": None,
+        }
         specs.append({
             "title": title,
             "widget_type": chart_type if chart_type != "table" else "table",
@@ -972,7 +987,9 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
             df = _load_df_from_version(dataset_version)
             if df is not None:
                 df = apply_df_filters(df, filters)
-                if measure in df.columns:
+                if measure == "rows":
+                    config = {"kpi": "rows", "value": f"{len(df):,}"}
+                elif measure in df.columns:
                     total = df[measure].sum()
                     config = {"kpi": measure, "value": f"{total:,.0f}"}
                 else:
