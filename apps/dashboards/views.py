@@ -1613,6 +1613,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
     _CHART_WIDGET_TYPES = {
         "bar", "line", "area", "hbar", "pie", "doughnut", "scatter", "map",
         "radar", "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall", "kpi",
+        "table",
     }
 
     widgets = dashboard.widgets.order_by("position")
