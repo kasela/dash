@@ -139,6 +139,80 @@ def build_widget_suggestions(profile: ProfileSummary) -> list[WidgetSuggestion]:
     return suggestions[:6]
 
 
+# ── External URL import ─────────────────────────────────────────────────────────
+
+def detect_external_source_type(url: str) -> str:
+    """Return ExternalDataSource.SourceType value for a given URL."""
+    lower = url.lower()
+    if "docs.google.com/spreadsheets" in lower:
+        return "google_sheets"
+    if (
+        "onedrive.live.com" in lower
+        or "sharepoint.com" in lower
+        or "1drv.ms" in lower
+        or "excel" in lower
+    ):
+        return "excel_online"
+    return "direct_url"
+
+
+def build_csv_export_url(url: str) -> str:
+    """Convert a Google Sheets share URL to a CSV export URL; pass others through."""
+    import re
+
+    # Google Sheets: extract spreadsheet ID and optional gid
+    gsheets = re.match(
+        r"https://docs\.google\.com/spreadsheets/d/([^/?#]+)(?:[^?#]*)?(?:\?[^#]*)?(?:#gid=(\d+))?",
+        url,
+    )
+    if gsheets:
+        sheet_id = gsheets.group(1)
+        gid = gsheets.group(2) or "0"
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+    # OneDrive personal share URL → direct download
+    # https://onedrive.live.com/edit?resid=X&authkey=Y  → https://onedrive.live.com/download?resid=X&authkey=Y
+    if "onedrive.live.com" in url.lower():
+        return url.replace("/edit?", "/download?").replace("/view?", "/download?")
+
+    return url
+
+
+def fetch_from_url(url: str) -> "ParsedPreview":
+    """Fetch tabular data from a public URL (Google Sheets, Excel Online, direct CSV/XLSX)."""
+    import io
+    import urllib.request
+
+    export_url = build_csv_export_url(url)
+
+    req = urllib.request.Request(
+        export_url,
+        headers={"User-Agent": "Mozilla/5.0 DashAI-Importer/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
+
+    lower = export_url.lower()
+    if "format=csv" in lower or lower.endswith(".csv"):
+        df = pd.read_csv(io.BytesIO(raw))
+    elif any(x in lower for x in [".xlsx", ".xlsm", "format=xlsx"]):
+        df = pd.read_excel(io.BytesIO(raw))
+    else:
+        try:
+            df = pd.read_csv(io.BytesIO(raw))
+        except Exception:
+            df = pd.read_excel(io.BytesIO(raw))
+
+    sample_df = df.head(100)
+    records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
+    return ParsedPreview(
+        headers=[str(h) for h in sample_df.columns],
+        rows=records,
+        shape=df.shape,
+        dataframe=df,
+    )
+
+
 # ── Chart palettes ─────────────────────────────────────────────────────────────
 
 PALETTES = {

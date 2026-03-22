@@ -74,6 +74,103 @@
   </div>
 </div>
 
+<!-- ── Datasets Panel ────────────────────────────────────────────────────────── -->
+<div class="mb-3 flex items-center justify-between">
+  <div class="flex items-center gap-2">
+    <span class="dashboard-section-heading text-blue-700">Datasets</span>
+    <span class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{{ linked_datasets|length }}</span>
+  </div>
+  {% if available_versions %}
+  <button id="open-add-dataset-btn"
+    class="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100">
+    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    Add dataset
+  </button>
+  {% endif %}
+</div>
+
+<div class="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+  {% if linked_datasets %}
+  <div class="grid gap-3 sm:grid-cols-2" id="datasets-list">
+    {% for ds in linked_datasets %}
+    <div class="flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm" id="dataset-card-{{ ds.version_id }}">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold text-slate-900 truncate">{{ ds.label }}</span>
+          {% if ds.is_primary %}
+          <span class="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">Primary</span>
+          {% endif %}
+        </div>
+        <p class="mt-0.5 text-xs text-slate-500">{{ ds.row_count|default:"–" }} rows · {{ ds.column_count|default:"–" }} cols</p>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0 ml-2">
+        <button
+          class="select-dataset-btn rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+          data-version-id="{{ ds.version_id }}"
+          data-label="{{ ds.label }}"
+          title="Use this dataset in chart builder">
+          Use
+        </button>
+        {% if not ds.is_primary %}
+        <button
+          class="remove-dataset-btn flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+          data-version-id="{{ ds.version_id }}"
+          data-remove-url="{% url 'dashboard-remove-dataset' dashboard.id ds.version_id %}"
+          title="Remove dataset from dashboard">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-blue-700">No datasets linked yet. <a href="{% url 'dataset-upload' %}" class="font-semibold underline">Upload one</a> to get started.</p>
+  {% endif %}
+
+  <!-- Add dataset panel (initially hidden) -->
+  {% if available_versions %}
+  <div id="add-dataset-panel" style="display:none;" class="mt-4 rounded-xl border border-blue-200 bg-white p-4">
+    <p class="mb-3 text-sm font-semibold text-slate-700">Link an existing dataset</p>
+    <div class="flex gap-2">
+      <select id="add-dataset-select"
+        class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <option value="">— choose dataset version —</option>
+        {% for v in available_versions %}
+        <option value="{{ v.id }}" data-name="{{ v.dataset.name }}" data-rows="{{ v.row_count }}" data-cols="{{ v.column_count }}">
+          {{ v.dataset.name }} v{{ v.version }} ({{ v.row_count }} rows, {{ v.column_count }} cols)
+        </option>
+        {% endfor %}
+      </select>
+      <button id="confirm-add-dataset-btn"
+        class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
+        Link
+      </button>
+      <button id="cancel-add-dataset-btn"
+        class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        Cancel
+      </button>
+    </div>
+    <p id="add-dataset-error" style="display:none;" class="mt-2 text-xs text-red-600"></p>
+    <p class="mt-2 text-xs text-slate-400">
+      Don't see your dataset?
+      <a href="{% url 'dataset-upload' %}" class="text-indigo-600 hover:underline">Upload a file</a>
+      or
+      <a href="{% url 'dataset-link' %}" class="text-indigo-600 hover:underline">link a URL</a>.
+    </p>
+  </div>
+  {% else %}
+  <div class="mt-3 text-xs text-blue-600">
+    <a href="{% url 'dataset-upload' %}" class="hover:underline">Upload a file</a> or
+    <a href="{% url 'dataset-link' %}" class="hover:underline">link a Google Sheets / Excel URL</a> to add more datasets.
+  </div>
+  {% endif %}
+</div>
+
 <!-- Share links panel -->
 {% if share_links %}
 <div class="mb-3 flex items-center gap-2">
@@ -393,6 +490,22 @@
         </div>
       </div>
 
+      <!-- Dataset selector (shown when multiple datasets are linked) -->
+      {% if linked_datasets|length > 1 %}
+      <div id="cb-dataset-wrap">
+        <label for="cb-dataset" class="mb-1.5 block text-sm font-semibold text-slate-700">
+          Dataset
+          <span class="ml-1 text-xs font-normal text-slate-400">(which dataset to use)</span>
+        </label>
+        <select id="cb-dataset"
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          {% for ds in linked_datasets %}
+          <option value="{{ ds.version_id }}">{{ ds.label }}{% if ds.is_primary %} (primary){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
       <!-- Title -->
       <div>
         <label for="cb-title" class="mb-1.5 block text-sm font-semibold text-slate-700">Widget title</label>
@@ -551,6 +664,8 @@
   "renameWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "updateWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "resizeWidgetBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
+  "addDatasetUrl": "{% url 'dashboard-add-dataset' dashboard.id %}",
+  "removeDatasetBaseUrl": "/dashboards/{{ dashboard.id }}/datasets/",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>

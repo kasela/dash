@@ -18,6 +18,20 @@ class DatasetVersion(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 
+class ExternalDataSource(models.Model):
+    """Tracks the original URL for datasets imported from Google Sheets or Excel Online."""
+
+    class SourceType(models.TextChoices):
+        GOOGLE_SHEETS = "google_sheets", "Google Sheets"
+        EXCEL_ONLINE = "excel_online", "Excel Online"
+        DIRECT_URL = "direct_url", "Direct URL"
+
+    dataset = models.OneToOneField(Dataset, on_delete=models.CASCADE, related_name="external_source")
+    source_type = models.CharField(max_length=32, choices=SourceType.choices, default=SourceType.DIRECT_URL)
+    original_url = models.URLField(max_length=2000)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+
 class DatasetColumn(models.Model):
     class Kind(models.TextChoices):
         DIMENSION = "dimension", "Dimension"

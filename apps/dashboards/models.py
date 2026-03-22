@@ -7,10 +7,24 @@ from apps.workspaces.models import Workspace
 
 class Dashboard(models.Model):
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="dashboards")
-    dataset_version = models.ForeignKey(DatasetVersion, on_delete=models.CASCADE, related_name="dashboards")
+    dataset_version = models.ForeignKey(
+        DatasetVersion, on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboards"
+    )
     title = models.CharField(max_length=200)
     is_public = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class DashboardDataset(models.Model):
+    """Links multiple DatasetVersions to a single Dashboard."""
+
+    dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="dataset_links")
+    dataset_version = models.ForeignKey(DatasetVersion, on_delete=models.CASCADE, related_name="dashboard_links")
+    label = models.CharField(max_length=100, blank=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("dashboard", "dataset_version")]
 
 
 class DashboardWidget(models.Model):
@@ -27,6 +41,9 @@ class DashboardWidget(models.Model):
         TABLE = "table", "Table"
 
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="widgets")
+    source_dataset_version = models.ForeignKey(
+        DatasetVersion, on_delete=models.SET_NULL, null=True, blank=True, related_name="widget_uses"
+    )
     title = models.CharField(max_length=200)
     widget_type = models.CharField(max_length=16, choices=WidgetType.choices)
     position = models.PositiveIntegerField(default=0)
