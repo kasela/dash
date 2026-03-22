@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.sitemaps",
+    "django_celery_results",
     "apps.accounts",
     "apps.workspaces",
     "apps.datasets",
@@ -109,3 +110,15 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 # Site metadata for SEO
 SITE_NAME = "DashAI"
 SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "https://dashai.io")
+
+# ── Celery configuration ───────────────────────────────────────────────────────
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_CACHE_BACKEND = "default"
+CELERY_RESULT_EXTENDED = True
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_SOFT_TIME_LIMIT = 120  # 2 min soft limit per task

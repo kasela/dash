@@ -6,6 +6,13 @@ from apps.workspaces.models import Workspace
 
 
 class Dashboard(models.Model):
+    class BuildStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        BUILDING = "building", "Building"
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="dashboards")
     dataset_version = models.ForeignKey(
         DatasetVersion, on_delete=models.SET_NULL, null=True, blank=True, related_name="dashboards"
@@ -15,6 +22,13 @@ class Dashboard(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     # filter_config: list of {id, column, filter_type, label, version_id}
     filter_config = models.JSONField(default=list, blank=True)
+    # Background build tracking
+    build_status = models.CharField(
+        max_length=16,
+        choices=BuildStatus.choices,
+        default=BuildStatus.PENDING,
+    )
+    celery_task_id = models.CharField(max_length=255, blank=True, default="")
 
 
 class DashboardDataset(models.Model):
@@ -43,6 +57,7 @@ class DashboardWidget(models.Model):
         TABLE = "table", "Table"
         HEADING = "heading", "Heading"
         TEXT_CANVAS = "text_canvas", "Text Canvas"
+        DIVIDER = "divider", "Divider"
         # Pro / Plus chart types
         BUBBLE = "bubble", "Bubble"
         POLARAREA = "polararea", "Polar Area"
@@ -52,6 +67,7 @@ class DashboardWidget(models.Model):
         WATERFALL = "waterfall", "Waterfall"
         MAP = "map", "Map"
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="widgets")
     source_dataset_version = models.ForeignKey(
         DatasetVersion, on_delete=models.SET_NULL, null=True, blank=True, related_name="widget_uses"
@@ -60,7 +76,6 @@ class DashboardWidget(models.Model):
     widget_type = models.CharField(max_length=16, choices=WidgetType.choices)
     position = models.PositiveIntegerField(default=0)
     chart_config = models.JSONField(default=dict)
-
 
 
 class DashboardShareLink(models.Model):
