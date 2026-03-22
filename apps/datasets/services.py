@@ -2120,7 +2120,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     client, model = _get_ai_client()
     if client is None:
         return None
-    specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 18))
+    specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
