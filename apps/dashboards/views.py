@@ -40,6 +40,8 @@ from apps.datasets.services import (
     ai_generate_dashboard_title,
     ai_generate_executive_summary,
     _compute_kpi_trend,
+    _detect_kpi_meta,
+    _humanize_col,
 )
 
 from .models import Dashboard, DashboardDataset, DashboardShareLink, DashboardWidget
@@ -1004,16 +1006,33 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
             if df is not None:
                 df = apply_df_filters(df, filters)
                 if measure == "rows":
-                    config = {"kpi": "rows", "value": f"{len(df):,}"}
+                    config = {
+                        "kpi": "Total Records",
+                        "value": f"{len(df):,}",
+                        "kpi_meta": {"format": "count", "icon": "people"},
+                    }
                 elif measure in df.columns:
                     total = df[measure].sum()
-                    config = {"kpi": measure, "value": f"{total:,.0f}"}
+                    human_measure = _humanize_col(measure)
+                    kpi_meta = _detect_kpi_meta(measure)
+                    config = {
+                        "kpi": human_measure,
+                        "value": f"{total:,.0f}",
+                        "kpi_meta": kpi_meta,
+                    }
+                    trend = _compute_kpi_trend(df, measure)
+                    if trend:
+                        config["trend"] = trend
                 else:
-                    config = {"kpi": measure, "value": "N/A"}
+                    config = {
+                        "kpi": _humanize_col(measure),
+                        "value": "N/A",
+                        "kpi_meta": _detect_kpi_meta(measure),
+                    }
             else:
-                config = {"kpi": measure, "value": "N/A"}
+                config = {"kpi": _humanize_col(measure), "value": "N/A", "kpi_meta": _detect_kpi_meta(measure)}
         else:
-            config = {"kpi": "value", "value": "0"}
+            config = {"kpi": "Value", "value": "0", "kpi_meta": {"format": "number", "icon": "chart"}}
     else:
         if not dataset_version:
             return {"error": "Dashboard has no dataset", "status": 400}

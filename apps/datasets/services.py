@@ -204,6 +204,10 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
         "secondary_value": secondary_value,
         "sparkline": sparkline,
         "sparkline_pct": sparkline_pct,
+        "avg": round(float(col.mean()), 2),
+        "max_val": round(float(col.max()), 2),
+        "min_val": round(float(col.min()), 2),
+        "count": len(col),
     }
 
 
@@ -214,46 +218,46 @@ def build_widget_suggestions(profile: ProfileSummary) -> list[WidgetSuggestion]:
         dim = profile.suggested_dimensions[0]
         measure = profile.suggested_measures[0]
         suggestions.append(WidgetSuggestion(
-            title=f"{measure} by {dim}",
+            title=f"{_humanize_col(measure)} by {_humanize_col(dim)}",
             chart_type="bar",
-            description=f"Compare {measure} across {dim} categories",
+            description=f"Compare {_humanize_col(measure)} across {_humanize_col(dim)} categories",
         ))
 
     if profile.suggested_measures and profile.suggested_dimensions:
         dim = profile.suggested_dimensions[0]
-        measure = profile.suggested_measures[0]
         suggestions.append(WidgetSuggestion(
-            title=f"Distribution of {dim}",
+            title=f"{_humanize_col(dim)} Share",
             chart_type="pie",
-            description=f"Show proportion breakdown of {dim} values",
+            description=f"Proportion breakdown of {_humanize_col(dim)} values",
         ))
 
     date_like_dims = [d for d in profile.suggested_dimensions if any(k in d.lower() for k in ["date", "month", "year", "period", "quarter"])]
     if date_like_dims and profile.suggested_measures:
+        measure = profile.suggested_measures[0]
         suggestions.append(WidgetSuggestion(
-            title=f"{profile.suggested_measures[0]} over time",
+            title=f"{_humanize_col(measure)} Trend Over Time",
             chart_type="line",
-            description=f"Track trend of {profile.suggested_measures[0]} by {date_like_dims[0]}",
+            description=f"Track {_humanize_col(measure)} trend by {_humanize_col(date_like_dims[0])}",
         ))
 
     if profile.suggested_measures:
         measure = profile.suggested_measures[0]
         suggestions.append(WidgetSuggestion(
-            title=f"Total {measure}",
+            title=f"Total {_humanize_col(measure)}",
             chart_type="kpi",
-            description=f"Sum of all {measure} values as a key metric",
+            description=f"Sum of all {_humanize_col(measure)} values — key headline metric",
         ))
 
     if profile.duplicate_rows > 0:
         suggestions.append(WidgetSuggestion(
-            title="Duplicate records",
+            title="Duplicate Records",
             chart_type="kpi",
             description=f"{profile.duplicate_rows} duplicate rows detected in this dataset",
         ))
 
     if not suggestions:
         suggestions.append(WidgetSuggestion(
-            title="Overview KPI dashboard",
+            title="Key Metrics Overview",
             chart_type="kpi",
             description="Summary of key metrics from your dataset",
         ))
@@ -424,37 +428,55 @@ _MULTI_COLORS = [
 
 
 _TOOLTIP_OPTS = {
-    "backgroundColor": "rgba(15,23,42,0.92)",
+    "backgroundColor": "rgba(15,23,42,0.94)",
     "titleColor": "#f8fafc",
     "bodyColor": "#cbd5e1",
-    "borderColor": "rgba(99,102,241,0.3)",
+    "borderColor": "rgba(99,102,241,0.35)",
     "borderWidth": 1,
-    "padding": 10,
-    "cornerRadius": 8,
+    "padding": 12,
+    "cornerRadius": 10,
     "displayColors": True,
     "boxWidth": 10,
     "boxHeight": 10,
+    "caretSize": 6,
+    "titleFont": {"size": 12, "weight": "600"},
+    "bodyFont": {"size": 12},
 }
 
 _ANIMATION_OPTS = {
-    "duration": 600,
-    "easing": "easeInOutQuart",
+    "duration": 700,
+    "easing": "easeInOutCubic",
+}
+
+_LEGEND_OPTS = {
+    "display": True,
+    "position": "top",
+    "align": "start",
+    "labels": {
+        "color": "#475569",
+        "font": {"size": 11, "weight": "500"},
+        "padding": 16,
+        "usePointStyle": True,
+        "pointStyleWidth": 8,
+    },
 }
 
 
 def _scale_opts(x_label: str = "", y_label: str = "") -> dict:
     x = {
         "grid": {"display": False},
-        "ticks": {"color": "#94a3b8", "font": {"size": 11}},
+        "border": {"display": False},
+        "ticks": {"color": "#94a3b8", "font": {"size": 11}, "maxRotation": 35},
     }
     y = {
-        "grid": {"color": "rgba(0,0,0,0.05)", "drawBorder": False},
+        "grid": {"color": "rgba(148,163,184,0.12)", "drawBorder": False},
+        "border": {"display": False, "dash": [4, 4]},
         "ticks": {"color": "#94a3b8", "font": {"size": 11}},
     }
     if x_label:
-        x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 12, "weight": "500"}}
+        x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}, "padding": {"top": 6}}
     if y_label:
-        y["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 12, "weight": "500"}}
+        y["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}, "padding": {"bottom": 6}}
     return {"x": x, "y": y}
 
 
@@ -462,6 +484,57 @@ def _resolve_palette(palette_name: str, n: int) -> list:
     colors = PALETTES.get(palette_name, DEFAULT_PALETTE)
     # cycle if needed
     return [colors[i % len(colors)] for i in range(n)]
+
+
+def _humanize_col(name: str) -> str:
+    """Convert a raw column name to a human-readable title.
+
+    Examples:
+        total_revenue     → Total Revenue
+        salesAmount       → Sales Amount
+        num_orders_ytd    → Num Orders Ytd
+        customerLifetimeValue → Customer Lifetime Value
+    """
+    import re as _re
+    s = _re.sub(r'([a-z])([A-Z])', r'\1 \2', str(name))
+    s = s.replace('_', ' ').replace('-', ' ')
+    s = _re.sub(r'\s+', ' ', s).strip()
+    return s.title()
+
+
+def _detect_kpi_meta(col_name: str) -> dict:
+    """Detect KPI display metadata (format + icon type) from a column name.
+
+    Returns a dict with:
+        format: 'currency' | 'percent' | 'count' | 'number'
+        icon:   'money' | 'percent' | 'people' | 'clock' | 'chart'
+    """
+    lower = str(col_name).lower()
+    if any(k in lower for k in [
+        'revenue', 'sales', 'profit', 'cost', 'price', 'amount', 'income',
+        'spend', 'budget', 'earning', 'margin', 'value', 'gmv', 'arpu', 'ltv',
+        'fee', 'payment', 'invoice', 'receipt', 'cash', 'dollar', 'usd', 'eur',
+    ]):
+        return {'format': 'currency', 'icon': 'money'}
+    if any(k in lower for k in [
+        'rate', 'ratio', 'pct', 'percent', 'share', 'growth', 'churn',
+        'conversion', 'efficiency', 'utilization', 'retention', 'accuracy',
+    ]):
+        return {'format': 'percent', 'icon': 'percent'}
+    if any(k in lower for k in [
+        'count', 'num', 'number', 'qty', 'quantity', 'volume', 'orders',
+        'transactions', 'users', 'customers', 'visitors', 'sessions',
+        'clicks', 'leads', 'signups', 'views', 'records', 'rows',
+    ]):
+        return {'format': 'count', 'icon': 'people'}
+    if any(k in lower for k in [
+        'days', 'hours', 'minutes', 'duration', 'time', 'age', 'tenure',
+        'latency', 'ttl', 'ttfb', 'response',
+    ]):
+        return {'format': 'number', 'icon': 'clock'}
+    if col_name in ('rows', 'records', 'total_rows'):
+        return {'format': 'count', 'icon': 'people'}
+    return {'format': 'number', 'icon': 'chart'}
 
 
 def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
@@ -500,17 +573,20 @@ def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
 def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",
                 x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
+    human_label = _humanize_col(label)
     return {
         "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [{
-                "label": label,
+                "label": human_label,
                 "data": values,
                 "backgroundColor": colors,
-                "borderRadius": 6,
+                "borderRadius": 8,
                 "borderSkipped": False,
-                "hoverBackgroundColor": [c + "cc" for c in colors],
+                "hoverBackgroundColor": [c + "dd" for c in colors],
+                "hoverBorderColor": [c for c in colors],
+                "hoverBorderWidth": 2,
             }],
         },
         "options": {
@@ -533,12 +609,14 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": ds["label"],
+            "label": _humanize_col(ds["label"]),
             "data": ds["data"],
-            "backgroundColor": color,
-            "borderRadius": 4,
+            "backgroundColor": color + "dd",
+            "borderColor": color,
+            "borderWidth": 1,
+            "borderRadius": 6,
             "borderSkipped": False,
-            "hoverBackgroundColor": color + "cc",
+            "hoverBackgroundColor": color,
         })
     return {
         "type": "bar",
@@ -548,7 +626,7 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
             "maintainAspectRatio": False,
             "animation": _ANIMATION_OPTS,
             "plugins": {
-                "legend": {"display": True, "position": "top", "labels": {"color": "#475569", "font": {"size": 12}}},
+                "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
             "scales": _scale_opts(x_label, y_label),
@@ -560,23 +638,25 @@ def _line_config(labels: list, values: list, label: str, palette: str = "indigo"
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
+    human_label = _humanize_col(label)
     return {
         "type": "line",
         "data": {
             "labels": labels,
             "datasets": [{
-                "label": label,
+                "label": human_label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "1a",
-                "tension": 0.4,
+                "backgroundColor": border + "18",
+                "tension": 0.45,
                 "fill": False,
                 "pointRadius": 4,
-                "pointHoverRadius": 6,
+                "pointHoverRadius": 7,
                 "pointBackgroundColor": border,
                 "pointBorderColor": "#ffffff",
-                "pointBorderWidth": 2,
+                "pointBorderWidth": 2.5,
                 "borderWidth": 2.5,
+                "spanGaps": True,
             }],
         },
         "options": {
@@ -588,6 +668,7 @@ def _line_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "tooltip": _TOOLTIP_OPTS,
             },
             "scales": _scale_opts(x_label, y_label),
+            "interaction": {"mode": "index", "intersect": False},
         },
     }
 
@@ -598,18 +679,19 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": ds["label"],
+            "label": _humanize_col(ds["label"]),
             "data": ds["data"],
             "borderColor": color,
-            "backgroundColor": color + "1a",
-            "tension": 0.4,
+            "backgroundColor": color + "18",
+            "tension": 0.45,
             "fill": False,
             "pointRadius": 4,
-            "pointHoverRadius": 6,
+            "pointHoverRadius": 7,
             "pointBackgroundColor": color,
             "pointBorderColor": "#ffffff",
-            "pointBorderWidth": 2,
+            "pointBorderWidth": 2.5,
             "borderWidth": 2.5,
+            "spanGaps": True,
         })
     return {
         "type": "line",
@@ -619,10 +701,11 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
             "maintainAspectRatio": False,
             "animation": _ANIMATION_OPTS,
             "plugins": {
-                "legend": {"display": True, "position": "top", "labels": {"color": "#475569", "font": {"size": 12}}},
+                "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
             "scales": _scale_opts(x_label, y_label),
+            "interaction": {"mode": "index", "intersect": False},
         },
     }
 
@@ -631,23 +714,32 @@ def _area_config(labels: list, values: list, label: str, palette: str = "indigo"
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
+    human_label = _humanize_col(label)
     return {
         "type": "line",
         "data": {
             "labels": labels,
             "datasets": [{
-                "label": label,
+                "label": human_label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "28",
-                "tension": 0.4,
+                "backgroundColor": {
+                    "type": "linear",
+                    "x": 0, "y": 0, "x2": 0, "y2": 1,
+                    "colorStops": [
+                        {"offset": 0, "color": border + "55"},
+                        {"offset": 1, "color": border + "05"},
+                    ],
+                },
+                "tension": 0.45,
                 "fill": True,
                 "pointRadius": 4,
-                "pointHoverRadius": 6,
+                "pointHoverRadius": 7,
                 "pointBackgroundColor": border,
                 "pointBorderColor": "#ffffff",
-                "pointBorderWidth": 2,
+                "pointBorderWidth": 2.5,
                 "borderWidth": 2.5,
+                "spanGaps": True,
             }],
         },
         "options": {
@@ -659,6 +751,7 @@ def _area_config(labels: list, values: list, label: str, palette: str = "indigo"
                 "tooltip": _TOOLTIP_OPTS,
             },
             "scales": _scale_opts(x_label, y_label),
+            "interaction": {"mode": "index", "intersect": False},
         },
     }
 
@@ -672,9 +765,11 @@ def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 10,
-                "borderWidth": 2,
+                "hoverOffset": 12,
+                "borderWidth": 3,
                 "borderColor": "#ffffff",
+                "hoverBorderColor": "#ffffff",
+                "hoverBorderWidth": 3,
             }],
         },
         "options": {
@@ -682,7 +777,16 @@ def _pie_config(labels: list, values: list, palette: str = "indigo") -> dict:
             "maintainAspectRatio": False,
             "animation": _ANIMATION_OPTS,
             "plugins": {
-                "legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b", "padding": 16}},
+                "legend": {
+                    "position": "bottom",
+                    "labels": {
+                        "font": {"size": 11, "weight": "500"},
+                        "color": "#64748b",
+                        "padding": 16,
+                        "usePointStyle": True,
+                        "pointStyleWidth": 8,
+                    },
+                },
                 "tooltip": _TOOLTIP_OPTS,
             },
         },
@@ -698,18 +802,29 @@ def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dic
             "datasets": [{
                 "data": values,
                 "backgroundColor": colors,
-                "hoverOffset": 10,
+                "hoverOffset": 12,
                 "borderWidth": 3,
                 "borderColor": "#ffffff",
+                "hoverBorderColor": "#ffffff",
+                "hoverBorderWidth": 3,
             }],
         },
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "cutout": "68%",
+            "cutout": "70%",
             "animation": _ANIMATION_OPTS,
             "plugins": {
-                "legend": {"position": "bottom", "labels": {"font": {"size": 11}, "color": "#64748b", "padding": 16}},
+                "legend": {
+                    "position": "bottom",
+                    "labels": {
+                        "font": {"size": 11, "weight": "500"},
+                        "color": "#64748b",
+                        "padding": 16,
+                        "usePointStyle": True,
+                        "pointStyleWidth": 8,
+                    },
+                },
                 "tooltip": _TOOLTIP_OPTS,
             },
         },
@@ -719,17 +834,20 @@ def _doughnut_config(labels: list, values: list, palette: str = "indigo") -> dic
 def _hbar_config(labels: list, values: list, label: str, palette: str = "indigo",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
+    human_label = _humanize_col(label)
     return {
         "type": "bar",
         "data": {
             "labels": labels,
             "datasets": [{
-                "label": label,
+                "label": human_label,
                 "data": values,
                 "backgroundColor": colors,
-                "borderRadius": 4,
+                "borderRadius": 5,
                 "borderSkipped": False,
-                "hoverBackgroundColor": [c + "cc" for c in colors],
+                "hoverBackgroundColor": [c + "dd" for c in colors],
+                "hoverBorderColor": colors,
+                "hoverBorderWidth": 2,
             }],
         },
         "options": {
@@ -1791,35 +1909,36 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                     "role": "system",
                     "content": (
                         "You are a world-class BI dashboard designer at a top-tier analytics consultancy. "
-                        "Your dashboards are modern, dense with signal, and built for confident decision-making.\n\n"
+                        "Your dashboards are modern, insight-dense, and built for confident executive decision-making.\n\n"
                         "Create a schema-agnostic BI plan for the provided dataset.\n"
                         "Mode is provided in payload: executive | analytical | operational.\n\n"
-                        "Must perform:\n"
-                        "1) Automatic data profiling (schema + column types)\n"
-                        "2) Dynamic KPI generation\n"
-                        "3) Intelligent chart selection from allowed_chart_types\n"
-                        "4) Ranking/summary table generation\n"
-                        "5) Actionable insights with quantified findings\n\n"
-                        "KPI logic hints:\n"
-                        "- If 1 numeric: total, average, min, max\n"
-                        "- If 2+ numeric: ratios/correlation candidates\n"
-                        "- If date exists: growth/trend KPIs\n"
-                        "- If category + numeric: top/bottom performers\n\n"
+                        "TITLE & NAMING RULES (critical — non-negotiable):\n"
+                        "- KPI names: Use business-friendly labels. NOT 'total_revenue' → 'Total Revenue'. NOT 'num_orders' → 'Orders'. Convert snake_case to Title Case.\n"
+                        "- Chart titles: Write natural-language titles that answer a business question.\n"
+                        "  GOOD: 'Revenue by Region', 'Monthly Sales Trend', 'Top 10 Products by Margin', 'Customer Acquisition Funnel'\n"
+                        "  BAD: 'sales_amount by region_name', 'Correlation: qty vs price', 'Distribution: category'\n"
+                        "- Table titles: Describe the analytical view, e.g. 'Top Performers Summary', 'Order Detail Breakdown'\n"
+                        "- Insights: Start with the insight, not the column name. e.g. 'North America drives 42% of revenue' not 'region has high sales_amount'\n\n"
+                        "KPI GENERATION RULES:\n"
+                        "- Always generate 3-5 KPIs covering: primary volume metric, financial metric (if any), rate/ratio (if any), time-based growth (if dates exist)\n"
+                        "- KPI name must be 2-4 words max, business-friendly (e.g. 'Total Revenue', 'Avg Order Value', 'Win Rate', 'MoM Growth')\n"
+                        "- Include change (period-over-period description) and a 1-sentence insight\n\n"
                         "CHART SELECTION RULES:\n"
-                        "- Date column present → ALWAYS include a line or area chart for trend over time.\n"
-                        "- Category (cardinality 3-15) + numeric → bar chart.\n"
-                        "- Category (cardinality > 15) + numeric → hbar with top 10.\n"
-                        "- Part-to-whole (cardinality ≤ 8) → doughnut or polararea.\n"
-                        "- Two numerics → scatter.\n"
-                        "- Multiple categories + one numeric → radar for profile comparison.\n"
-                        "- Stage progression → funnel; cumulative delta → waterfall.\n"
-                        "- Mixed multi-series → mixed (bar + line combo).\n\n"
+                        "- Date column present → ALWAYS include a line or area chart for trend over time. Title like 'Revenue Growth Over Time'\n"
+                        "- Category (cardinality 3-15) + numeric → bar chart. Title like 'Sales by Region'\n"
+                        "- Category (cardinality > 15) + numeric → hbar with top 10. Title like 'Top 10 Products by Revenue'\n"
+                        "- Part-to-whole (cardinality ≤ 8) → doughnut or polararea. Title like 'Revenue Mix by Segment'\n"
+                        "- Two numerics → scatter. Title like 'Price vs Quantity Relationship'\n"
+                        "- Multiple categories + one numeric → radar. Title like 'Performance Profile by Category'\n"
+                        "- Stage progression → funnel. Title like 'Sales Pipeline Conversion'\n"
+                        "- Cumulative delta → waterfall. Title like 'Revenue Waterfall by Month'\n"
+                        "- Mixed multi-series → mixed (bar + line). Title like 'Revenue & Growth Rate by Quarter'\n\n"
                         "SIZE RULES: kpi='sm', trend line/area='lg', bar/hbar='md', pie/doughnut='md', table='lg'.\n\n"
-                        "PALETTE RULES: indigo=KPIs, emerald=growth/revenue, rose=losses/risk, ocean/blue=time-series, amber/vibrant=distribution.\n\n"
+                        "PALETTE RULES: indigo=KPIs/default, emerald=revenue/growth positives, rose=losses/churn/risk, ocean/blue=time-series, amber=distribution/category, vibrant=multi-category.\n\n"
                         "INSIGHTS RULES:\n"
                         "- Each insight must cite a specific number from sample_stats or cardinality.\n"
-                        "- Be concrete and business-relevant. Avoid generic statements.\n"
-                        "- Prioritize decision clarity: what should the reader DO with this data?\n\n"
+                        "- Be concrete and business-relevant. Start with what it means, not what the data shows.\n"
+                        "- End with an action recommendation: 'Monitor...', 'Investigate...', 'Prioritize...'\n\n"
                         "Return ONLY valid JSON object with keys:\n"
                         "schema, kpis, charts, tables, insights.\n"
                         "Required shape:\n"
@@ -1830,7 +1949,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
                         "\"tables\":[{\"title\":\"...\",\"columns\":[],\"insight\":\"...\"}],"
                         "\"insights\":[\"...\"]"
                         "}\n"
-                        "Use exact provided column names only. No markdown."
+                        "Use exact provided column names for x/y/measure fields only. Chart titles and KPI names must be human-readable. No markdown."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
@@ -1953,8 +2072,9 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
 
     # ── KPI 1: Total rows ────────────────────────────────────────────────────
     kpi_rows_cfg: dict = {
-        "kpi": "rows",
+        "kpi": "Total Records",
         "value": f"{profile.total_rows:,}",
+        "kpi_meta": {"format": "count", "icon": "people"},
         "layout": {"size": "sm"},
     }
     kpi_rows_cfg["builder"] = _make_builder(measure="rows")
@@ -1967,11 +2087,18 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         try:
             total = df[m1].sum()
             trend_data = _compute_kpi_trend(df, m1)
-            kpi_cfg: dict = {"kpi": m1, "value": f"{total:,.0f}", "layout": {"size": "sm"}}
+            kpi_meta = _detect_kpi_meta(m1)
+            human_m1 = _humanize_col(m1)
+            kpi_cfg: dict = {
+                "kpi": human_m1,
+                "value": f"{total:,.0f}",
+                "kpi_meta": kpi_meta,
+                "layout": {"size": "sm"},
+            }
             if trend_data:
                 kpi_cfg["trend"] = trend_data
             kpi_cfg["builder"] = _make_builder(measures=[m1], measure=m1)
-            specs.append({"title": f"Total {m1}", "widget_type": "kpi", "config": kpi_cfg, "position": position})
+            specs.append({"title": f"Total {human_m1}", "widget_type": "kpi", "config": kpi_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -1982,11 +2109,18 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         try:
             total2 = df[m2].sum()
             trend_data2 = _compute_kpi_trend(df, m2)
-            kpi2_cfg: dict = {"kpi": m2, "value": f"{total2:,.0f}", "layout": {"size": "sm"}}
+            kpi_meta2 = _detect_kpi_meta(m2)
+            human_m2 = _humanize_col(m2)
+            kpi2_cfg: dict = {
+                "kpi": human_m2,
+                "value": f"{total2:,.0f}",
+                "kpi_meta": kpi_meta2,
+                "layout": {"size": "sm"},
+            }
             if trend_data2:
                 kpi2_cfg["trend"] = trend_data2
             kpi2_cfg["builder"] = _make_builder(measures=[m2], measure=m2)
-            specs.append({"title": f"Total {m2}", "widget_type": "kpi", "config": kpi2_cfg, "position": position})
+            specs.append({"title": f"Total {human_m2}", "widget_type": "kpi", "config": kpi2_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -1994,9 +2128,38 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         m1 = profile.suggested_measures[0]
         try:
             avg_val = df[m1].mean()
-            avg_cfg: dict = {"kpi": m1, "value": f"{avg_val:,.2f}", "layout": {"size": "sm"}}
+            kpi_meta_avg = _detect_kpi_meta(m1)
+            human_m1 = _humanize_col(m1)
+            avg_cfg: dict = {
+                "kpi": human_m1,
+                "value": f"{avg_val:,.2f}",
+                "kpi_meta": kpi_meta_avg,
+                "layout": {"size": "sm"},
+            }
             avg_cfg["builder"] = _make_builder(measures=[m1], measure=m1)
-            specs.append({"title": f"Avg {m1}", "widget_type": "kpi", "config": avg_cfg, "position": position})
+            specs.append({"title": f"Avg {human_m1}", "widget_type": "kpi", "config": avg_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── KPI 4: Third numeric if available ──────────────────────────────────
+    if len(profile.suggested_measures) >= 3:
+        m3 = profile.suggested_measures[2]
+        try:
+            total3 = df[m3].sum()
+            trend_data3 = _compute_kpi_trend(df, m3)
+            kpi_meta3 = _detect_kpi_meta(m3)
+            human_m3 = _humanize_col(m3)
+            kpi3_cfg: dict = {
+                "kpi": human_m3,
+                "value": f"{total3:,.0f}",
+                "kpi_meta": kpi_meta3,
+                "layout": {"size": "sm"},
+            }
+            if trend_data3:
+                kpi3_cfg["trend"] = trend_data3
+            kpi3_cfg["builder"] = _make_builder(measures=[m3], measure=m3)
+            specs.append({"title": f"Total {human_m3}", "widget_type": "kpi", "config": kpi3_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2010,7 +2173,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             bar_cfg = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, "indigo")
             bar_cfg["layout"] = {"size": "md"}
             bar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
-            specs.append({"title": f"{measure} by {dim}", "widget_type": "bar", "config": bar_cfg, "position": position})
+            title = f"{_humanize_col(measure)} by {_humanize_col(dim)}"
+            specs.append({"title": title, "widget_type": "bar", "config": bar_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2028,7 +2192,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
                 line_cfg = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "blue")
                 line_cfg["layout"] = {"size": "lg"}
                 line_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
-                specs.append({"title": f"{measure} over Time", "widget_type": "line", "config": line_cfg, "position": position})
+                title = f"{_humanize_col(measure)} Trend Over Time"
+                specs.append({"title": title, "widget_type": "line", "config": line_cfg, "position": position})
                 position += 1
         except Exception:
             pass
@@ -2046,7 +2211,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
                 area_cfg = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "emerald")
                 area_cfg["layout"] = {"size": "lg"}
                 area_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
-                specs.append({"title": f"{measure} Trend", "widget_type": "area", "config": area_cfg, "position": position})
+                title = f"{_humanize_col(measure)} Monthly Trend"
+                specs.append({"title": title, "widget_type": "area", "config": area_cfg, "position": position})
                 position += 1
         except Exception:
             pass
@@ -2059,7 +2225,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             pie_cfg = _pie_config([str(l) for l in vc.index], [int(v) for v in vc.values], "vibrant")
             pie_cfg["layout"] = {"size": "md"}
             pie_cfg["builder"] = _make_builder(dimension=dim)
-            specs.append({"title": f"Distribution: {dim}", "widget_type": "pie", "config": pie_cfg, "position": position})
+            title = f"{_humanize_col(dim)} Share"
+            specs.append({"title": title, "widget_type": "pie", "config": pie_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2072,7 +2239,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             doughnut_cfg = _doughnut_config([str(l) for l in vc2.index], [int(v) for v in vc2.values], "ocean")
             doughnut_cfg["layout"] = {"size": "md"}
             doughnut_cfg["builder"] = _make_builder(dimension=dim2)
-            specs.append({"title": f"Breakdown: {dim2}", "widget_type": "doughnut", "config": doughnut_cfg, "position": position})
+            title = f"{_humanize_col(dim2)} Breakdown"
+            specs.append({"title": title, "widget_type": "doughnut", "config": doughnut_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2086,7 +2254,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             hbar_cfg = _hbar_config([str(l) for l in top2.index], [round(float(v), 2) for v in top2.values], measure, "amber")
             hbar_cfg["layout"] = {"size": "md"}
             hbar_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
-            specs.append({"title": f"{measure} Ranking by {dim2}", "widget_type": "hbar", "config": hbar_cfg, "position": position})
+            title = f"Top {_humanize_col(dim2)} by {_humanize_col(measure)}"
+            specs.append({"title": title, "widget_type": "hbar", "config": hbar_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2100,11 +2269,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             scatter_cfg = _scatter_config(
                 [round(float(v), 4) for v in tmp[x_col]],
                 [round(float(v), 4) for v in tmp[y_col]],
-                x_col, y_col, "rose", f"{x_col} vs {y_col}",
+                x_col, y_col, "rose", f"{_humanize_col(x_col)} vs {_humanize_col(y_col)}",
             )
             scatter_cfg["layout"] = {"size": "md"}
             scatter_cfg["builder"] = _make_builder(x_measure=x_col, y_measure=y_col)
-            specs.append({"title": f"Correlation: {x_col} vs {y_col}", "widget_type": "scatter", "config": scatter_cfg, "position": position})
+            title = f"{_humanize_col(x_col)} vs {_humanize_col(y_col)} Correlation"
+            specs.append({"title": title, "widget_type": "scatter", "config": scatter_cfg, "position": position})
             position += 1
         except Exception:
             pass
@@ -2119,7 +2289,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
                 radar_cfg = _radar_config([str(l) for l in top_r.index], [round(float(v), 2) for v in top_r.values], measure, "sunset")
                 radar_cfg["layout"] = {"size": "md"}
                 radar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
-                specs.append({"title": f"{measure} Profile by {dim}", "widget_type": "radar", "config": radar_cfg, "position": position})
+                title = f"{_humanize_col(measure)} Performance by {_humanize_col(dim)}"
+                specs.append({"title": title, "widget_type": "radar", "config": radar_cfg, "position": position})
                 position += 1
         except Exception:
             pass
@@ -2133,7 +2304,7 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         rows = [[str(v) for v in row] for row in preview.values.tolist()]
         table_cfg: dict = {"columns": table_cols, "rows": rows, "layout": {"size": "lg"}}
         table_cfg["builder"] = _make_builder(measures=profile.numeric_columns[:3])
-        specs.append({"title": "Data Preview", "widget_type": "table", "config": table_cfg, "position": position})
+        specs.append({"title": "Detailed Data View", "widget_type": "table", "config": table_cfg, "position": position})
         position += 1
     except Exception:
         pass
@@ -2147,7 +2318,8 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             bar3_cfg = _bar_config([str(l) for l in top3.index], [round(float(v), 2) for v in top3.values], measure, "slate")
             bar3_cfg["layout"] = {"size": "md"}
             bar3_cfg["builder"] = _make_builder(dimension=dim3, measures=[measure], measure=measure)
-            specs.append({"title": f"{measure} by {dim3}", "widget_type": "bar", "config": bar3_cfg, "position": position})
+            title = f"{_humanize_col(measure)} by {_humanize_col(dim3)}"
+            specs.append({"title": title, "widget_type": "bar", "config": bar3_cfg, "position": position})
             position += 1
         except Exception:
             pass
