@@ -2,7 +2,7 @@ import json
 import math
 from pathlib import Path
 import re
-from urllib import request as urlrequest, error as urlerror
+import importlib.util
 
 import pandas as pd
 from django.conf import settings
@@ -102,37 +102,32 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
     api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
     if not api_key:
         return _fallback_smart_chart(df, clean_prompt)
-    req_body = {
-        "model": getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a BI assistant. Return ONLY JSON with keys: "
-                    "chart_type, title, dimension, measures, x_measure, y_measure. "
-                    "chart_type must be one of allowed_chart_types."
-                ),
-            },
-            {"role": "user", "content": json.dumps(payload)},
-        ],
-        "temperature": 0.2,
-    }
-    req = urlrequest.Request(
-        "https://api.deepseek.com/chat/completions",
-        data=json.dumps(req_body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
+    if importlib.util.find_spec("openai") is None:
+        return _fallback_smart_chart(df, clean_prompt)
+    openai_module = __import__("openai")
+    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     try:
-        with urlrequest.urlopen(req, timeout=12) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        content = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        response = client.chat.completions.create(
+            model=getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a BI assistant. Return ONLY JSON with keys: "
+                        "chart_type, title, dimension, measures, x_measure, y_measure. "
+                        "chart_type must be one of allowed_chart_types."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload)},
+            ],
+            temperature=0.2,
+            stream=False,
+            timeout=12,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
         match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         parsed = json.loads(match.group(0) if match else content)
-    except (urlerror.URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError):
+    except Exception:
         return _fallback_smart_chart(df, clean_prompt)
 
     rec_type = str(parsed.get("chart_type", "bar")).strip().lower()
