@@ -114,200 +114,76 @@
   </div>
 </div>
 
-<!-- ── KPI insight strip ─────────────────────────────────────────────────── -->
-<div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-  <!-- Total Rows -->
-  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total Rows</p>
-    <p class="mt-1 text-2xl font-bold text-slate-900">{{ profile.total_rows|default:"0" }}</p>
-    <p class="mt-0.5 text-xs text-slate-500">data records</p>
-  </div>
-  <!-- Columns -->
-  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Columns</p>
-    <p class="mt-1 text-2xl font-bold text-slate-900">{{ profile.total_columns|default:"0" }}</p>
-    <p class="mt-0.5 text-xs text-slate-500">{{ profile.numeric_columns|length }} numeric · {{ profile.categorical_columns|length }} categorical</p>
-  </div>
-  <!-- Duplicates -->
-  <div class="rounded-2xl border border-slate-200 {% if profile.duplicate_rows > 0 %}bg-amber-50{% else %}bg-emerald-50{% endif %} p-4 shadow-sm">
-    <p class="text-xs font-semibold {% if profile.duplicate_rows > 0 %}text-amber-500{% else %}text-emerald-500{% endif %} uppercase tracking-wide">Duplicates</p>
-    <p class="mt-1 text-2xl font-bold {% if profile.duplicate_rows > 0 %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ profile.duplicate_rows|default:"0" }}</p>
-    <p class="mt-0.5 text-xs {% if profile.duplicate_rows > 0 %}text-amber-600{% else %}text-emerald-600{% endif %}">{% if profile.duplicate_rows > 0 %}needs cleaning{% else %}all unique{% endif %}</p>
-  </div>
-  <!-- Missing Cells -->
-  <div class="rounded-2xl border border-slate-200 {% if profile.missing_cells > 0 %}bg-amber-50{% else %}bg-emerald-50{% endif %} p-4 shadow-sm">
-    <p class="text-xs font-semibold {% if profile.missing_cells > 0 %}text-amber-500{% else %}text-emerald-500{% endif %} uppercase tracking-wide">Missing Cells</p>
-    <p class="mt-1 text-2xl font-bold {% if profile.missing_cells > 0 %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ profile.missing_cells|default:"0" }}</p>
-    <p class="mt-0.5 text-xs {% if profile.missing_cells > 0 %}text-amber-600{% else %}text-emerald-600{% endif %}">{% if profile.missing_cells > 0 %}nulls detected{% else %}complete{% endif %}</p>
-  </div>
+<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+  <strong>Quick flow:</strong> Review table → right-click row/header to prepare data → create AI-named dashboard.
 </div>
 
-<!-- ── Profile + Widget suggestions ─────────────────────────────────────── -->
-<div class="mt-4 grid gap-4 sm:grid-cols-2">
-
-  <!-- Profile snapshot -->
-  <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-    <div class="mb-4 flex items-center gap-2">
-      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-      </div>
-      <h3 class="text-sm font-bold text-slate-900">Column profile</h3>
-    </div>
-    {% if profile.suggested_dimensions %}
-    <div class="mb-3">
-      <p class="text-xs font-semibold text-slate-500 mb-1.5">Dimensions</p>
-      <div class="flex flex-wrap gap-1.5">
-        {% for dim in profile.suggested_dimensions %}
-          <span class="rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">{{ dim }}</span>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    {% if profile.suggested_measures %}
-    <div>
-      <p class="text-xs font-semibold text-slate-500 mb-1.5">Measures</p>
-      <div class="flex flex-wrap gap-1.5">
-        {% for m in profile.suggested_measures %}
-          <span class="rounded-full bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">{{ m }}</span>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    {% if not profile.suggested_dimensions and not profile.suggested_measures %}
-      <p class="text-xs text-slate-400">No structured columns detected.</p>
-    {% endif %}
+<!-- ── Data transform studio ───────────────────────────────────────────── -->
+{% if dataset_version %}
+<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <div class="mb-4">
+    <h3 class="text-sm font-bold text-slate-900">Prepare Data Before AI Charts</h3>
+    <p class="mt-1 text-xs text-slate-500">Promote a row to header, set column data types, or create derived columns (sum, multiply, left, mid, right).</p>
   </div>
 
-  <!-- Widget suggestions -->
-  <div class="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 p-5 shadow-sm">
-    <div class="mb-4 flex items-center gap-2">
-      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-200 text-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-      </div>
-      <h3 class="text-sm font-bold text-indigo-900">Suggested charts</h3>
-    </div>
-    <ul class="space-y-2">
-      {% for item in widget_suggestions %}
-        <li class="flex items-start gap-2.5 rounded-xl bg-white/70 px-3 py-2.5 shadow-sm">
-          <div class="mt-0.5 shrink-0">
-            {% if item.chart_type == "bar" %}
-              <div class="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-600"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></div>
-            {% elif item.chart_type == "line" %}
-              <div class="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-100 text-emerald-600"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4"/></svg></div>
-            {% elif item.chart_type == "pie" %}
-              <div class="flex h-5 w-5 items-center justify-center rounded-md bg-violet-100 text-violet-600"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/></svg></div>
-            {% else %}
-              <div class="flex h-5 w-5 items-center justify-center rounded-md bg-amber-100 text-amber-600"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
-            {% endif %}
-          </div>
-          <div class="min-w-0 flex-1">
-            <p class="text-xs font-semibold text-indigo-900 leading-snug">{{ item.title }}</p>
-            <p class="mt-0.5 text-xs text-indigo-600/80 leading-snug">{{ item.description }}</p>
-          </div>
-          <span class="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">{{ item.chart_type }}</span>
-        </li>
-      {% empty %}
-        <li class="text-sm text-indigo-700">No suggestions for this dataset.</li>
-      {% endfor %}
-    </ul>
-  </div>
-</div>
-
-<!-- ── AI Clean + Manual Clean actions ──────────────────────────────────── -->
-{% if dataset_version and not clean_result and not ai_clean_report %}
-<div class="mt-4 grid gap-4 sm:grid-cols-2">
-
-  <!-- AI Clean -->
-  <div class="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-5 shadow-sm">
-    <div class="mb-3 flex items-center gap-2">
-      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-200 text-violet-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-violet-900">AI Auto-Clean</h3>
-        <p class="text-xs text-violet-600">Let AI analyse and fix data quality issues</p>
-      </div>
-    </div>
-    <ul class="mb-4 space-y-1 text-xs text-violet-700">
-      <li class="flex items-center gap-1.5"><svg class="h-3 w-3 text-violet-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>Detects &amp; removes duplicates</li>
-      <li class="flex items-center gap-1.5"><svg class="h-3 w-3 text-violet-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>Smart missing value imputation</li>
-      <li class="flex items-center gap-1.5"><svg class="h-3 w-3 text-violet-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>Outlier capping &amp; type fixes</li>
-    </ul>
-    <form
-      hx-post="{% url 'dataset-ai-clean' dataset_version.id %}"
-      hx-target="#upload-result"
-      hx-swap="innerHTML"
-      hx-indicator="#ai-clean-spinner"
-    >
+  <div class="grid gap-4 md:grid-cols-3">
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
       {% csrf_token %}
-      <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-200 transition-all hover:bg-violet-700 hover:-translate-y-px">
-        <svg id="ai-clean-spinner" class="htmx-indicator h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <svg class="h-4 w-4 ai-clean-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-        Clean with AI
-      </button>
+      <input type="hidden" name="action" value="promote_header">
+      <p class="text-xs font-semibold text-slate-700">Promote Row as Header</p>
+      <input type="number" name="header_row_index" min="0" value="0"
+        class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+      <button type="submit" class="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 text-xs font-semibold text-white hover:bg-slate-900">Apply</button>
+    </form>
+
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="set_type">
+      <p class="text-xs font-semibold text-slate-700">Identify Column Type</p>
+      <select name="column_name" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <select name="target_type" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <option value="text">Text</option>
+        <option value="date">Date</option>
+        <option value="number">Number</option>
+        <option value="currency">Currency</option>
+      </select>
+      <button type="submit" class="mt-2 w-full rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">Set Type</button>
+    </form>
+
+    <form class="rounded-xl border border-slate-200 bg-slate-50 p-3"
+      hx-post="{% url 'dataset-transform-version' dataset_version.id %}"
+      hx-target="#upload-result" hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add_column">
+      <p class="text-xs font-semibold text-slate-700">Add New Column</p>
+      <input type="text" name="new_column_name" placeholder="new_column"
+        class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" required>
+      <select name="operation" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <option value="sum">Sum</option>
+        <option value="multiply">Multiply</option>
+        <option value="left">Left</option>
+        <option value="mid">Mid</option>
+        <option value="right">Right</option>
+      </select>
+      <select name="column_a" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <select name="column_b" class="mt-2 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        {% for h in headers %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        <input type="number" name="start" value="0" min="0" placeholder="start" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+        <input type="number" name="length" value="3" min="0" placeholder="length" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+      </div>
+      <button type="submit" class="mt-2 w-full rounded-lg bg-emerald-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Create Column</button>
     </form>
   </div>
-
-  <!-- Manual Clean -->
-  {% if profile.duplicate_rows > 0 or profile.missing_cells > 0 %}
-  <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" id="clean-panel">
-    <div class="mb-3 flex items-center gap-2">
-      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-200 text-amber-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-amber-900">Manual Clean</h3>
-        <p class="text-xs text-amber-700">Choose your own cleaning strategy</p>
-      </div>
-    </div>
-
-    <form
-      hx-post="{% url 'dataset-clean-version' dataset_version.id %}"
-      hx-target="#upload-result"
-      hx-swap="innerHTML"
-      hx-indicator="#clean-spinner"
-    >
-      {% csrf_token %}
-      <div class="space-y-2 mb-3">
-        {% if profile.duplicate_rows > 0 %}
-        <label class="flex items-start gap-2.5 rounded-xl bg-white/80 px-3 py-2.5 cursor-pointer hover:bg-white transition-colors">
-          <input type="checkbox" name="drop_duplicates" class="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" checked />
-          <div>
-            <p class="text-xs font-semibold text-slate-800">Remove {{ profile.duplicate_rows }} duplicate row{{ profile.duplicate_rows|pluralize }}</p>
-          </div>
-        </label>
-        {% endif %}
-        {% if profile.missing_cells > 0 %}
-        <div class="rounded-xl bg-white/80 px-3 py-2.5">
-          <p class="text-xs font-semibold text-slate-800 mb-2">Missing values ({{ profile.missing_cells }} cells)</p>
-          <div class="grid grid-cols-2 gap-1.5">
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="missing_strategy" value="keep" class="h-3.5 w-3.5 text-amber-600" checked /><span class="text-xs text-slate-600">Keep as-is</span></label>
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="missing_strategy" value="drop_rows" class="h-3.5 w-3.5 text-amber-600" /><span class="text-xs text-slate-600">Drop rows</span></label>
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="missing_strategy" value="fill_zero" class="h-3.5 w-3.5 text-amber-600" /><span class="text-xs text-slate-600">Fill with zero</span></label>
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="missing_strategy" value="fill_mean" class="h-3.5 w-3.5 text-amber-600" /><span class="text-xs text-slate-600">Fill with mean</span></label>
-          </div>
-        </div>
-        {% endif %}
-      </div>
-      <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200 transition-all hover:bg-amber-700 hover:-translate-y-px">
-        <svg id="clean-spinner" class="htmx-indicator h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-        Clean &amp; save
-      </button>
-    </form>
-  </div>
-  {% else %}
-  <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm flex flex-col items-center justify-center text-center gap-2">
-    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-      <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    </div>
-    <p class="text-sm font-bold text-emerald-800">Data looks clean!</p>
-    <p class="text-xs text-emerald-600">No duplicates or missing values detected.</p>
-  </div>
-  {% endif %}
-
 </div>
 {% endif %}
 
