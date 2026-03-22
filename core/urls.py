@@ -34,6 +34,7 @@ from apps.dashboards.views import (
     dashboard_ai_suggest_slicers,
     dashboard_ai_clean_dataset,
     dashboard_ai_executive_summary,
+    dashboard_ai_enhance_presentation_text,
     landing_page,
     pricing_page,
 )
@@ -135,4 +136,5 @@ urlpatterns = [
     path("dashboards/<uuid:dashboard_id>/ai/suggest-slicers/", dashboard_ai_suggest_slicers, name="dashboard-ai-suggest-slicers"),
     path("dashboards/<uuid:dashboard_id>/ai/clean-dataset/", dashboard_ai_clean_dataset, name="dashboard-ai-clean-dataset"),
     path("dashboards/<uuid:dashboard_id>/ai/executive-summary/", dashboard_ai_executive_summary, name="dashboard-ai-executive-summary"),
+    path("dashboards/<uuid:dashboard_id>/ai/enhance-presentation-text/", dashboard_ai_enhance_presentation_text, name="dashboard-ai-enhance-presentation-text"),
 ]

@@ -2084,3 +2084,56 @@ def dashboard_ai_executive_summary(request: HttpRequest, dashboard_id) -> JsonRe
         widget_titles=widget_titles,
     )
     return JsonResponse({"success": True, "summary": summary})
+
+
+@login_required
+def dashboard_ai_enhance_presentation_text(request: HttpRequest, dashboard_id) -> JsonResponse:
+    """Enhance presentation slide text using AI (or deterministic fallback)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        payload = {}
+    raw_text = str(payload.get("text", "")).strip()
+    if not raw_text:
+        return JsonResponse({"error": "Text is required"}, status=400)
+
+    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if api_key and importlib.util.find_spec("openai") is not None:
+        try:
+            openai_module = __import__("openai")
+            client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model=getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a presentation writing assistant. Rewrite text to be concise, persuasive, "
+                            "and executive-friendly. Keep facts unchanged. Return JSON only: {\"enhanced_text\":\"...\"}."
+                        ),
+                    },
+                    {"role": "user", "content": raw_text},
+                ],
+                temperature=0.2,
+                timeout=10,
+            )
+            content = ((response.choices[0].message.content) or "").strip()
+            match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+            parsed = json.loads(match.group(0) if match else content)
+            enhanced = str(parsed.get("enhanced_text", "")).strip()
+            if enhanced:
+                return JsonResponse({"success": True, "enhanced_text": enhanced, "ai_powered": True})
+        except Exception:
+            pass
+
+    # Fallback: deterministic readability cleanup.
+    enhanced = " ".join(raw_text.split())
+    if len(enhanced) > 0:
+        enhanced = enhanced[0].upper() + enhanced[1:]
+    if not enhanced.endswith("."):
+        enhanced += "."
+    return JsonResponse({"success": True, "enhanced_text": enhanced, "ai_powered": False})

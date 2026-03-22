@@ -1836,6 +1836,7 @@
   "applyFiltersUrl": "{% url 'dashboard-apply-filters' dashboard.id %}",
   "filterColumnsUrl": "{% url 'dashboard-filter-columns' dashboard.id %}",
   "executiveSummaryUrl": "{% url 'dashboard-ai-executive-summary' dashboard.id %}",
+  "enhancePresentationTextUrl": "{% url 'dashboard-ai-enhance-presentation-text' dashboard.id %}",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>
@@ -2047,6 +2048,18 @@
     </select>
     <button id="presentation-add-chart-btn" class="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">+ Chart Slide</button>
     <button id="presentation-ai-slide-btn" class="rounded-lg bg-indigo-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Generate AI Slide</button>
+    <span class="mx-1 h-5 w-px bg-white/20"></span>
+    <button id="presentation-text-bold-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20">B</button>
+    <button id="presentation-text-italic-btn" class="rounded-lg bg-white/10 px-2.5 py-1 text-xs italic text-white hover:bg-white/20">I</button>
+    <select id="presentation-font-size-select" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-xs text-white">
+      <option value="14px">14</option>
+      <option value="16px" selected>16</option>
+      <option value="18px">18</option>
+      <option value="22px">22</option>
+      <option value="28px">28</option>
+    </select>
+    <input id="presentation-text-color" type="color" value="#ffffff" class="h-8 w-8 cursor-pointer rounded border border-white/20 bg-transparent p-0">
+    <button id="presentation-enhance-text-btn" class="rounded-lg bg-violet-500/80 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500">AI Enhance Text</button>
   </div>
 
   <!-- Chart area -->
@@ -2055,6 +2068,7 @@
     <div id="presentation-kpi-wrap" style="display:none;" class="flex items-center justify-center h-full"></div>
     <div id="presentation-table-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white p-4"></div>
     <div id="presentation-text-wrap" style="display:none;" class="h-full overflow-auto rounded-xl bg-white/10 p-6 text-white text-base leading-relaxed"></div>
+    <div id="presentation-insight-wrap" style="display:none;" class="absolute bottom-10 left-10 max-w-xl rounded-xl border border-violet-300/40 bg-slate-900/70 px-4 py-3 text-xs text-violet-100 backdrop-blur-sm"></div>
   </div>
 
   <!-- Navigation bar -->
