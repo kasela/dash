@@ -1726,9 +1726,7 @@ def dashboard_ai_analyze_widget(request: HttpRequest, dashboard_id: int, widget_
         analysis = f"KPI '{kpi_col}': {kpi_value}. This is a key metric summarised across the entire dataset."
         return JsonResponse({"success": True, "analysis": analysis, "ai_powered": False})
 
-    analysis = ai_analyze_chart(chart_type, labels, values, title)
-    from django.conf import settings
-    ai_powered = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    analysis, ai_powered = ai_analyze_chart(chart_type, labels, values, title)
     return JsonResponse({"success": True, "analysis": analysis, "ai_powered": ai_powered})
 
 
@@ -1745,9 +1743,7 @@ def dashboard_ai_suggest_slicers(request: HttpRequest, dashboard_id: int) -> Jso
         return JsonResponse({"error": "Could not load dataset file"}, status=500)
 
     profile = build_profile_summary(df)
-    suggestions = ai_suggest_slicers(df, profile)
-    from django.conf import settings
-    ai_powered = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    suggestions, ai_powered = ai_suggest_slicers(df, profile)
     return JsonResponse({"success": True, "suggestions": suggestions, "ai_powered": ai_powered})
 
 

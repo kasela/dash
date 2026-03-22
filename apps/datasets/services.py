@@ -1083,7 +1083,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
                             "reason": str(s.get("reason", "")).strip()[:200],
                         })
                 if valid:
-                    return valid[:6]
+                    return valid[:6], True
         except Exception:
             pass
 
@@ -1109,7 +1109,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
             "label": col.replace("_", " ").title(),
             "reason": f"Numeric column — range filter allows narrowing the data",
         })
-    return suggestions[:6]
+    return suggestions[:6], False
 
 
 def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) -> str:
@@ -1118,7 +1118,7 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
 
     client, model = _get_ai_client()
     if client is None:
-        return _heuristic_chart_analysis(chart_type, labels, values, title)
+        return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
     payload = {
         "chart_type": chart_type,
@@ -1144,9 +1144,9 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
             stream=False,
             timeout=12,
         )
-        return ((response.choices[0].message.content) or "").strip()
+        return ((response.choices[0].message.content) or "").strip(), True
     except Exception:
-        return _heuristic_chart_analysis(chart_type, labels, values, title)
+        return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
 
 def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title: str) -> str:
