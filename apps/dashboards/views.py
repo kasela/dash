@@ -38,6 +38,7 @@ from apps.datasets.services import (
     ai_analyze_chart,
     ai_generate_dashboard_specs,
     ai_generate_dashboard_title,
+    ai_generate_executive_summary,
     _compute_kpi_trend,
 )
 
@@ -1832,3 +1833,31 @@ def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id: int) -> JsonR
     from django.conf import settings
     report["ai_powered"] = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
     return JsonResponse({"success": True, "report": report})
+
+
+@login_required
+def dashboard_ai_executive_summary(request: HttpRequest, dashboard_id: int) -> JsonResponse:
+    """Generate an AI-powered executive summary for the dashboard (used for PDF export)."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    dataset_version = _get_default_dataset_version(dashboard)
+    if not dataset_version:
+        return JsonResponse({"error": "No dataset linked to this dashboard"}, status=400)
+
+    df = _load_df_from_version(dataset_version)
+    if df is None:
+        return JsonResponse({"error": "Could not load dataset file"}, status=500)
+
+    profile = build_profile_summary(df)
+    widgets = dashboard.widgets.order_by("position")
+    widget_titles = [w.title for w in widgets]
+
+    summary = ai_generate_executive_summary(
+        df=df,
+        profile=profile,
+        dashboard_title=dashboard.title,
+        widget_titles=widget_titles,
+    )
+    return JsonResponse({"success": True, "summary": summary})
