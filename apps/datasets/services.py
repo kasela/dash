@@ -2170,6 +2170,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
     if client is None:
         return None
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
+    connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
@@ -2475,7 +2476,12 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
             ],
             temperature=0.15,
             stream=True,
-            timeout=specs_timeout,
+            timeout=__import__("httpx").Timeout(
+                connect=float(connect_timeout),
+                read=float(specs_timeout),
+                write=5.0,
+                pool=5.0,
+            ),
         )
         # Stream chunks to avoid read timeout on large JSON responses
         content_parts: list[str] = []

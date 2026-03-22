@@ -106,7 +106,6 @@ LEMONSQUEEZY_STORE_SLUG = os.environ.get("LEMONSQUEEZY_STORE_SLUG", "")
 # ── AI settings (DeepSeek) ─────────────────────────────────────────────────────
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_SPECS_TIMEOUT=30
 
 # Site metadata for SEO
 SITE_NAME = "DashAI"
