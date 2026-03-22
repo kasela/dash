@@ -1572,6 +1572,57 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary") -> 
     return None
 
 
+def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> str | None:
+    """Ask AI for a concise dashboard title tailored to the dataset."""
+    import json as _json
+    import re as _re
+
+    client, model = _get_ai_client()
+    if client is None:
+        return None
+
+    date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+    payload = {
+        "dataset_name": str(dataset_name or "").strip(),
+        "columns": [str(c) for c in df.columns[:50]],
+        "numeric_columns": [str(c) for c in profile.numeric_columns[:12]],
+        "categorical_columns": [str(c) for c in profile.categorical_columns[:12]],
+        "date_columns": [str(c) for c in date_cols[:5]],
+        "total_rows": int(profile.total_rows),
+    }
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert analytics storyteller. Generate ONE concise executive dashboard title.\n"
+                        "Return ONLY valid JSON with key: title.\n"
+                        "Rules:\n"
+                        "- Keep title 3-7 words.\n"
+                        "- Be specific to the dataset context and columns.\n"
+                        "- Avoid generic words like 'Overview' when possible.\n"
+                        "- No punctuation-heavy or clickbait phrasing."
+                    ),
+                },
+                {"role": "user", "content": _json.dumps(payload)},
+            ],
+            temperature=0.2,
+            stream=False,
+            timeout=12,
+        )
+        content = ((response.choices[0].message.content) or "").strip()
+        match = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+        parsed = _json.loads(match.group(0) if match else content)
+        title = str(parsed.get("title", "")).strip()
+        if title:
+            return title[:200]
+    except Exception:
+        pass
+    return None
+
+
 def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     """Read the saved dataset file and generate real chart widget specs."""
     from pathlib import Path
