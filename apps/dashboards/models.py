@@ -13,6 +13,8 @@ class Dashboard(models.Model):
     title = models.CharField(max_length=200)
     is_public = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # filter_config: list of {id, column, filter_type, label, version_id}
+    filter_config = models.JSONField(default=list, blank=True)
 
 
 class DashboardDataset(models.Model):

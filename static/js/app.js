@@ -53,6 +53,24 @@
     }
   }
 
+  // Inject live JS tooltip callback (Python cannot serialize JS functions to JSON)
+  function _injectTooltipCallback(cfg) {
+    try {
+      var tooltip = cfg && cfg.options && cfg.options.plugins && cfg.options.plugins.tooltip;
+      if (tooltip && tooltip.enabled !== false) {
+        if (!tooltip.callbacks) tooltip.callbacks = {};
+        if (typeof tooltip.callbacks.label !== 'function') {
+          tooltip.callbacks.label = function (ctx) {
+            var v = ctx.parsed && ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
+            if (typeof v === 'number') return ' ' + v.toLocaleString();
+            return ' ' + v;
+          };
+        }
+      }
+    } catch (_) {}
+    return cfg;
+  }
+
   function renderWidgetCharts() {
     document.querySelectorAll('[data-widget-chart]').forEach(function (wrap) {
       var canvas = wrap.querySelector('canvas');
@@ -62,6 +80,7 @@
         if (!cfg.options) cfg.options = {};
         cfg.options.responsive = true;
         cfg.options.maintainAspectRatio = false;
+        _injectTooltipCallback(cfg);
         var widgetId = wrap.dataset.widgetId;
         var chart = new Chart(canvas, cfg);
         if (widgetId) widgetCharts[widgetId] = { chart: chart, config: cfg, canvas: canvas };
@@ -647,17 +666,29 @@
     if (Array.isArray(builder.group_by)) setMultiSelectValues(document.getElementById('cb-group-by'), builder.group_by);
     if (builder.palette) {
       var paletteInput = document.querySelector('input[name="cb_palette"][value="' + builder.palette + '"]');
-      if (paletteInput) paletteInput.checked = true;
+      if (paletteInput) {
+        // Uncheck all palette radios first, then check the right one
+        document.querySelectorAll('input[name="cb_palette"]').forEach(function (r) { r.checked = false; });
+        paletteInput.checked = true;
+        // Update visual border/background classes manually for browsers that don't re-evaluate has-[:checked]
+        document.querySelectorAll('.cb-palette-option').forEach(function (lbl) {
+          var inp = lbl.querySelector('input[name="cb_palette"]');
+          var span = lbl.querySelector('span');
+          if (!inp || !span) return;
+          if (inp.checked) {
+            span.style.borderColor = '#6d28d9';
+            span.style.backgroundColor = '#f5f3ff';
+          } else {
+            span.style.borderColor = '';
+            span.style.backgroundColor = '';
+          }
+        });
+      }
     }
-    // Restore tooltip toggle
+    // Restore tooltip toggle — read from builder metadata (most reliable)
     var tooltipChk = document.getElementById('cb-tooltip-enabled');
     if (tooltipChk) {
-      // Read from builder metadata first, else from chart options
       var tooltipOn = builder.tooltip_enabled !== false;
-      if (cbPendingEdit && cbPendingEdit.config && cbPendingEdit.config.options &&
-          cbPendingEdit.config.options.plugins && cbPendingEdit.config.options.plugins.tooltip) {
-        tooltipOn = cbPendingEdit.config.options.plugins.tooltip.enabled !== false;
-      }
       tooltipChk.checked = tooltipOn;
     }
   }
@@ -737,6 +768,20 @@
       } else {
         lbl.style.borderColor = '';
         lbl.style.backgroundColor = '';
+      }
+    });
+
+    // Re-apply palette visual state (changing chart type must not reset palette visual)
+    document.querySelectorAll('.cb-palette-option').forEach(function (lbl) {
+      var inp = lbl.querySelector('input[name="cb_palette"]');
+      var span = lbl.querySelector('span');
+      if (!inp || !span) return;
+      if (inp.checked) {
+        span.style.borderColor = '#6d28d9';
+        span.style.backgroundColor = '#f5f3ff';
+      } else {
+        span.style.borderColor = '';
+        span.style.backgroundColor = '';
       }
     });
 
@@ -967,6 +1012,7 @@
       if (!chartCfg.options) chartCfg.options = {};
       chartCfg.options.responsive = true;
       chartCfg.options.maintainAspectRatio = false;
+      _injectTooltipCallback(chartCfg);
       cbPreviewChart = new Chart(canvas, chartCfg);
     } catch (e) {
       console.warn('DashAI: preview render error', e);
@@ -1988,6 +2034,24 @@
       radio.addEventListener('change', updateCbFieldVisibility);
     });
 
+    // Palette click: update visual selection immediately
+    document.querySelectorAll('input[name="cb_palette"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        document.querySelectorAll('.cb-palette-option').forEach(function (lbl) {
+          var inp = lbl.querySelector('input[name="cb_palette"]');
+          var span = lbl.querySelector('span');
+          if (!inp || !span) return;
+          if (inp.checked) {
+            span.style.borderColor = '#6d28d9';
+            span.style.backgroundColor = '#f5f3ff';
+          } else {
+            span.style.borderColor = '';
+            span.style.backgroundColor = '';
+          }
+        });
+      });
+    });
+
     // When dataset selector changes, reload columns for the new dataset
     var datasetSel = document.getElementById('cb-dataset');
     if (datasetSel) {
@@ -2154,6 +2218,458 @@
     });
   }
 
+  // ── Interactive Dashboard Filters ─────────────────────────────────────────
+
+  var _filterState = {};          // column → current value(s)
+  var _filterColumnMeta = {};     // column → {type, unique_values?, min?, max?}
+  var _filterApplyTimer = null;   // debounce timer
+  var _filterConfig = [];         // from dashboard-filter-config script tag
+
+  function _loadFilterConfig() {
+    var el = document.getElementById('dashboard-filter-config');
+    if (!el) return [];
+    try { return JSON.parse(el.textContent) || []; } catch (_) { return []; }
+  }
+
+  function _getFilterApiCfg() {
+    return getApiConfig();
+  }
+
+  // Fetch column metadata (unique values + range) for filter dropdowns/radios
+  function _fetchFilterColumns(callback) {
+    var cfg = _getFilterApiCfg();
+    if (!cfg || !cfg.filterColumnsUrl) return;
+    fetch(cfg.filterColumnsUrl, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        _filterColumnMeta = {};
+        (data.columns || []).forEach(function (col) {
+          _filterColumnMeta[col.column] = col;
+        });
+        if (typeof callback === 'function') callback(data);
+      })
+      .catch(function () {});
+  }
+
+  // Populate the filter controls with options from column metadata
+  function _populateFilterControls() {
+    _filterConfig.forEach(function (f) {
+      var meta = _filterColumnMeta[f.column] || {};
+      var item = document.querySelector('.filter-control-item[data-filter-id="' + f.id + '"]');
+      if (!item) return;
+
+      if (f.filter_type === 'dropdown') {
+        var sel = item.querySelector('.filter-dropdown');
+        if (!sel || !meta.unique_values) return;
+        // Preserve first "All" option
+        while (sel.options.length > 1) sel.remove(1);
+        meta.unique_values.forEach(function (v) {
+          var opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          sel.appendChild(opt);
+        });
+      } else if (f.filter_type === 'radio') {
+        var rg = item.querySelector('.filter-radio-group');
+        if (!rg || !meta.unique_values) return;
+        // Clear all but "All" option
+        rg.querySelectorAll('.filter-radio-option:not(:first-child)').forEach(function (el) { el.remove(); });
+        meta.unique_values.slice(0, 12).forEach(function (v) {
+          var lbl = document.createElement('label');
+          lbl.className = 'filter-radio-option';
+          var inp = document.createElement('input');
+          inp.type = 'radio';
+          inp.name = 'filter_' + f.id;
+          inp.value = v;
+          inp.className = 'sr-only';
+          var span = document.createElement('span');
+          span.className = 'inline-flex items-center rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 cursor-pointer transition-all hover:border-violet-500';
+          span.textContent = v;
+          lbl.appendChild(inp);
+          lbl.appendChild(span);
+          rg.appendChild(lbl);
+        });
+        // Add change listeners for all radio inputs in this group
+        rg.querySelectorAll('input[type="radio"]').forEach(function (radio) {
+          radio.addEventListener('change', function () {
+            _updateRadioVisuals(rg);
+            _filterState[f.column] = radio.value;
+            _scheduleFilterApply();
+          });
+        });
+      } else if (f.filter_type === 'multiselect') {
+        var ms = item.querySelector('.filter-multiselect');
+        if (!ms || !meta.unique_values) return;
+        while (ms.options.length > 1) ms.remove(1);
+        meta.unique_values.forEach(function (v) {
+          var opt = document.createElement('option');
+          opt.value = v; opt.textContent = v;
+          ms.appendChild(opt);
+        });
+      } else if (f.filter_type === 'range') {
+        var slider = item.querySelector('.filter-range-input');
+        var valLabel = item.querySelector('.filter-range-value');
+        if (!slider || !meta.min !== undefined) return;
+        if (meta.min !== undefined) {
+          slider.min = meta.min;
+          slider.max = meta.max;
+          slider.value = meta.min;
+          if (valLabel) valLabel.textContent = Number(meta.min).toLocaleString() + ' – ' + Number(meta.max).toLocaleString();
+        }
+      }
+    });
+  }
+
+  function _updateRadioVisuals(rg) {
+    rg.querySelectorAll('.filter-radio-option').forEach(function (lbl) {
+      var inp = lbl.querySelector('input');
+      var span = lbl.querySelector('span');
+      if (!inp || !span) return;
+      if (inp.checked) {
+        span.style.background = '#7c3aed';
+        span.style.color = '#fff';
+        span.style.borderColor = '#7c3aed';
+      } else {
+        span.style.background = '';
+        span.style.color = '';
+        span.style.borderColor = '';
+      }
+    });
+  }
+
+  function _scheduleFilterApply() {
+    if (_filterApplyTimer) clearTimeout(_filterApplyTimer);
+    _filterApplyTimer = setTimeout(_applyFilters, 400);
+  }
+
+  function _buildFilterPayload() {
+    var filters = [];
+    _filterConfig.forEach(function (f) {
+      var val = _filterState[f.column];
+      if (val === undefined || val === '__all__' || val === '' || (Array.isArray(val) && val.length === 0)) return;
+      filters.push({ column: f.column, filter_type: f.filter_type, value: val });
+    });
+    return filters;
+  }
+
+  function _updateFilterCountBadge() {
+    var active = _buildFilterPayload().length;
+    var badge = document.getElementById('active-filter-count');
+    var resetBtn = document.getElementById('reset-filters-btn');
+    if (badge) {
+      if (active > 0) {
+        badge.textContent = active + ' active';
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+    if (resetBtn) {
+      if (active > 0) resetBtn.classList.remove('hidden');
+      else resetBtn.classList.add('hidden');
+    }
+  }
+
+  function _applyFilters() {
+    var cfg = _getFilterApiCfg();
+    if (!cfg || !cfg.applyFiltersUrl) return;
+
+    var filters = _buildFilterPayload();
+    _updateFilterCountBadge();
+
+    var loading = document.getElementById('filter-loading');
+    if (loading) loading.style.display = 'flex';
+
+    fetch(cfg.applyFiltersUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ filters: filters }),
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (loading) loading.style.display = 'none';
+        if (!data || !data.success) return;
+        _updateChartsFromFilterResult(data.widgets);
+      })
+      .catch(function () {
+        if (loading) loading.style.display = 'none';
+      });
+  }
+
+  function _updateChartsFromFilterResult(widgetsMap) {
+    if (!widgetsMap) return;
+    Object.keys(widgetsMap).forEach(function (widgetId) {
+      var newConfig = widgetsMap[widgetId];
+      var entry = widgetCharts[widgetId];
+
+      // Handle KPI widget update
+      if (newConfig && newConfig.kpi) {
+        var card = document.querySelector('.widget-card[data-widget-id="' + widgetId + '"]');
+        if (card) {
+          var kpiVal = card.querySelector('.widget-kpi-value');
+          if (kpiVal) kpiVal.textContent = newConfig.value || '–';
+        }
+        return;
+      }
+
+      if (!entry || !entry.chart || !entry.canvas) return;
+      if (!newConfig || !newConfig.data) return;
+
+      try {
+        // Inject tooltip callback into new config
+        _injectTooltipCallback(newConfig);
+        // Update chart data in place for smooth animation
+        var chart = entry.chart;
+        chart.data.labels = newConfig.data.labels || chart.data.labels;
+        if (newConfig.data.datasets) {
+          newConfig.data.datasets.forEach(function (ds, i) {
+            if (chart.data.datasets[i]) {
+              chart.data.datasets[i].data = ds.data;
+            }
+          });
+        }
+        chart.update('active');
+      } catch (e) {
+        console.warn('DashAI: filter chart update error', e);
+      }
+    });
+  }
+
+  // Bind all filter control change events
+  function _bindFilterControlEvents() {
+    _filterConfig.forEach(function (f) {
+      var item = document.querySelector('.filter-control-item[data-filter-id="' + f.id + '"]');
+      if (!item) return;
+
+      if (f.filter_type === 'dropdown') {
+        var sel = item.querySelector('.filter-dropdown');
+        if (sel) {
+          sel.addEventListener('change', function () {
+            _filterState[f.column] = sel.value;
+            _scheduleFilterApply();
+          });
+        }
+      } else if (f.filter_type === 'multiselect') {
+        var ms = item.querySelector('.filter-multiselect');
+        if (ms) {
+          ms.addEventListener('change', function () {
+            var vals = [];
+            for (var i = 0; i < ms.options.length; i++) {
+              if (ms.options[i].selected && ms.options[i].value !== '__all__') vals.push(ms.options[i].value);
+            }
+            _filterState[f.column] = vals;
+            _scheduleFilterApply();
+          });
+        }
+      } else if (f.filter_type === 'range') {
+        var slider = item.querySelector('.filter-range-input');
+        var valLabel = item.querySelector('.filter-range-value');
+        if (slider) {
+          slider.addEventListener('input', function () {
+            var meta = _filterColumnMeta[f.column] || {};
+            var lo = meta.min !== undefined ? Number(meta.min) : 0;
+            var hi = Number(slider.value);
+            if (valLabel) valLabel.textContent = Number(lo).toLocaleString() + ' – ' + Number(hi).toLocaleString();
+            _filterState[f.column] = [lo, hi];
+            _scheduleFilterApply();
+          });
+        }
+      }
+      // Radio buttons are bound in _populateFilterControls
+    });
+  }
+
+  // ── Filter Manager Modal ────────────────────────────────────────────────
+
+  function initFilterManager() {
+    var cfg = getApiConfig();
+    if (!cfg) return;
+
+    _filterConfig = _loadFilterConfig();
+
+    var openBtn1 = document.getElementById('open-filter-manager-btn');
+    var overlay = document.getElementById('filter-manager-overlay');
+    var modal = document.getElementById('filter-manager-modal');
+    var closeBtn = document.getElementById('close-filter-manager-btn');
+    var cancelBtn = document.getElementById('cancel-filter-manager-btn');
+    var saveBtn = document.getElementById('save-filter-manager-btn');
+    var fmColumn = document.getElementById('fm-column');
+    var fmType = document.getElementById('fm-type');
+    var fmLabel = document.getElementById('fm-label');
+    var fmAddBtn = document.getElementById('fm-add-btn');
+    var fmList = document.getElementById('fm-filter-list');
+    var fmNoFilters = document.getElementById('fm-no-filters');
+    var fmAddError = document.getElementById('fm-add-error');
+    var fmError = document.getElementById('fm-error');
+
+    if (!modal) return;
+
+    var pendingFilters = [];  // local copy being edited
+
+    function openModal() {
+      pendingFilters = JSON.parse(JSON.stringify(_filterConfig));
+      renderFmList();
+      modal.style.display = 'block';
+      if (overlay) overlay.style.display = 'block';
+      // Load columns for the column picker
+      if (fmColumn) {
+        fmColumn.innerHTML = '<option value="">— loading… —</option>';
+        fetch(cfg.filterColumnsUrl, { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data) return;
+            _filterColumnMeta = {};
+            (data.columns || []).forEach(function (col) { _filterColumnMeta[col.column] = col; });
+            fmColumn.innerHTML = '<option value="">— select column —</option>';
+            (data.columns || []).forEach(function (col) {
+              var opt = document.createElement('option');
+              opt.value = col.column;
+              opt.textContent = col.column + (col.type === 'categorical' ? ' (' + (col.unique_values || []).length + ' values)' : ' (numeric)');
+              fmColumn.appendChild(opt);
+            });
+            // Update type options based on column type
+            fmColumn.addEventListener('change', function () {
+              var meta = _filterColumnMeta[fmColumn.value] || {};
+              if (meta.type === 'numeric') {
+                fmType.value = 'range';
+              } else {
+                if (fmType.value === 'range') fmType.value = 'dropdown';
+              }
+              if (!fmLabel.value && fmColumn.value) fmLabel.value = fmColumn.value;
+            });
+          })
+          .catch(function () {
+            if (fmColumn) fmColumn.innerHTML = '<option value="">Failed to load</option>';
+          });
+      }
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    function renderFmList() {
+      if (!fmList) return;
+      if (pendingFilters.length === 0) {
+        if (fmNoFilters) fmNoFilters.style.display = '';
+        fmList.querySelectorAll('.fm-filter-row').forEach(function (r) { r.remove(); });
+        return;
+      }
+      if (fmNoFilters) fmNoFilters.style.display = 'none';
+      fmList.querySelectorAll('.fm-filter-row').forEach(function (r) { r.remove(); });
+      pendingFilters.forEach(function (f, idx) {
+        var row = document.createElement('div');
+        row.className = 'fm-filter-row flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm';
+        row.innerHTML = [
+          '<div class="flex items-center gap-3 min-w-0">',
+          '  <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">',
+          '    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>',
+          '  </div>',
+          '  <div class="min-w-0">',
+          '    <p class="text-sm font-semibold text-slate-900 truncate">' + escapeHtml(f.label || f.column) + '</p>',
+          '    <p class="text-xs text-slate-500">' + escapeHtml(f.column) + ' &bull; ' + escapeHtml(f.filter_type) + '</p>',
+          '  </div>',
+          '</div>',
+          '<button class="fm-remove-btn flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500" data-idx="' + idx + '" title="Remove filter">',
+          '  <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+          '</button>',
+        ].join('');
+        fmList.insertBefore(row, fmNoFilters);
+      });
+      fmList.querySelectorAll('.fm-remove-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var idx = parseInt(btn.dataset.idx);
+          pendingFilters.splice(idx, 1);
+          renderFmList();
+        });
+      });
+    }
+
+    if (openBtn1) openBtn1.addEventListener('click', openModal);
+    if (overlay) overlay.addEventListener('click', closeModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    if (fmAddBtn && fmColumn && fmType && fmLabel) {
+      fmAddBtn.addEventListener('click', function () {
+        var col = fmColumn.value;
+        var ftype = fmType.value;
+        var label = fmLabel.value.trim() || col;
+        if (!col) {
+          if (fmAddError) { fmAddError.textContent = 'Please select a column.'; fmAddError.style.display = ''; }
+          return;
+        }
+        if (fmAddError) fmAddError.style.display = 'none';
+        var id = col + '_' + Date.now();
+        pendingFilters.push({ id: id, column: col, filter_type: ftype, label: label });
+        fmColumn.value = '';
+        fmLabel.value = '';
+        renderFmList();
+      });
+    }
+
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        if (!cfg.saveFiltersUrl) return;
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+        if (fmError) fmError.style.display = 'none';
+        fetch(cfg.saveFiltersUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body: JSON.stringify({ filters: pendingFilters }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Filters';
+            if (data.success) {
+              showToast('Filters saved — reloading…', 'success');
+              setTimeout(function () { window.location.reload(); }, 600);
+            } else {
+              if (fmError) { fmError.textContent = data.error || 'Failed to save filters.'; fmError.style.display = ''; }
+            }
+          })
+          .catch(function (err) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Filters';
+            if (fmError) { fmError.textContent = 'Network error: ' + err.message; fmError.style.display = ''; }
+          });
+      });
+    }
+
+    // Reset all filters button
+    var resetBtn = document.getElementById('reset-filters-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        _filterState = {};
+        // Reset all controls
+        document.querySelectorAll('.filter-dropdown').forEach(function (sel) { sel.value = '__all__'; });
+        document.querySelectorAll('.filter-radio-group').forEach(function (rg) {
+          var first = rg.querySelector('input[type="radio"]');
+          if (first) { first.checked = true; _updateRadioVisuals(rg); }
+        });
+        document.querySelectorAll('.filter-multiselect').forEach(function (ms) {
+          for (var i = 0; i < ms.options.length; i++) {
+            ms.options[i].selected = (ms.options[i].value === '__all__');
+          }
+        });
+        _applyFilters();
+      });
+    }
+
+    // Initialize filter panel if filters exist
+    if (_filterConfig.length > 0) {
+      _fetchFilterColumns(function () {
+        _populateFilterControls();
+        _bindFilterControlEvents();
+      });
+    }
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -2180,6 +2696,7 @@
     initTextCanvasBuilder();
     initTableInteractions();
     initInsertZones();
+    initFilterManager();
   });
 
 })();

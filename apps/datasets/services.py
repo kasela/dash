@@ -245,9 +245,9 @@ _TOOLTIP_OPTS = {
     "borderWidth": 1,
     "padding": 10,
     "cornerRadius": 8,
-    "callbacks": {
-        "label": "function(ctx){var v=ctx.parsed.y??ctx.parsed;if(typeof v==='number')return ' '+v.toLocaleString();return ' '+v;}"
-    },
+    "displayColors": True,
+    "boxWidth": 10,
+    "boxHeight": 10,
 }
 
 _ANIMATION_OPTS = {
@@ -276,6 +276,39 @@ def _resolve_palette(palette_name: str, n: int) -> list:
     colors = PALETTES.get(palette_name, DEFAULT_PALETTE)
     # cycle if needed
     return [colors[i % len(colors)] for i in range(n)]
+
+
+def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
+    """Apply a list of filter dicts to a DataFrame.
+
+    Each filter dict has: column, filter_type, value.
+    Supported filter_type values: "dropdown", "radio", "multiselect", "range".
+    """
+    if not filters:
+        return df
+    result = df.copy()
+    for f in filters:
+        col = f.get("column", "")
+        ftype = f.get("filter_type", "dropdown")
+        value = f.get("value")
+        if not col or col not in result.columns or value is None or value == "" or value == []:
+            continue
+        try:
+            if ftype in ("dropdown", "radio"):
+                if str(value) != "__all__":
+                    result = result[result[col].astype(str) == str(value)]
+            elif ftype == "multiselect":
+                if isinstance(value, list) and value and value != ["__all__"]:
+                    str_values = [str(v) for v in value]
+                    result = result[result[col].astype(str).isin(str_values)]
+            elif ftype == "range":
+                if isinstance(value, list) and len(value) == 2:
+                    lo, hi = value
+                    if pd.api.types.is_numeric_dtype(result[col]):
+                        result = result[(result[col] >= float(lo)) & (result[col] <= float(hi))]
+        except Exception:
+            pass
+    return result
 
 
 def _bar_config(labels: list, values: list, label: str, palette: str = "indigo",

@@ -235,6 +235,154 @@
 </div>
 {% endif %}
 
+<!-- ── Interactive Filter Panel ──────────────────────────────────────────── -->
+{% if filter_config %}
+<div id="dashboard-filter-panel" class="mb-6 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 p-4 shadow-sm">
+  <div class="mb-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <svg class="h-4 w-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+      </svg>
+      <span class="text-sm font-semibold text-violet-800">Dashboard Filters</span>
+      <span id="active-filter-count" class="hidden rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">0 active</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="reset-filters-btn" class="hidden rounded-lg border border-violet-300 bg-white px-3 py-1 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-50">
+        Reset All
+      </button>
+      <button id="open-filter-manager-btn"
+        class="flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+        title="Manage filters">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Manage
+      </button>
+    </div>
+  </div>
+  <div id="filter-controls-wrap" class="flex flex-wrap gap-3">
+    {% for f in filter_config %}
+    <div class="filter-control-item flex-shrink-0" data-filter-id="{{ f.id }}" data-column="{{ f.column }}" data-filter-type="{{ f.filter_type }}">
+      <label class="mb-1 block text-xs font-semibold text-violet-700">{{ f.label }}</label>
+      {% if f.filter_type == 'radio' %}
+      <div class="filter-radio-group flex flex-wrap gap-1.5" data-column="{{ f.column }}">
+        <label class="filter-radio-option">
+          <input type="radio" name="filter_{{ f.id }}" value="__all__" checked class="sr-only">
+          <span class="inline-flex items-center rounded-full border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-700 cursor-pointer transition-all has-[:checked]:bg-violet-600 has-[:checked]:text-white has-[:checked]:border-violet-600 hover:border-violet-500">All</span>
+        </label>
+        <!-- JS fills in options -->
+      </div>
+      {% elif f.filter_type == 'range' %}
+      <div class="filter-range-wrap flex items-center gap-2">
+        <input type="range" class="filter-range-input w-28 accent-violet-600" data-column="{{ f.column }}" min="0" max="100" value="0" step="1">
+        <span class="filter-range-value text-xs font-semibold text-violet-700">—</span>
+      </div>
+      {% elif f.filter_type == 'multiselect' %}
+      <select class="filter-multiselect rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" multiple data-column="{{ f.column }}" style="min-height:60px;min-width:140px;max-width:200px;">
+        <option value="__all__" selected>All</option>
+      </select>
+      {% else %}
+      <!-- dropdown (default) -->
+      <select class="filter-dropdown rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400" data-column="{{ f.column }}" style="min-width:130px;max-width:200px;">
+        <option value="__all__">All</option>
+      </select>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <div id="filter-loading" style="display:none;" class="flex items-center gap-1.5 text-xs text-violet-500">
+      <div class="h-3 w-3 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600"></div>
+      Updating charts…
+    </div>
+  </div>
+</div>
+{% else %}
+<!-- Empty filter panel (show "Add Filters" invite) -->
+<div id="dashboard-filter-panel-empty" class="mb-6 flex items-center justify-between rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-3.5">
+  <div class="flex items-center gap-2 text-sm text-slate-500">
+    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+    </svg>
+    <span>No interactive filters configured.</span>
+    <button id="open-filter-manager-btn"
+      class="font-semibold text-violet-600 underline hover:text-violet-700">Add filters →</button>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Filter Manager Modal ────────────────────────────────────────────────── -->
+<div id="filter-manager-overlay" style="display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,0.6);" aria-hidden="true"></div>
+<div id="filter-manager-modal"
+  style="display:none;position:fixed;top:3rem;left:50%;transform:translateX(-50%);z-index:70;width:100%;max-width:42rem;max-height:85vh;overflow-y:auto;background:#fff;border-radius:1.25rem;box-shadow:0 25px 60px rgba(0,0,0,0.3);"
+  role="dialog" aria-modal="true" aria-label="Filter Manager">
+  <div class="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 rounded-t-2xl">
+    <div>
+      <h2 class="text-base font-bold text-slate-900">Interactive Filters</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Add filter controls to let users slice dashboard data in real time</p>
+    </div>
+    <button id="close-filter-manager-btn" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+      <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="px-6 py-5 space-y-5">
+    <!-- Add new filter form -->
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <p class="mb-3 text-sm font-semibold text-violet-800">Add a Filter</p>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div class="col-span-2 sm:col-span-1">
+          <label class="mb-1 block text-xs font-semibold text-slate-600">Column</label>
+          <select id="fm-column" class="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400">
+            <option value="">— loading columns… —</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-slate-600">Filter type</label>
+          <select id="fm-type" class="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400">
+            <option value="dropdown">Dropdown</option>
+            <option value="radio">Radio buttons</option>
+            <option value="multiselect">Multi-select</option>
+            <option value="range">Range slider</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-slate-600">Label</label>
+          <input id="fm-label" type="text" placeholder="e.g. Region"
+            class="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-400">
+        </div>
+      </div>
+      <p id="fm-add-error" style="display:none;" class="mt-2 text-xs text-red-600"></p>
+      <div class="mt-3 flex justify-end">
+        <button id="fm-add-btn"
+          class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50">
+          Add Filter
+        </button>
+      </div>
+    </div>
+
+    <!-- Active filters list -->
+    <div>
+      <p class="mb-2 text-sm font-semibold text-slate-700">Active Filters</p>
+      <div id="fm-filter-list" class="space-y-2">
+        <p id="fm-no-filters" class="text-sm text-slate-400">No filters configured yet.</p>
+        <!-- JS populates this -->
+      </div>
+    </div>
+
+    <div id="fm-error" style="display:none;" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+  </div>
+  <div class="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4 rounded-b-2xl">
+    <button id="cancel-filter-manager-btn" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+    <button id="save-filter-manager-btn" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50">
+      Save Filters
+    </button>
+  </div>
+</div>
+
+<!-- Pass filter config to JS -->
+<script id="dashboard-filter-config" type="application/json">{{ filter_config|to_json }}</script>
+
 <!-- Widgets grid -->
 <div class="mb-3 flex items-center gap-2">
   <span class="dashboard-section-heading text-emerald-700">Dashboard Widgets</span>
@@ -261,6 +409,8 @@
 .insert-zone .insert-zone-btn { transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
 .insert-panel { animation: fadeSlideIn 0.12s ease; }
 @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+/* Filter panel */
+.filter-radio-option input:checked + span { background:#7c3aed;color:#fff;border-color:#7c3aed; }
 </style>
 
 <div id="widgets-grid" class="grid gap-6 sm:grid-cols-2">
@@ -815,6 +965,9 @@
   "updateTextCanvasBaseUrl": "/dashboards/{{ dashboard.id }}/widgets/",
   "addDatasetUrl": "{% url 'dashboard-add-dataset' dashboard.id %}",
   "removeDatasetBaseUrl": "/dashboards/{{ dashboard.id }}/datasets/",
+  "saveFiltersUrl": "{% url 'dashboard-save-filters' dashboard.id %}",
+  "applyFiltersUrl": "{% url 'dashboard-apply-filters' dashboard.id %}",
+  "filterColumnsUrl": "{% url 'dashboard-filter-columns' dashboard.id %}",
   "csrfToken": "{{ csrf_token }}"
 }
 </script>
