@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -58,7 +59,7 @@ _FALLBACK_CHART = {
 }
 
 _VALID_CHART_TYPES = {
-    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table",
+    "bar", "line", "pie", "kpi", "doughnut", "area", "hbar", "scatter", "radar", "table", "map",
     # Pro/Plus chart types
     "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
 }
@@ -237,6 +238,7 @@ def dashboard_detail(request: HttpRequest, dashboard_id: int) -> HttpResponse:
         ("doughnut",  "🍩", "Doughnut",   False),
         ("hbar",      "↔️", "Horiz. Bar", False),
         ("scatter",   "✦",  "Scatter",    False),
+        ("map",       "🗺️", "Map",        False),
         ("radar",     "🕸️", "Radar",      False),
         ("table",     "🧾", "Table",      False),
         ("kpi",       "🔢", "KPI",        False),
@@ -407,6 +409,14 @@ def _load_df_from_version(dataset_version) -> pd.DataFrame | None:
     return None
 
 
+def _get_default_dataset_version(dashboard: Dashboard):
+    """Return primary dataset_version, or first linked dataset version as fallback."""
+    if dashboard.dataset_version_id:
+        return dashboard.dataset_version
+    first_link = dashboard.dataset_links.select_related("dataset_version").order_by("added_at").first()
+    return first_link.dataset_version if first_link else None
+
+
 @login_required
 def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
     """Return column metadata for a dataset linked to a dashboard.
@@ -432,7 +442,7 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
             return JsonResponse({"error": "Dataset not linked to this dashboard"}, status=403)
         dataset_version = get_object_or_404(DatasetVersion, id=version_id)
     else:
-        dataset_version = dashboard.dataset_version
+        dataset_version = _get_default_dataset_version(dashboard)
 
     if not dataset_version:
         return JsonResponse({"dimensions": [], "measures": [], "date_cols": [], "all_cols": [], "version_id": None})
@@ -456,6 +466,8 @@ def dashboard_get_columns(request: HttpRequest, dashboard_id: int) -> JsonRespon
         try:
             mn = float(df[col].min())
             mx = float(df[col].max())
+            if not (math.isfinite(mn) and math.isfinite(mx)):
+                continue
             range_info[col] = {"min": round(mn, 4), "max": round(mx, 4)}
         except Exception:
             pass
@@ -690,7 +702,7 @@ def _resolve_dataset_version(dashboard: Dashboard, data: dict):
         if not dv:
             return None, "Dataset version not found"
         return dv, None
-    return dashboard.dataset_version, None
+    return _get_default_dataset_version(dashboard), None
 
 
 def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
@@ -840,13 +852,21 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
                     return {"error": "dimension is required for doughnut charts", "status": 400}
                 vc = df.groupby(dimension)[measure].sum().nlargest(6) if measure and measure in df.columns else df[dimension].value_counts().head(6)
                 config = _doughnut_config([str(l) for l in vc.index.tolist()], [round(float(v), 2) for v in vc.values.tolist()], palette)
-            elif chart_type == "scatter":
+            elif chart_type in {"scatter", "map"}:
                 if not x_measure or not y_measure:
-                    return {"error": "x_measure and y_measure are required for scatter charts", "status": 400}
+                    return {"error": "x_measure and y_measure are required for scatter/map charts", "status": 400}
                 if x_measure not in df.columns or y_measure not in df.columns:
                     return {"error": "Selected columns not found in dataset", "status": 400}
                 tmp = df[[x_measure, y_measure]].dropna().head(500)
-                config = _scatter_config([round(float(v), 4) for v in tmp[x_measure].tolist()], [round(float(v), 4) for v in tmp[y_measure].tolist()], x_measure, y_measure, palette, f"{x_measure} vs {y_measure}")
+                subtitle = f"{x_measure} vs {y_measure}" if chart_type == "scatter" else f"Map points: {x_measure} / {y_measure}"
+                config = _scatter_config(
+                    [round(float(v), 4) for v in tmp[x_measure].tolist()],
+                    [round(float(v), 4) for v in tmp[y_measure].tolist()],
+                    x_measure,
+                    y_measure,
+                    palette,
+                    subtitle,
+                )
             elif chart_type == "radar":
                 if not dimension or not measure:
                     return {"error": "dimension and measure are required for radar charts", "status": 400}
@@ -1302,14 +1322,41 @@ def dashboard_save_filters(request: HttpRequest, dashboard_id: int) -> JsonRespo
 
     # Validate and sanitise each filter entry
     valid_types = {"dropdown", "radio", "multiselect", "range"}
+    categorical_types = {"dropdown", "radio", "multiselect"}
+
+    known_cols: set[str] = set()
+    numeric_cols: set[str] = set()
+    categorical_cols: set[str] = set()
+    dataset_version = _get_default_dataset_version(dashboard)
+    if dataset_version:
+        df = _load_df_from_version(dataset_version)
+        if df is not None:
+            known_cols = set(df.columns)
+            profile = build_profile_summary(df)
+            numeric_cols = set(profile.numeric_columns)
+            categorical_cols = set(profile.categorical_columns)
+
     clean_filters = []
     for f in raw_filters:
         col = str(f.get("column", "")).strip()
         ftype = str(f.get("filter_type", "dropdown")).strip()
         if not col:
             continue
+        if known_cols and col not in known_cols:
+            # Ignore stale filters for columns that no longer exist.
+            continue
         if ftype not in valid_types:
             ftype = "dropdown"
+
+        # Enforce a compatible filter type based on actual column dtype.
+        if col in numeric_cols:
+            ftype = "range"
+        elif col in categorical_cols and ftype == "range":
+            ftype = "dropdown"
+        elif col not in numeric_cols and col not in categorical_cols and ftype not in categorical_types:
+            # Unknown column category (e.g., datetime): default to a categorical-style control.
+            ftype = "dropdown"
+
         clean_filters.append({
             "id": str(f.get("id", col)),
             "column": col,
@@ -1343,7 +1390,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
         filters = []
 
     _CHART_WIDGET_TYPES = {
-        "bar", "line", "area", "hbar", "pie", "doughnut", "scatter",
+        "bar", "line", "area", "hbar", "pie", "doughnut", "scatter", "map",
         "radar", "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall", "kpi",
     }
 
@@ -1392,7 +1439,7 @@ def dashboard_apply_filters(request: HttpRequest, dashboard_id: int) -> JsonResp
 def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> JsonResponse:
     """Return columns available for filtering (dimension columns with their unique values)."""
     dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
-    dataset_version = dashboard.dataset_version
+    dataset_version = _get_default_dataset_version(dashboard)
     if not dataset_version:
         return JsonResponse({"columns": []})
 
@@ -1415,6 +1462,8 @@ def dashboard_get_filter_columns(request: HttpRequest, dashboard_id: int) -> Jso
         try:
             mn = float(df[col].min())
             mx = float(df[col].max())
+            if not (math.isfinite(mn) and math.isfinite(mx)):
+                continue
             columns.append({
                 "column": col,
                 "type": "numeric",
