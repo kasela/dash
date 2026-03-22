@@ -37,7 +37,16 @@ from apps.dashboards.views import (
     landing_page,
     pricing_page,
 )
-from apps.datasets.views import dataset_ai_clean, dataset_clean_version, dataset_delete_rows, dataset_link, dataset_link_result, dataset_upload, dataset_upload_result
+from apps.datasets.views import (
+    dataset_ai_clean,
+    dataset_clean_version,
+    dataset_delete_rows,
+    dataset_link,
+    dataset_link_result,
+    dataset_transform_version,
+    dataset_upload,
+    dataset_upload_result,
+)
 from apps.seo.sitemaps import StaticViewSitemap
 
 
@@ -55,6 +64,11 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
+def service_worker_js(request):
+    # Return a no-op worker to avoid noisy 404s when browsers probe /service-worker.js.
+    return HttpResponse("self.addEventListener('install', () => self.skipWaiting());", content_type="application/javascript")
+
+
 sitemaps = {"static": StaticViewSitemap}
 
 urlpatterns = [
@@ -69,6 +83,7 @@ urlpatterns = [
 
     # SEO
     path("robots.txt", robots_txt, name="robots-txt"),
+    path("service-worker.js", service_worker_js, name="service-worker"),
     path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="sitemap"),
 
     # Authenticated app
@@ -103,6 +118,7 @@ urlpatterns = [
     path("datasets/versions/<int:version_id>/clean/", dataset_clean_version, name="dataset-clean-version"),
     path("datasets/versions/<int:version_id>/ai-clean/", dataset_ai_clean, name="dataset-ai-clean"),
     path("datasets/versions/<int:version_id>/delete-rows/", dataset_delete_rows, name="dataset-delete-rows"),
+    path("datasets/versions/<int:version_id>/transform/", dataset_transform_version, name="dataset-transform-version"),
 
     # Dashboard multi-dataset management
     path("dashboards/<uuid:dashboard_id>/datasets/", dashboard_list_datasets, name="dashboard-list-datasets"),
