@@ -10,6 +10,7 @@ from apps.workspaces.models import Workspace
 
 from .models import Dataset, DatasetColumn, DatasetVersion, ExternalDataSource
 from .services import (
+    ai_clean_dataframe,
     build_profile_summary,
     build_widget_suggestions,
     clean_dataframe,
@@ -294,6 +295,180 @@ def dataset_clean_version(request: HttpRequest, version_id: int) -> HttpResponse
         "profile": profile_summary,
         "widget_suggestions": widget_suggestions,
         "clean_result": clean_result,
+    }
+    return render(request, "datasets/partials/upload_result.html", context)
+
+
+@require_POST
+def dataset_delete_rows(request: HttpRequest, version_id: int) -> HttpResponse:
+    """Delete user-selected rows from an existing DatasetVersion and save as a new version."""
+    import io
+    import json
+    import pandas as pd
+    from django.core.files.uploadedfile import InMemoryUploadedFile
+    from django.shortcuts import get_object_or_404
+
+    version = get_object_or_404(DatasetVersion, pk=version_id)
+
+    raw_indices = request.POST.get("row_indices", "")
+    try:
+        row_indices = json.loads(raw_indices) if raw_indices else []
+        row_indices = [int(i) for i in row_indices]
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest("Invalid row indices")
+
+    if not row_indices:
+        return HttpResponseBadRequest("No rows selected for deletion")
+
+    # Load the DataFrame
+    try:
+        file_name = version.source_file.name.lower()
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(version.source_file)
+        elif file_name.endswith((".xlsx", ".xlsm")):
+            df = pd.read_excel(version.source_file)
+        elif file_name.endswith(".json"):
+            df = pd.read_json(version.source_file)
+        else:
+            df = pd.read_csv(version.source_file)
+    except Exception as exc:
+        return HttpResponseBadRequest(f"Could not read dataset file: {exc}")
+
+    rows_before = len(df)
+    # Validate indices are in range
+    valid_indices = [i for i in row_indices if 0 <= i < len(df)]
+    if not valid_indices:
+        return HttpResponseBadRequest("Selected row indices are out of range")
+
+    cleaned_df = df.drop(index=valid_indices).reset_index(drop=True)
+    rows_removed = rows_before - len(cleaned_df)
+
+    # Save new DatasetVersion
+    import os
+    original_name = os.path.basename(version.source_file.name)
+    stem = os.path.splitext(original_name)[0]
+    csv_bytes = cleaned_df.to_csv(index=False).encode("utf-8")
+    csv_file = InMemoryUploadedFile(
+        file=io.BytesIO(csv_bytes),
+        field_name="source_file",
+        name=f"{stem}_filtered.csv",
+        content_type="text/csv",
+        size=len(csv_bytes),
+        charset="utf-8",
+    )
+
+    with transaction.atomic():
+        next_version = version.dataset.versions.count() + 1
+        new_version = DatasetVersion.objects.create(
+            dataset=version.dataset,
+            version=next_version,
+            source_file=csv_file,
+            row_count=int(cleaned_df.shape[0]),
+            column_count=int(cleaned_df.shape[1]),
+        )
+        for column_name in cleaned_df.columns:
+            series = cleaned_df[column_name]
+            DatasetColumn.objects.create(
+                dataset_version=new_version,
+                name=str(column_name),
+                kind=infer_column_kind(series),
+                dtype=str(series.dtype),
+                null_ratio=float(series.isna().mean()),
+            )
+
+    sample_df = cleaned_df.head(100)
+    records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
+    profile_summary = build_profile_summary(cleaned_df)
+    widget_suggestions = build_widget_suggestions(profile_summary)
+
+    context = {
+        "headers": [str(h) for h in cleaned_df.columns],
+        "rows": records,
+        "shape": cleaned_df.shape,
+        "filename": f"{stem}_filtered.csv",
+        "dataset_version": new_version,
+        "persistence_error": None,
+        "plan_error": None,
+        "profile": profile_summary,
+        "widget_suggestions": widget_suggestions,
+        "rows_deleted_count": rows_removed,
+    }
+    return render(request, "datasets/partials/upload_result.html", context)
+
+
+@require_POST
+def dataset_ai_clean(request: HttpRequest, version_id: int) -> HttpResponse:
+    """Run AI-powered cleaning on an existing DatasetVersion and save as a new version."""
+    import io
+    import pandas as pd
+    from django.core.files.uploadedfile import InMemoryUploadedFile
+    from django.shortcuts import get_object_or_404
+
+    version = get_object_or_404(DatasetVersion, pk=version_id)
+
+    try:
+        file_name = version.source_file.name.lower()
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(version.source_file)
+        elif file_name.endswith((".xlsx", ".xlsm")):
+            df = pd.read_excel(version.source_file)
+        elif file_name.endswith(".json"):
+            df = pd.read_json(version.source_file)
+        else:
+            df = pd.read_csv(version.source_file)
+    except Exception as exc:
+        return HttpResponseBadRequest(f"Could not read dataset file: {exc}")
+
+    cleaned_df, ai_report = ai_clean_dataframe(df)
+
+    import os
+    original_name = os.path.basename(version.source_file.name)
+    stem = os.path.splitext(original_name)[0]
+    csv_bytes = cleaned_df.to_csv(index=False).encode("utf-8")
+    csv_file = InMemoryUploadedFile(
+        file=io.BytesIO(csv_bytes),
+        field_name="source_file",
+        name=f"{stem}_ai_cleaned.csv",
+        content_type="text/csv",
+        size=len(csv_bytes),
+        charset="utf-8",
+    )
+
+    with transaction.atomic():
+        next_version = version.dataset.versions.count() + 1
+        new_version = DatasetVersion.objects.create(
+            dataset=version.dataset,
+            version=next_version,
+            source_file=csv_file,
+            row_count=int(cleaned_df.shape[0]),
+            column_count=int(cleaned_df.shape[1]),
+        )
+        for column_name in cleaned_df.columns:
+            series = cleaned_df[column_name]
+            DatasetColumn.objects.create(
+                dataset_version=new_version,
+                name=str(column_name),
+                kind=infer_column_kind(series),
+                dtype=str(series.dtype),
+                null_ratio=float(series.isna().mean()),
+            )
+
+    sample_df = cleaned_df.head(100)
+    records = sample_df.where(pd.notnull(sample_df), None).to_dict(orient="records")
+    profile_summary = build_profile_summary(cleaned_df)
+    widget_suggestions = build_widget_suggestions(profile_summary)
+
+    context = {
+        "headers": [str(h) for h in cleaned_df.columns],
+        "rows": records,
+        "shape": cleaned_df.shape,
+        "filename": f"{stem}_ai_cleaned.csv",
+        "dataset_version": new_version,
+        "persistence_error": None,
+        "plan_error": None,
+        "profile": profile_summary,
+        "widget_suggestions": widget_suggestions,
+        "ai_clean_report": ai_report,
     }
     return render(request, "datasets/partials/upload_result.html", context)
 
