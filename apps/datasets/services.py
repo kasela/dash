@@ -1499,9 +1499,59 @@ def _get_ai_client():
 
 
 def _get_ai_client_for_task(task: str = "general"):
-    """Return (client, model) for OpenAI for all AI task types."""
-    _ = task
-    return _get_ai_client()
+    """Return task-aware AI client/model.
+
+    - analysis: prefer DeepSeek (if configured), fallback OpenAI.
+    - design/general: prefer OpenAI (if configured), fallback DeepSeek.
+    """
+    import importlib.util
+    from django.conf import settings
+
+    if importlib.util.find_spec("openai") is None:
+        return None, None
+    openai_module = __import__("openai")
+
+    openai_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+
+    if str(task).lower() == "analysis":
+        if deepseek_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=deepseek_key,
+                    base_url="https://api.deepseek.com",
+                    max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+                ),
+                str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")),
+            )
+        if openai_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=openai_key,
+                    max_retries=int(getattr(settings, "OPENAI_MAX_RETRIES", 0)),
+                ),
+                str(getattr(settings, "OPENAI_MODEL", "gpt-4o")),
+            )
+        return None, None
+
+    if openai_key:
+        return (
+            openai_module.OpenAI(
+                api_key=openai_key,
+                max_retries=int(getattr(settings, "OPENAI_MAX_RETRIES", 0)),
+            ),
+            str(getattr(settings, "OPENAI_MODEL", "gpt-4o")),
+        )
+    if deepseek_key:
+        return (
+            openai_module.OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+            ),
+            str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")),
+        )
+    return None, None
 
 
 def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
@@ -3447,6 +3497,12 @@ def ai_generate_dashboard_specs(
                         "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
                         "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
                         "The bottom 4 categories combined account for only 12% — consolidation opportunity.'\n\n"
+                        "AXIS + TOOLTIP LABEL RULES (MANDATORY):\n"
+                        "- Always set meaningful axis labels using business-friendly names (humanized column names), "
+                        "never raw snake_case.\n"
+                        "- Tooltip text must include metric name + context, not only a bare number.\n"
+                        "- Format numeric values for readability with separators and 2 decimals "
+                        "(example: 125452 -> 125,452.00).\n\n"
 
                         "═══ LAYOUT QUALITY (PROFESSIONAL DASHBOARD COMPOSITION) ═══\n"
                         "Order widgets for executive reading flow:\n"
@@ -3858,6 +3914,8 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "16. Focus on decision-making insights: highlight outliers, concentration risk, growth/decline pockets, and actionable comparisons.\n"
         "17. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
         "18. Architecture requirement: implement separate JS functions for identifySchema(), buildDerivedColumns(), buildGroupedDatasets(), buildKpis(), buildCharts(), buildTable().\n"
+        "19. Use meaningful axis labels (humanized business labels), explicit tooltip text, and readable number formatting "
+        "with separators and 2 decimals (e.g., 125,452.00).\n"
     )
 
     user_message = (
@@ -4100,7 +4158,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim]).sum().nlargest(10)
-            bar_cfg = _bar_config([str(l) for l in top.index], [round(float(v), 2) for v in top.values], measure, "vibrant")
+            bar_cfg = _bar_config(
+                [str(l) for l in top.index],
+                [round(float(v), 2) for v in top.values],
+                measure,
+                "vibrant",
+                x_label=_humanize_col(dim),
+                y_label=_humanize_col(measure),
+            )
             bar_cfg["layout"] = {"size": "md"}
             bar_cfg["builder"] = _make_builder(dimension=dim, measures=[measure], measure=measure)
             title = f"{_humanize_col(measure)} by {_humanize_col(dim)}"
@@ -4119,7 +4184,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
-                line_cfg = _line_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "aurora")
+                line_cfg = _line_config(
+                    [str(p) for p in trend.index],
+                    [round(float(v), 2) for v in trend.values],
+                    measure,
+                    "aurora",
+                    x_label=_humanize_col(date_col),
+                    y_label=_humanize_col(measure),
+                )
                 line_cfg["layout"] = {"size": "lg"}
                 line_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
                 title = f"{_humanize_col(measure)} Trend Over Time"
@@ -4138,7 +4210,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             tmp = tmp.dropna(subset=[date_col])
             trend = tmp.groupby(tmp[date_col].dt.to_period("M"))[measure].sum()
             if len(trend) >= 2:
-                area_cfg = _area_config([str(p) for p in trend.index], [round(float(v), 2) for v in trend.values], measure, "tropical")
+                area_cfg = _area_config(
+                    [str(p) for p in trend.index],
+                    [round(float(v), 2) for v in trend.values],
+                    measure,
+                    "tropical",
+                    x_label=_humanize_col(date_col),
+                    y_label=_humanize_col(measure),
+                )
                 area_cfg["layout"] = {"size": "lg"}
                 area_cfg["builder"] = _make_builder(dimension=date_col, measures=[measure], measure=measure)
                 title = f"{_humanize_col(measure)} Monthly Trend"
@@ -4181,7 +4260,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             top2 = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim2]).sum().nlargest(10)
-            hbar_cfg = _hbar_config([str(l) for l in top2.index], [round(float(v), 2) for v in top2.values], measure, "tropical")
+            hbar_cfg = _hbar_config(
+                [str(l) for l in top2.index],
+                [round(float(v), 2) for v in top2.values],
+                measure,
+                "tropical",
+                x_label=_humanize_col(measure),
+                y_label=_humanize_col(dim2),
+            )
             hbar_cfg["layout"] = {"size": "md"}
             hbar_cfg["builder"] = _make_builder(dimension=dim2, measures=[measure], measure=measure)
             title = f"Top {_humanize_col(dim2)} by {_humanize_col(measure)}"
@@ -4245,7 +4331,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         measure = profile.suggested_measures[0]
         try:
             top3 = pd.to_numeric(df[measure], errors="coerce").groupby(df[dim3]).sum().nlargest(8)
-            bar3_cfg = _bar_config([str(l) for l in top3.index], [round(float(v), 2) for v in top3.values], measure, "aurora")
+            bar3_cfg = _bar_config(
+                [str(l) for l in top3.index],
+                [round(float(v), 2) for v in top3.values],
+                measure,
+                "aurora",
+                x_label=_humanize_col(dim3),
+                y_label=_humanize_col(measure),
+            )
             bar3_cfg["layout"] = {"size": "md"}
             bar3_cfg["builder"] = _make_builder(dimension=dim3, measures=[measure], measure=measure)
             title = f"{_humanize_col(measure)} by {_humanize_col(dim3)}"

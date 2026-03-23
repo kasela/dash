@@ -113,6 +113,11 @@ OPENAI_SPECS_TIMEOUT = int(os.environ.get("OPENAI_SPECS_TIMEOUT", 60))
 # Number of automatic retries on transient server errors (0 = no retries)
 OPENAI_MAX_RETRIES = int(os.environ.get("OPENAI_MAX_RETRIES", 0))
 
+# ── AI settings (DeepSeek for analysis tasks) ─────────────────────────────────
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
+
 # Site metadata for SEO
 SITE_NAME = "DashAI"
 SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "https://dashai.io")

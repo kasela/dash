@@ -2132,7 +2132,9 @@ def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id) -> JsonRespon
 
     _, report = ai_clean_dataframe(df)
     from django.conf import settings
-    report["ai_powered"] = bool(getattr(settings, "OPENAI_API_KEY", ""))
+    report["ai_powered"] = bool(
+        getattr(settings, "DEEPSEEK_API_KEY", "") or getattr(settings, "OPENAI_API_KEY", "")
+    )
     return JsonResponse({"success": True, "report": report})
 
 
