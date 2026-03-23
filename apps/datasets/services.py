@@ -1645,6 +1645,7 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
+            response_format={"type": "json_object"},
             temperature=0.05,
             stream=False,
             timeout=20,
@@ -1857,6 +1858,7 @@ def ai_generate_comprehensive_insights(
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
+            response_format={"type": "json_object"},
             temperature=0.2,
             stream=True,
             timeout=45,
@@ -2016,6 +2018,7 @@ def ai_generate_executive_summary(
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
+            response_format={"type": "json_object"},
             temperature=0.15,
             stream=False,
             timeout=20,
@@ -2140,6 +2143,7 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                     },
                     {"role": "user", "content": _json.dumps(sample_info)},
                 ],
+                response_format={"type": "json_object"},
                 temperature=0.05,
                 stream=False,
                 timeout=20,
@@ -2294,6 +2298,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
                     },
                     {"role": "user", "content": _json.dumps(payload)},
                 ],
+                response_format={"type": "json_object"},
                 temperature=0.1,
                 stream=False,
                 timeout=15,
@@ -3008,6 +3013,7 @@ def ai_generate_dashboard_specs(
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
+            response_format={"type": "json_object"},
             temperature=0.15,
             stream=True,
             timeout=__import__("httpx").Timeout(
@@ -3024,14 +3030,27 @@ def ai_generate_dashboard_specs(
             if delta:
                 content_parts.append(delta)
         content = "".join(content_parts).strip()
-        # Strip markdown code fences if present
+        # Strip markdown code fences (defensive, in case model ignores response_format)
         content = _re.sub(r"```(?:json)?\s*", "", content).strip().rstrip("```").strip()
-        if content.startswith("["):
-            match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
-            parsed = _json.loads(match_arr.group(0) if match_arr else content)
-        else:
-            match_obj = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
-            parsed = _json.loads(match_obj.group(0) if match_obj else content)
+        try:
+            if content.startswith("["):
+                match_arr = _re.search(r"\[.*\]", content, flags=_re.DOTALL)
+                parsed = _json.loads(match_arr.group(0) if match_arr else content)
+            else:
+                match_obj = _re.search(r"\{.*\}", content, flags=_re.DOTALL)
+                parsed = _json.loads(match_obj.group(0) if match_obj else content)
+        except _json.JSONDecodeError:
+            # Last-resort: truncate to the last complete top-level closing brace/bracket
+            for end_char, start_char in [("}", "{"), ("]", "[")]:
+                last_pos = content.rfind(end_char)
+                if last_pos != -1 and start_char in content:
+                    try:
+                        parsed = _json.loads(content[:last_pos + 1])
+                        break
+                    except _json.JSONDecodeError:
+                        continue
+            else:
+                raise
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             # Post-process: remove chart types not allowed for user's plan
@@ -3129,6 +3148,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
                 },
                 {"role": "user", "content": _json.dumps(payload)},
             ],
+            response_format={"type": "json_object"},
             temperature=0.15,
             stream=False,
             timeout=15,
