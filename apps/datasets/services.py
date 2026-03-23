@@ -1429,24 +1429,41 @@ def _waterfall_config(labels: list, values: list, label: str, palette: str = "in
 
 
 def _get_ai_client():
-    """Return (client, model) tuple for DeepSeek if configured, else (None, None)."""
+    """Return (client, model) tuple for the configured AI provider, or (None, None).
+
+    Priority: DeepSeek (if DEEPSEEK_API_KEY set) → Gemini (if GEMINI_API_KEY set).
+    Gemini is accessed via its OpenAI-compatible endpoint so no extra SDK is needed.
+    """
     import importlib.util
     from django.conf import settings
 
-    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
-    if not api_key:
-        return None, None
     if importlib.util.find_spec("openai") is None:
         return None, None
     openai_module = __import__("openai")
-    model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-    max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0))
-    client = openai_module.OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        max_retries=max_retries,
-    )
-    return client, model
+
+    # ── DeepSeek (primary) ────────────────────────────────────────────────────
+    deepseek_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if deepseek_key:
+        model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0))
+        client = openai_module.OpenAI(
+            api_key=deepseek_key,
+            base_url="https://api.deepseek.com",
+            max_retries=max_retries,
+        )
+        return client, model
+
+    # ── Gemini (fallback via OpenAI-compatible API) ───────────────────────────
+    gemini_key = getattr(settings, "GEMINI_API_KEY", "")
+    if gemini_key:
+        model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        client = openai_module.OpenAI(
+            api_key=gemini_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+        return client, model
+
+    return None, None
 
 
 def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
@@ -3123,29 +3140,17 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
 
 
 def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> str | None:
-    """Generate a complete, standalone HTML dashboard file using DeepSeek chat (V3).
+    """Generate a complete, standalone HTML dashboard file using the configured AI provider.
 
-    deepseek-chat is used unconditionally here — it is far superior to deepseek-reasoner
-    for creative HTML/CSS/JS code generation (V3 matches web-chat quality).
+    Uses DeepSeek if DEEPSEEK_API_KEY is set, otherwise Gemini if GEMINI_API_KEY is set.
     Returns a full HTML string ready to save/serve as a .html file, or None on failure.
     """
     import json as _json
     import re as _re
-    from django.conf import settings
 
-    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
-    if not api_key:
+    client, _model = _get_ai_client()
+    if client is None:
         return None
-
-    try:
-        import importlib.util
-        if importlib.util.find_spec("openai") is None:
-            return None
-        openai_module = __import__("openai")
-    except Exception:
-        return None
-
-    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
@@ -3234,7 +3239,7 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     try:
         html_parts: list[str] = []
         stream = client.chat.completions.create(
-            model="deepseek-chat",
+            model=_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
