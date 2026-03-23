@@ -103,23 +103,20 @@ LEMONSQUEEZY_WEBHOOK_SECRET = os.environ.get("LEMONSQUEEZY_WEBHOOK_SECRET", "")
 LEMONSQUEEZY_PRO_VARIANT_ID = os.environ.get("LEMONSQUEEZY_PRO_VARIANT_ID", "")
 LEMONSQUEEZY_STORE_SLUG = os.environ.get("LEMONSQUEEZY_STORE_SLUG", "")
 
-# ── AI settings (DeepSeek) ─────────────────────────────────────────────────────
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-# Timeout (seconds) for the TCP/TLS handshake phase — fail fast when the API endpoint is unreachable
-DEEPSEEK_CONNECT_TIMEOUT = int(os.environ.get("DEEPSEEK_CONNECT_TIMEOUT", 10))
-# Timeout (seconds) for receiving the full dashboard-specs response (large prompt → longer budget)
-DEEPSEEK_SPECS_TIMEOUT = int(os.environ.get("DEEPSEEK_SPECS_TIMEOUT", 60))
-# Number of automatic retries on transient server errors (0 = no retries)
-DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
-
-# ── AI settings (Gemini) ───────────────────────────────────────────────────────
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-
 # ── AI settings (OpenAI) ───────────────────────────────────────────────────────
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+# Timeout (seconds) for the TCP/TLS handshake phase — fail fast when the API endpoint is unreachable
+OPENAI_CONNECT_TIMEOUT = int(os.environ.get("OPENAI_CONNECT_TIMEOUT", 10))
+# Timeout (seconds) for receiving the full dashboard-specs response (large prompt → longer budget)
+OPENAI_SPECS_TIMEOUT = int(os.environ.get("OPENAI_SPECS_TIMEOUT", 60))
+# Number of automatic retries on transient server errors (0 = no retries)
+OPENAI_MAX_RETRIES = int(os.environ.get("OPENAI_MAX_RETRIES", 0))
+
+# ── AI settings (DeepSeek for analysis tasks) ─────────────────────────────────
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
 
 # Site metadata for SEO
 SITE_NAME = "DashAI"
