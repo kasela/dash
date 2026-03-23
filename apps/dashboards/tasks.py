@@ -663,11 +663,14 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     if len(nums) >= 3 and not rr:
                         rr = nums[2] if nums[2] != rx and nums[2] != ry else None
                 if rx and ry and rx in df.columns and ry in df.columns:
-                    tmp = df[[c for c in [rx, ry, rr] if c and c in df.columns]].dropna().head(200)
-                    x_raw = tmp[rx].tolist()
-                    y_raw = tmp[ry].tolist()
+                    _seen: set = set()
+                    _bcols = [c for c in [rx, ry, rr] if c and c in df.columns
+                              and not (_seen.__contains__(c) or _seen.add(c))]
+                    tmp = df[_bcols].dropna().head(200)
+                    x_raw = pd.to_numeric(tmp[rx], errors="coerce").tolist()
+                    y_raw = pd.to_numeric(tmp[ry], errors="coerce").tolist()
                     if rr and rr in tmp.columns:
-                        r_raw = tmp[rr].tolist()
+                        r_raw = pd.to_numeric(tmp[rr], errors="coerce").tolist()
                         r_min = min(r_raw) if r_raw else 0
                         r_max = max(r_raw) if r_raw else 1
                         r_range = max(r_max - r_min, 1)
@@ -716,7 +719,10 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 # Need at least 1 bar measure
                 if bar_measures:
                     all_mix_cols = bar_measures + line_measures
-                    grouped = df.groupby(dimension)[all_mix_cols].sum().head(12)
+                    _mix_tmp = df[[dimension] + all_mix_cols].copy()
+                    for _mc in all_mix_cols:
+                        _mix_tmp[_mc] = pd.to_numeric(_mix_tmp[_mc], errors="coerce")
+                    grouped = _mix_tmp.groupby(dimension)[all_mix_cols].sum().head(12)
                     labels = [str(l) for l in grouped.index]
                     bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in bar_measures]
                     line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in line_measures]
