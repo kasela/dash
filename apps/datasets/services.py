@@ -342,9 +342,8 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
     secondary_label = "avg"
     secondary_value = f"{mean_val:,.1f}"
 
-    # Try period-over-period comparison using a date column
-    # Prefer semantic date detection to produce better trend dashboards.
-    col_types = profile.column_types or detect_column_types(df)
+    # Try period-over-period comparison using a date column.
+    col_types = detect_column_types(df)
     date_cols = [
         c for c in df.columns
         if (

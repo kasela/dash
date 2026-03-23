@@ -294,26 +294,31 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
     import pandas as pd
     from apps.datasets.services import (
         PALETTES,
-        _area_config,
-        _bar_config,
-        _doughnut_config,
-        _hbar_config,
-        _line_config,
-        _pie_config,
-        _radar_config,
-        _humanize_col,
-        _detect_kpi_meta,
-        _compute_kpi_trend,
+        _area_config, _bar_config, _doughnut_config, _hbar_config,
+        _line_config, _pie_config, _radar_config, _scatter_config,
+        _multi_bar_config, _multi_line_config,
+        _humanize_col, _detect_kpi_meta, _compute_kpi_trend, _format_dashboard_value,
         ai_analyze_chart,
     )
 
     if column_roles is None:
         column_roles = {}
 
-    _lower_map: dict[str, str] = {str(c).lower(): c for c in df.columns}
-    _strip_map: dict[str, str] = {
-        str(c).lower().replace("_", "").replace(" ", ""): c for c in df.columns
-    }
+    profile_total_rows = int(getattr(profile, "total_rows", len(df)))
+    profile_total_columns = int(getattr(profile, "total_columns", len(df.columns)))
+    profile_numeric_columns = list(getattr(profile, "numeric_columns", []))
+    if not profile_numeric_columns:
+        profile_numeric_columns = [str(c) for c in df.select_dtypes(include=["number"]).columns]
+    profile_categorical_columns = list(getattr(profile, "categorical_columns", []))
+    if not profile_categorical_columns:
+        profile_categorical_columns = [str(c) for c in df.select_dtypes(exclude=["number", "datetime"]).columns]
+    profile_column_types = dict(getattr(profile, "column_types", {}) or {})
+
+    # ── Column resolution helper ─────────────────────────────────────────────
+    # Build lookup maps once so every widget can resolve AI-suggested column names
+    # that may differ in casing, spacing, or have slight paraphrases.
+    _lower_map: dict[str, str] = {c.lower(): c for c in df.columns}
+    _strip_map: dict[str, str] = {c.lower().replace("_", "").replace(" ", ""): c for c in df.columns}
 
     def _resolve_col(name: str) -> str | None:
         if not name:
@@ -333,8 +338,8 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
     def _best_numeric_fallback(exclude: set | None = None) -> str | None:
         exclude = exclude or set()
-        for col in profile.numeric_columns:
-            if col not in exclude and col in df.columns:
+        for col in profile_numeric_columns:
+            if col not in exclude and pd.api.types.is_numeric_dtype(df[col]):
                 return col
         return None
 
@@ -491,9 +496,8 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     human_label = role_label if role_label else _humanize_col(resolved_measure)
 
                     sem_type = str(role_info.get("data_type") or "").strip()
-                    if not sem_type and getattr(profile, "column_types", None):
-                        sem_type = profile.column_types.get(resolved_measure, {}).get("semantic_type", "")
-
+                    if not sem_type and profile_column_types:
+                        sem_type = profile_column_types.get(resolved_measure, {}).get("semantic_type", "")
                     kpi_meta = _detect_kpi_meta(resolved_measure, semantic_type=sem_type)
 
                     role_agg = str(role_info.get("agg") or "sum").strip()
@@ -549,19 +553,42 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                             config["trend"] = trend
 
                     if not ai_insight:
-                        ai_insight = f"{kpi_label}: {display_val}."
-
+                        try:
+                            if agg == "nunique":
+                                ai_insight = (
+                                    f"{kpi_label}: {display_val} distinct values across "
+                                    f"{profile_total_rows:,} records "
+                                    f"({round(int(df[resolved_measure].nunique()) / max(profile_total_rows, 1) * 100, 1)}% unique rate)."
+                                )
+                            elif agg in ("avg", "sum"):
+                                c = df[resolved_measure].dropna()
+                                avg_v = float(c.mean())
+                                median_v = float(c.median())
+                                p75_v = float(c.quantile(0.75))
+                                pct_above = round(float((c > avg_v).mean()) * 100, 1)
+                                ai_insight = (
+                                    f"{kpi_label}: {display_val}. "
+                                    f"Mean {avg_v:,.2f} · Median {median_v:,.2f} · 75th pct {p75_v:,.2f}. "
+                                    f"{pct_above}% of records exceed the mean."
+                                )
+                            else:
+                                ai_insight = (
+                                    f"{kpi_label}: {display_val} across {profile_total_rows:,} records."
+                                )
+                        except Exception:
+                            pass
                 else:
                     config = {
                         "kpi": title if title.lower() not in ("widget", "kpi") else "Dataset Records",
-                        "value": f"{profile.total_rows:,}",
+                        "value": f"{profile_total_rows:,}",
                         "kpi_meta": {"icon": "people", "format": "count", "prefix": "", "suffix": ""},
                         "layout": {"size": size},
                     }
                     if not ai_insight:
                         ai_insight = (
-                            f"Dataset contains {profile.total_rows:,} records across "
-                            f"{profile.total_columns} columns."
+                            f"Dataset contains {profile_total_rows:,} records across "
+                            f"{profile_total_columns} columns "
+                            f"({len(profile_numeric_columns)} numeric, {len(profile_categorical_columns)} categorical)."
                         )
 
             elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
@@ -667,19 +694,17 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         x_axis_label = _humanize_col(dimension)
 
                     values = [round(float(v), 2) for v in trend_data.values]
+                    config = _area_config(labels, values, _humanize_col(measure), palette,
+                                          x_label=_humanize_col(dimension), y_label=_humanize_col(measure))
+                    config["layout"] = {"size": size}
+                    _flag_large_numbers(config, values)
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("area", labels, values, title)
+                        except Exception:
+                            pass
 
-                config = _area_config(
-                    labels,
-                    values,
-                    _humanize_col(measure),
-                    palette,
-                    x_label=x_axis_label,
-                    y_label=_humanize_col(measure),
-                )
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    ai_insight, _ = ai_analyze_chart("area", labels, values, title)
-
+            # ── Pie / Doughnut ────────────────────────────────────────────────
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
                 resolved_meas_for_pie = measure if measure and measure in df.columns else None
                 vc = (
@@ -699,7 +724,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 rx = x_measure if x_measure and x_measure in df.columns else None
                 ry = y_measure if y_measure and y_measure in df.columns else None
                 if not rx or not ry:
-                    nums = [c for c in profile.numeric_columns if c in df.columns]
+                    nums = [c for c in profile_numeric_columns if c in df.columns]
                     if len(nums) >= 2:
                         rx = rx or nums[0]
                         ry = ry or (nums[1] if nums[1] != rx else nums[2] if len(nums) > 2 else None)
@@ -737,7 +762,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 rr = measure if measure and measure in df.columns else None
 
                 if not rx or not ry:
-                    nums = [c for c in profile.numeric_columns if c in df.columns]
+                    nums = [c for c in profile_numeric_columns if c in df.columns]
                     if len(nums) >= 2:
                         rx = rx or nums[0]
                         ry = ry or (nums[1] if len(nums) > 1 and nums[1] != rx else None)
@@ -923,15 +948,16 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     ]
                     cols = (
                         date_like[:1]
-                        + [c for c in profile.categorical_columns[:2] if c in df.columns]
-                        + [c for c in profile.numeric_columns[:4] if c in df.columns]
+                        + [c for c in profile_categorical_columns[:2] if c in df.columns]
+                        + [c for c in profile_numeric_columns[:4] if c in df.columns]
                     )[:6]
 
                 if not cols:
                     cols = [str(c) for c in df.columns[:6]]
-
-                sort_col = next((c for c in cols if c in profile.numeric_columns and c in df.columns), None)
-
+                # Sort by the first numeric column descending for top-record view
+                sort_col = next(
+                    (c for c in cols if c in profile_numeric_columns and c in df.columns), None
+                )
                 try:
                     preview = df[cols].copy()
                     if sort_col:
@@ -940,8 +966,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     preview = preview.head(100).fillna("")
                 except Exception:
                     preview = df[cols].head(100).fillna("")
-
-                rows = [[str(v) for v in row] for row in preview.values.tolist()]
+                rows = [[_format_dashboard_value(v) for v in row] for row in preview.values.tolist()]
                 config = {"columns": cols, "rows": rows, "layout": {"size": size}}
                 if not ai_insight:
                     ai_insight = f"Showing top {len(rows)} records across {len(cols)} columns."
