@@ -3428,14 +3428,11 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
-    from django.conf import settings
-    # Design/text task: prefer chat-oriented model.
-    _model = model
-    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
-    if deepseek_key:
-        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
-            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-        )
+    if not _model:
+        # Defensive fallback: avoid runtime failures if task router returns an empty model string.
+        _, _model = _get_ai_client()
+    if not _model:
+        return None
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
