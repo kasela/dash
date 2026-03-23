@@ -2572,6 +2572,15 @@ def ai_generate_dashboard_specs(
         return None
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    # Prefer DeepSeek Reasoner for comprehensive dashboard planning when available.
+    planning_model = model
+    if deepseek_key:
+        reasoner_model = str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
+        if reasoner_model:
+            planning_model = reasoner_model
+    if planning_model and "reasoner" in planning_model.lower():
+        specs_timeout = max(specs_timeout, 90)
 
     # Determine allowed chart types + planning depth by user plan
     _plan_lower = str(plan).lower()
@@ -3144,7 +3153,7 @@ def ai_generate_dashboard_specs(
 
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=planning_model or model,
             messages=[
                 {
                     "role": "system",
@@ -3359,6 +3368,14 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     client, model = _get_ai_client()
     if client is None:
         return None
+    from django.conf import settings
+    # Design/text task: prefer chat-oriented model.
+    _model = model
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
@@ -3401,7 +3418,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     }
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=_model or model,
             messages=[
                 {
                     "role": "system",
@@ -3458,6 +3475,13 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     client, _model = _get_ai_client()
     if client is None:
         return None
+    from django.conf import settings
+    # Design-heavy task: always prefer chat model over reasoner.
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
