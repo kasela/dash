@@ -350,6 +350,36 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 return col
         return None
 
+    def _col_series(col_name: str):
+        """Return a 1-D series even when duplicate column names exist."""
+        sel = df.loc[:, col_name]
+        if isinstance(sel, pd.DataFrame):
+            return sel.iloc[:, 0]
+        return sel
+
+    def _numeric_series(col_name: str):
+        return pd.to_numeric(_col_series(col_name), errors="coerce")
+
+    def _get_role_agg(col_name: str, default: str = "sum") -> str:
+        role = (column_roles or {}).get(col_name, {}) if isinstance(column_roles, dict) else {}
+        agg = str(role.get("agg") or default).strip().lower()
+        return agg if agg in {"sum", "avg", "count", "nunique", "max", "min"} else default
+
+    def _smart_top_n(measure_col: str, dimension_col: str, n: int = 12, agg: str = "sum"):
+        """Aggregate measure by dimension with safe defaults and return top-n series."""
+        grouped = _numeric_series(measure_col).groupby(_col_series(dimension_col))
+        if agg == "avg":
+            series = grouped.mean()
+        elif agg == "count":
+            series = grouped.count()
+        elif agg == "max":
+            series = grouped.max()
+        elif agg == "min":
+            series = grouped.min()
+        else:
+            series = grouped.sum()
+        return series.nlargest(n)
+
     def _build_month_year_period_frame(measure_col: str):
         """If dataset has separate month + year columns, build a merged Jan-2025 period axis."""
         month_col = next((str(c) for c in df.columns if "month" in str(c).lower()), None)
@@ -581,79 +611,32 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         )
 
             # ── Bar chart ─────────────────────────────────────────────────────
-            elif chart_type == "bar" and dimension and dimension in df.columns:
-                valid_measures = [m for m in measures if m and m in df.columns]
-                if not valid_measures and measure and measure in df.columns:
-                    valid_measures = [measure]
-                if valid_measures:
-                    top_n = _smart_top_n(dimension)
-                    if len(valid_measures) > 1:
-                        # Multi-series grouped bar chart
-                        _agg_frames: dict = {}
-                        for m in valid_measures[:4]:
-                            m_agg = _get_role_agg(m)
-                            _agg_frames[m] = _smart_groupby(
-                                _col_series(dimension), _numeric_series(m), m_agg, top_n=999
-                            )
-                        # Pick top-N dimensions by combined absolute total
-                        total_df = pd.DataFrame(_agg_frames).abs().fillna(0)
-                        top_dims = list(total_df.sum(axis=1).nlargest(top_n).index)
-                        labels = [str(l) for l in top_dims]
-                        bar_datasets = [
-                            {
-                                "label": _humanize_col(m),
-                                "data": [round(float(_agg_frames[m].get(d, 0)), 2) for d in top_dims],
-                            }
-                            for m in valid_measures[:4] if m in _agg_frames
-                        ]
-                        config = _multi_bar_config(labels, bar_datasets, palette,
-                                                   x_label=_humanize_col(dimension),
-                                                   y_label=_humanize_col(valid_measures[0]))
-                        config["layout"] = {"size": size}
-                        all_vals = [v for ds in bar_datasets for v in ds["data"]]
-                        _flag_large_numbers(config, all_vals)
-                        if not ai_insight and labels and bar_datasets:
-                            try:
-                                ai_insight, _ = ai_analyze_chart("bar", labels, bar_datasets[0]["data"], title)
-                            except Exception:
-                                pass
-                    else:
-                        m = valid_measures[0]
-                        agg_m = _get_role_agg(m)
-                        top = _smart_groupby(_col_series(dimension), _numeric_series(m), agg_m, top_n)
-                        labels = [str(l) for l in top.index]
-                        values = [round(float(v), 2) for v in top.values]
-                        config = _bar_config(labels, values, _humanize_col(m), palette,
-                                             x_label=_humanize_col(dimension), y_label=_humanize_col(m))
-                        config["layout"] = {"size": size}
-                        _flag_large_numbers(config, values)
-                        if not ai_insight and labels and values:
-                            try:
-                                ai_insight, _ = ai_analyze_chart("bar", labels, values, title)
-                            except Exception:
-                                pass
+            elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
+                top = _smart_top_n(measure, dimension, n=12, agg=_get_role_agg(measure, "sum"))
+                labels = [str(l) for l in top.index]
+                values = [round(float(v), 2) for v in top.values]
+                config = _bar_config(labels, values, _humanize_col(measure), palette,
+                                     x_label=_humanize_col(dimension), y_label=_humanize_col(measure))
+                config["layout"] = {"size": size}
+                if not ai_insight and labels and values:
+                    try:
+                        ai_insight, _ = ai_analyze_chart("bar", labels, values, title)
+                    except Exception:
+                        pass
 
             # ── Horizontal bar ────────────────────────────────────────────────
-            elif chart_type == "hbar" and dimension and dimension in df.columns:
-                valid_measures = [m for m in measures if m and m in df.columns]
-                if not valid_measures and measure and measure in df.columns:
-                    valid_measures = [measure]
-                if valid_measures:
-                    m = valid_measures[0]
-                    agg_m = _get_role_agg(m)
-                    top_n = _smart_top_n(dimension)
-                    top = _smart_groupby(_col_series(dimension), _numeric_series(m), agg_m, top_n)
-                    labels = [str(l) for l in top.index]
-                    values = [round(float(v), 2) for v in top.values]
-                    config = _hbar_config(labels, values, _humanize_col(m), palette,
-                                          x_label=_humanize_col(m), y_label=_humanize_col(dimension))
-                    config["layout"] = {"size": size}
-                    _flag_large_numbers(config, values)
-                    if not ai_insight and labels and values:
-                        try:
-                            ai_insight, _ = ai_analyze_chart("hbar", labels, values, title)
-                        except Exception:
-                            pass
+            elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
+                top = _smart_top_n(measure, dimension, n=12, agg=_get_role_agg(measure, "sum"))
+                labels = [str(l) for l in top.index]
+                values = [round(float(v), 2) for v in top.values]
+                config = _hbar_config(labels, values, _humanize_col(measure), palette,
+                                      x_label=_humanize_col(measure), y_label=_humanize_col(dimension))
+                config["layout"] = {"size": size}
+                if not ai_insight and labels and values:
+                    try:
+                        ai_insight, _ = ai_analyze_chart("hbar", labels, values, title)
+                    except Exception:
+                        pass
 
             # ── Line chart ────────────────────────────────────────────────────
             elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
