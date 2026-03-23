@@ -7,6 +7,34 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_for_json(value):
+    """Recursively convert values to JSON-safe primitives for JSONField storage.
+
+    Prevents sqlite JSON_VALID failures from NaN/Infinity and non-serializable scalars.
+    """
+    import math
+
+    if isinstance(value, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, tuple):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    # numpy/pandas scalar support
+    if hasattr(value, "item") and callable(getattr(value, "item")):
+        try:
+            return _sanitize_for_json(value.item())
+        except Exception:
+            return str(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)
 def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str = "free"):
     """Background task: generate all widgets for a newly created dashboard.
@@ -31,9 +59,11 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str 
         PALETTES,
         _area_config,
         _bar_config,
+        _multi_bar_config,
         _doughnut_config,
         _hbar_config,
         _line_config,
+        _multi_line_config,
         _pie_config,
         _radar_config,
         _scatter_config,
@@ -148,12 +178,13 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str 
         # ── Save widgets to DB ────────────────────────────────────────────────
         if widget_specs:
             for spec in widget_specs:
+                safe_config = _sanitize_for_json(spec.get("config", {}))
                 DashboardWidget.objects.create(
                     dashboard=dashboard,
                     title=spec["title"],
                     widget_type=spec["widget_type"],
                     position=spec["position"],
-                    chart_config=spec["config"],
+                    chart_config=safe_config,
                 )
         else:
             DashboardWidget.objects.create(
@@ -669,15 +700,16 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 except Exception:
                     trend_data = tmp.groupby(dimension)[measure].sum()
                     labels = [str(p) for p in trend_data.index]
-                values = [round(float(v), 2) for v in trend_data.values]
-                config = _area_config(labels, values, _humanize_col(measure), palette,
-                                      x_label="Period", y_label=_humanize_col(measure))
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    try:
-                        ai_insight, _ = ai_analyze_chart("area", labels, values, title)
-                    except Exception:
-                        pass
+                    values = [round(float(v), 2) for v in trend_data.values]
+                    config = _area_config(labels, values, _humanize_col(m), palette,
+                                          x_label=x_label, y_label=_humanize_col(m))
+                    config["layout"] = {"size": size}
+                    _flag_large_numbers(config, values)
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("area", labels, values, title)
+                        except Exception:
+                            pass
 
             # ── Pie / Doughnut ────────────────────────────────────────────────
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
@@ -798,20 +830,38 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Mixed (bar + line) ────────────────────────────────────────────
             elif chart_type == "mixed" and dimension and dimension in df.columns:
                 from apps.datasets.services import _mixed_config
-                bar_measures = [m for m in measures[:2] if m and m in df.columns]
-                line_measures = [m for m in measures[2:4] if m and m in df.columns]
-                if not bar_measures and measure and measure in df.columns:
+                bar_measures = [m for m in measures[:2] if m and m in df.columns and m != dimension]
+                line_measures = [m for m in measures[2:4] if m and m in df.columns and m != dimension]
+                if not bar_measures and measure and measure in df.columns and measure != dimension:
                     bar_measures = [measure]
                 # Need at least 1 bar measure
                 if bar_measures:
-                    all_mix_cols = bar_measures + line_measures
-                    _mix_tmp = df[[dimension] + all_mix_cols].copy()
+                    # Keep only truly numeric measures and remove duplicates while preserving order.
+                    all_mix_cols: list[str] = []
+                    for candidate in bar_measures + line_measures:
+                        if candidate in all_mix_cols:
+                            continue
+                        numeric_candidate = _numeric_series(candidate)
+                        if numeric_candidate.notna().sum() > 0:
+                            all_mix_cols.append(candidate)
+                    if not all_mix_cols:
+                        continue
+                    bar_measures = [m for m in bar_measures if m in all_mix_cols]
+                    line_measures = [m for m in line_measures if m in all_mix_cols and m not in bar_measures]
+                    if not bar_measures:
+                        bar_measures = [all_mix_cols[0]]
+                    _mix_tmp = pd.DataFrame({"_dim": _col_series(dimension)})
                     for _mc in all_mix_cols:
-                        _mix_tmp[_mc] = pd.to_numeric(_mix_tmp[_mc], errors="coerce")
-                    grouped = _mix_tmp.groupby(dimension)[all_mix_cols].sum().head(12)
+                        _mix_tmp[_mc] = _numeric_series(_mc)
+                    grouped = _mix_tmp.groupby("_dim")[all_mix_cols].sum().head(12)
                     labels = [str(l) for l in grouped.index]
-                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in bar_measures]
-                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in line_measures]
+                    def _series_from_group(col_name: str):
+                        series_or_df = grouped[col_name]
+                        if isinstance(series_or_df, pd.DataFrame):
+                            return series_or_df.iloc[:, 0]
+                        return series_or_df
+                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in bar_measures]
+                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in line_measures]
                     config = _mixed_config(labels, bar_ds, line_ds, palette,
                                           x_label=_humanize_col(dimension),
                                           y_label=_humanize_col(bar_measures[0]) if bar_measures else "")
@@ -882,21 +932,40 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 all_candidates = ([dimension] if dimension else []) + measures
                 cols = [c for c in all_candidates if c and c in df.columns]
                 if not cols:
-                    # Fall back: first categorical col + up to 5 numeric cols
+                    # Smart fallback: date cols first, then categorical, then numeric
+                    date_like = [
+                        c for c in df.columns
+                        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+                        and c in df.columns
+                    ]
                     cols = (
-                        profile.categorical_columns[:1] + profile.numeric_columns[:5]
-                    )
-                    cols = [c for c in cols if c in df.columns][:6]
+                        date_like[:1]
+                        + [c for c in profile.categorical_columns[:2] if c in df.columns]
+                        + [c for c in profile.numeric_columns[:4] if c in df.columns]
+                    )[:6]
                 if not cols:
                     cols = [str(c) for c in df.columns[:6]]
-                preview = df[cols].head(50).fillna("")
+                # Sort by the first numeric column descending for top-record view
+                sort_col = next(
+                    (c for c in cols if c in profile.numeric_columns and c in df.columns), None
+                )
+                try:
+                    preview = df[cols].copy()
+                    if sort_col:
+                        preview[sort_col] = pd.to_numeric(preview[sort_col], errors="coerce")
+                        preview = preview.sort_values(sort_col, ascending=False)
+                    preview = preview.head(100).fillna("")
+                except Exception:
+                    preview = df[cols].head(100).fillna("")
                 rows = [[str(v) for v in row] for row in preview.values.tolist()]
                 config = {"columns": cols, "rows": rows, "layout": {"size": size}}
                 if not ai_insight:
                     human_cols = [_humanize_col(c) for c in cols[:4]]
                     ai_insight = (
-                        f"Showing {len(rows)} records across {len(cols)} columns: "
-                        f"{', '.join(human_cols[:3])}{'...' if len(cols) > 3 else ''}. "
+                        f"Showing top {len(rows)} records"
+                        + (f" sorted by {_humanize_col(sort_col)} (descending)" if sort_col else "")
+                        + f" across {len(cols)} columns: "
+                        + f"{', '.join(human_cols[:3])}{'...' if len(cols) > 3 else ''}. "
                         f"Use filters to drill into specific segments and identify outliers."
                     )
 
