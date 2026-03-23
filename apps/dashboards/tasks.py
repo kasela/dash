@@ -301,9 +301,11 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
         PALETTES,
         _area_config, _bar_config, _doughnut_config, _hbar_config,
         _line_config, _pie_config, _radar_config, _scatter_config,
+        _multi_bar_config, _multi_line_config,
         _humanize_col, _detect_kpi_meta, _compute_kpi_trend,
         ai_analyze_chart,
     )
+    _ = (_multi_bar_config, _multi_line_config)
 
     if column_roles is None:
         column_roles = {}
