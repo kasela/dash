@@ -2810,6 +2810,35 @@ def ai_generate_dashboard_specs(
     percentage_cols = [c for c, t in col_semantic_types.items() if t == "percentage"]
     boolean_cols = [c for c, t in col_semantic_types.items() if t == "boolean"]
     text_cols = [c for c, t in col_semantic_types.items() if t == "text"]
+    kpi_candidates_precomputed: list[dict] = []
+    for col in [str(c) for c in profile.numeric_columns[:20] if str(c) in df.columns]:
+        stats = sample_stats.get(col)
+        if not stats:
+            continue
+        semantic_type = col_semantic_types.get(col, "number")
+        preferred_agg = "avg" if semantic_type == "percentage" else "sum"
+        preferred_value = stats.get("mean") if preferred_agg == "avg" else stats.get("sum")
+        try:
+            score = abs(float(stats.get("sum", 0))) + abs(float(stats.get("max", 0)))
+        except Exception:
+            score = 0.0
+        kpi_candidates_precomputed.append({
+            "column": col,
+            "label": _humanize_col(col),
+            "semantic_type": semantic_type,
+            "preferred_agg": preferred_agg,
+            "preferred_value": preferred_value,
+            "mean": stats.get("mean"),
+            "median": stats.get("median"),
+            "p75": stats.get("p75"),
+            "skewness": stats.get("skewness"),
+            "score": round(float(score), 2),
+        })
+    kpi_candidates_precomputed = sorted(
+        kpi_candidates_precomputed,
+        key=lambda x: float(x.get("score", 0)),
+        reverse=True,
+    )[:8]
 
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
@@ -2833,6 +2862,7 @@ def ai_generate_dashboard_specs(
         "percentage_columns": percentage_cols,
         "boolean_columns": boolean_cols,
         "text_columns": text_cols,
+        "precomputed_kpis": kpi_candidates_precomputed,
         # Plan-based chart type gating
         "user_plan": _plan_lower,
         "allowed_chart_types": allowed_chart_types,
@@ -3315,7 +3345,9 @@ def ai_generate_dashboard_specs(
                         "BAD: 'Data Table', 'Records', 'Details'.\n\n"
 
                         "═══ KPI RULES ═══\n"
-                        f"Generate {selected_plan['kpi_range']} DISTINCT KPIs — each serving a unique analytical purpose:\n"
+                        "FIRST: review 'precomputed_kpis' in payload and use them as the primary KPI source.\n"
+                        "Each KPI should reference those precomputed metric columns unless there is a strong reason not to.\n"
+                        "Generate 5-7 DISTINCT KPIs — each serving a unique analytical purpose:\n"
                         "  1. Total volume KPI: primary currency/financial metric (agg=sum) — e.g. 'Total Revenue'\n"
                         "  2. Average benchmark KPI: per-unit or rate metric (agg=avg) — e.g. 'Avg Order Value'\n"
                         "  3. Entity count KPI: unique entities for scope (agg=nunique) — e.g. 'Active Customers'\n"
@@ -3456,7 +3488,32 @@ def ai_generate_dashboard_specs(
                 if s.get("chart_type") in ("kpi", "heading", "text_canvas", "table") or
                 s.get("chart_type") in allowed_set
             ]
-            specs = _profile_guided_spec_repair(specs)
+            # Ensure KPI-first planning: if AI under-produces KPIs, backfill from precomputed KPI candidates.
+            current_kpi_count = sum(1 for s in specs if s.get("chart_type") == "kpi")
+            if current_kpi_count < 4 and kpi_candidates_precomputed:
+                used_measures = {
+                    str((s.get("measures") or [""])[0]).strip()
+                    for s in specs
+                    if s.get("chart_type") == "kpi" and (s.get("measures") or [])
+                }
+                for cand in kpi_candidates_precomputed:
+                    col = str(cand.get("column") or "").strip()
+                    if not col or col in used_measures:
+                        continue
+                    specs.append({
+                        "title": str(cand.get("label") or _humanize_col(col)),
+                        "chart_type": "kpi",
+                        "dimension": None,
+                        "measures": [col],
+                        "size": "sm",
+                        "palette": "indigo",
+                        "ai_insight": "",
+                        "_agg": str(cand.get("preferred_agg") or "sum"),
+                    })
+                    used_measures.add(col)
+                    current_kpi_count += 1
+                    if current_kpi_count >= 4:
+                        break
             return specs
         logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
