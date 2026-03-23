@@ -38,6 +38,12 @@ from apps.dashboards.views import (
     dashboard_ai_generate_html,
     landing_page,
     pricing_page,
+    about_page,
+    blog_page,
+    privacy_page,
+    terms_page,
+    security_page,
+    contact_page,
 )
 from apps.datasets.views import (
     dataset_ai_clean,
@@ -82,6 +88,12 @@ urlpatterns = [
     # Marketing pages
     path("", landing_page, name="landing"),
     path("pricing/", pricing_page, name="pricing"),
+    path("about/", about_page, name="about"),
+    path("blog/", blog_page, name="blog"),
+    path("privacy/", privacy_page, name="privacy"),
+    path("terms/", terms_page, name="terms"),
+    path("security/", security_page, name="security"),
+    path("contact/", contact_page, name="contact"),
 
     # SEO
     path("robots.txt", robots_txt, name="robots-txt"),
