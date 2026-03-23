@@ -117,6 +117,10 @@ DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
+# ── AI settings (OpenAI) ───────────────────────────────────────────────────────
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+
 # Site metadata for SEO
 SITE_NAME = "DashAI"
 SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "https://dashai.io")

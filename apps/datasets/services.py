@@ -1431,8 +1431,8 @@ def _waterfall_config(labels: list, values: list, label: str, palette: str = "in
 def _get_ai_client():
     """Return (client, model) tuple for the configured AI provider, or (None, None).
 
-    Priority: DeepSeek (if DEEPSEEK_API_KEY set) → Gemini (if GEMINI_API_KEY set).
-    Gemini is accessed via its OpenAI-compatible endpoint so no extra SDK is needed.
+    Priority: DeepSeek → OpenAI → Gemini (first key found wins).
+    All providers use the openai SDK; DeepSeek and Gemini use custom base URLs.
     """
     import importlib.util
     from django.conf import settings
@@ -1441,7 +1441,7 @@ def _get_ai_client():
         return None, None
     openai_module = __import__("openai")
 
-    # ── DeepSeek (primary) ────────────────────────────────────────────────────
+    # ── DeepSeek ──────────────────────────────────────────────────────────────
     deepseek_key = getattr(settings, "DEEPSEEK_API_KEY", "")
     if deepseek_key:
         model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
@@ -1453,7 +1453,14 @@ def _get_ai_client():
         )
         return client, model
 
-    # ── Gemini (fallback via OpenAI-compatible API) ───────────────────────────
+    # ── OpenAI ────────────────────────────────────────────────────────────────
+    openai_key = getattr(settings, "OPENAI_API_KEY", "")
+    if openai_key:
+        model = getattr(settings, "OPENAI_MODEL", "gpt-4o")
+        client = openai_module.OpenAI(api_key=openai_key)
+        return client, model
+
+    # ── Gemini (via OpenAI-compatible endpoint) ───────────────────────────────
     gemini_key = getattr(settings, "GEMINI_API_KEY", "")
     if gemini_key:
         model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
