@@ -34,7 +34,20 @@
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-1 flex items-center justify-between">
           <h2 class="font-semibold text-slate-900">{{ widget.title }}</h2>
-          <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+          <div class="flex items-center gap-2">
+            <span class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 uppercase">{{ widget.widget_type }}</span>
+            {% if widget.widget_type != 'kpi' and widget.widget_type != 'table' and widget.widget_type != 'heading' %}
+            <button
+              onclick="openChartModal('{{ widget.id }}', '{{ widget.title|escapejs }}')"
+              title="Enlarge chart"
+              class="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+              </svg>
+            </button>
+            {% endif %}
+          </div>
         </div>
 
         {% if widget.widget_type == 'kpi' %}
@@ -83,7 +96,9 @@
           </div>
 
         {% else %}
-          <div class="mt-3 h-60" data-widget-chart="{{ widget.chart_config|to_json }}">
+          <div class="mt-3 h-60"
+               data-widget-chart="{{ widget.chart_config|to_json }}"
+               data-widget-id="{{ widget.id }}">
             <canvas></canvas>
             <p class="chart-error hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
           </div>
@@ -109,4 +124,105 @@
   </div>
 
 </div>
+
+<!-- Chart enlarge modal -->
+<div id="chart-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true">
+  <div class="relative w-full max-w-4xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+    <!-- Modal header -->
+    <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <h3 id="modal-chart-title" class="font-semibold text-slate-900 text-lg"></h3>
+      <button onclick="closeChartModal()" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <!-- Modal chart area -->
+    <div class="p-6">
+      <div class="h-[60vh]">
+        <canvas id="modal-canvas"></canvas>
+        <p id="modal-chart-error" class="hidden text-xs text-amber-600 mt-2">Unable to render chart</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var modalChartInstance = null;
+
+  window.openChartModal = function (widgetId, title) {
+    var widgetEl = document.querySelector('[data-widget-id="' + widgetId + '"]');
+    if (!widgetEl) return;
+
+    var configStr = widgetEl.getAttribute('data-widget-chart');
+    if (!configStr) return;
+
+    var config;
+    try {
+      config = JSON.parse(configStr);
+    } catch (e) {
+      return;
+    }
+
+    document.getElementById('modal-chart-title').textContent = title;
+
+    var modal = document.getElementById('chart-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    // Destroy previous chart instance if any
+    if (modalChartInstance) {
+      modalChartInstance.destroy();
+      modalChartInstance = null;
+    }
+
+    var canvas = document.getElementById('modal-canvas');
+    var ctx = canvas.getContext('2d');
+
+    // Deep-clone config to avoid mutating the original
+    var modalConfig = JSON.parse(JSON.stringify(config));
+
+    // Ensure the chart fills the modal container
+    if (modalConfig.options) {
+      modalConfig.options.responsive = true;
+      modalConfig.options.maintainAspectRatio = false;
+    } else {
+      modalConfig.options = { responsive: true, maintainAspectRatio: false };
+    }
+
+    try {
+      modalChartInstance = new Chart(ctx, modalConfig);
+      document.getElementById('modal-chart-error').classList.add('hidden');
+    } catch (e) {
+      document.getElementById('modal-chart-error').classList.remove('hidden');
+    }
+  };
+
+  window.closeChartModal = function () {
+    var modal = document.getElementById('chart-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    if (modalChartInstance) {
+      modalChartInstance.destroy();
+      modalChartInstance = null;
+    }
+  };
+
+  // Close on backdrop click
+  document.getElementById('chart-modal').addEventListener('click', function (e) {
+    if (e.target === this) {
+      closeChartModal();
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeChartModal();
+    }
+  });
+})();
+</script>
+
 {% endblock %}

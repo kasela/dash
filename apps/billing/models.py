@@ -6,6 +6,8 @@ from django.utils import timezone
 class UserProfile(models.Model):
     class Plan(models.TextChoices):
         FREE = "free", "Free"
+        LIGHT = "light", "Light"
+        PLUS = "plus", "Plus"
         PRO = "pro", "Pro"
         ENTERPRISE = "enterprise", "Enterprise"
 
@@ -31,16 +33,36 @@ class UserProfile(models.Model):
     # ── Plan limits ────────────────────────────────────────────────────────────
 
     @property
+    def is_light(self) -> bool:
+        return self.plan in (self.Plan.LIGHT, self.Plan.PLUS, self.Plan.PRO, self.Plan.ENTERPRISE)
+
+    @property
+    def is_plus(self) -> bool:
+        return self.plan in (self.Plan.PLUS, self.Plan.PRO, self.Plan.ENTERPRISE)
+
+    @property
     def is_pro(self) -> bool:
         return self.plan in (self.Plan.PRO, self.Plan.ENTERPRISE)
 
     @property
     def max_dashboards(self) -> int:
-        return 999_999 if self.is_pro else 3
+        if self.plan == self.Plan.FREE:
+            return 3
+        elif self.plan == self.Plan.LIGHT:
+            return 10
+        elif self.plan == self.Plan.PLUS:
+            return 50
+        return 999_999
 
     @property
     def max_monthly_uploads(self) -> int:
-        return 999_999 if self.is_pro else 5
+        if self.plan == self.Plan.FREE:
+            return 5
+        elif self.plan == self.Plan.LIGHT:
+            return 25
+        elif self.plan == self.Plan.PLUS:
+            return 100
+        return 999_999
 
     @property
     def subscription_is_active(self) -> bool:

@@ -307,31 +307,38 @@ def pricing_page(request: HttpRequest) -> HttpResponse:
             "Basic chart types (bar, line, pie)",
             "Community support",
         ],
+        "light_features": [
+            "10 dashboards",
+            "25 dataset uploads / month",
+            "All basic chart types",
+            "Email support",
+            "Custom chart colors",
+        ],
+        "plus_features": [
+            "50 dashboards",
+            "100 dataset uploads / month",
+            "Advanced chart types",
+            "Team workspace (up to 3 seats)",
+            "Data refresh scheduling",
+            "Priority email support",
+        ],
         "pro_features": [
             "Unlimited dashboards",
             "Unlimited dataset uploads",
-            "Advanced chart types",
-            "Team workspace (up to 5 seats)",
-            "Data refresh scheduling",
-            "Priority email support",
+            "All chart types incl. Pro charts",
+            "Unlimited team seats",
             "Remove DashAI branding",
-        ],
-        "enterprise_features": [
-            "Unlimited seats",
-            "SSO / SAML authentication",
-            "Custom integrations & API",
             "Dedicated account manager",
             "SLA guarantee",
-            "On-premise deployment option",
         ],
         "faqs": [
             {
                 "question": "Can I try DashAI before paying?",
-                "answer": "Yes! The Starter plan is free forever with no credit card required. You get 3 dashboards and 5 uploads per month to explore the product.",
+                "answer": "Yes! The Free plan is free forever with no credit card required. You get 3 dashboards and 5 uploads per month to explore the product.",
             },
             {
                 "question": "What file types are supported?",
-                "answer": "DashAI supports CSV, XLSX, XLSM, and JSON files on all plans. Enterprise customers can request additional connector types.",
+                "answer": "DashAI supports CSV, XLSX, XLSM, and JSON files on all plans.",
             },
             {
                 "question": "How are share links secured?",
@@ -340,6 +347,10 @@ def pricing_page(request: HttpRequest) -> HttpResponse:
             {
                 "question": "Can I cancel my subscription at any time?",
                 "answer": "Absolutely. Cancel anytime from your account settings with no penalty. You'll retain access until the end of your billing period.",
+            },
+            {
+                "question": "What is the difference between monthly and annual billing?",
+                "answer": "Annual billing saves you 20% compared to monthly. You are billed once per year at the discounted rate.",
             },
         ],
     }
