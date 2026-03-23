@@ -2,12 +2,219 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Base layer ─────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply antialiased;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  }
+
+  /* Focus ring */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
+  }
+}
+
+/* ── Component layer ─────────────────────────────────────────────────────── */
 @layer components {
-  .card {
-    @apply rounded-xl bg-white p-5 shadow;
+
+  /* ─ Buttons ─ */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700;
+    @apply btn bg-brand-600 text-white shadow-sm shadow-brand-900/20 hover:bg-brand-500 active:bg-brand-700 focus-visible:ring-brand-500;
   }
+
+  .btn-primary-lg {
+    @apply btn-primary px-7 py-3.5 text-base shadow-md shadow-brand-900/25 hover:shadow-glow-sm hover:-translate-y-0.5;
+  }
+
+  .btn-secondary {
+    @apply btn border border-slate-200 bg-white text-slate-700 shadow-card hover:bg-slate-50 hover:border-slate-300 focus-visible:ring-brand-500;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+
+  .btn-outline-white {
+    @apply btn border border-white/30 bg-white/10 text-white backdrop-blur hover:bg-white/20;
+  }
+
+  /* ─ Cards ─ */
+  .card {
+    @apply rounded-2xl border border-slate-100 bg-white shadow-card;
+  }
+
+  .card-md {
+    @apply rounded-2xl border border-slate-100 bg-white shadow-card-md;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card-md hover:border-slate-200 hover:-translate-y-0.5;
+  }
+
+  .card-feature {
+    @apply card-hover p-8;
+  }
+
+  /* ─ Badges / Pills ─ */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .badge-brand {
+    @apply badge border border-brand-500/20 bg-brand-500/10 text-brand-600;
+  }
+
+  .badge-brand-dark {
+    @apply badge border border-brand-400/30 bg-brand-500/10 text-brand-300;
+  }
+
+  .badge-success {
+    @apply badge bg-emerald-100 text-emerald-700;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-100 text-amber-700;
+  }
+
+  .badge-pro {
+    @apply badge bg-violet-100 text-violet-700;
+  }
+
+  /* ─ Section labels ─ */
+  .section-label {
+    @apply text-xs font-bold uppercase tracking-widest text-brand-600;
+  }
+
+  .section-label-muted {
+    @apply text-xs font-bold uppercase tracking-widest text-slate-400;
+  }
+
+  /* ─ Headings ─ */
+  .heading-xl {
+    @apply text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl md:text-6xl lg:text-7xl;
+  }
+
+  .heading-lg {
+    @apply text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl;
+  }
+
+  .heading-md {
+    @apply text-2xl font-bold tracking-tight text-slate-900;
+  }
+
+  /* ─ Form elements ─ */
+  .input {
+    @apply block w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:bg-slate-50 disabled:opacity-60;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+
+  /* ─ Nav items (sidebar) ─ */
+  .nav-item {
+    @apply group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-300 transition-all duration-150 hover:bg-white/8 hover:text-white;
+  }
+
+  .nav-item-active {
+    @apply nav-item border-l-2 border-brand-400 bg-white/10 pl-[10px] text-white;
+  }
+
+  /* ─ Stat card ─ */
+  .stat-card {
+    @apply card p-5;
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold text-slate-900;
+  }
+
+  .stat-label {
+    @apply text-sm text-slate-500;
+  }
+
+  /* ─ Divider ─ */
+  .divider {
+    @apply my-6 border-t border-slate-100;
+  }
+
+  /* ─ Gradient text ─ */
+  .gradient-text {
+    @apply bg-gradient-to-r from-brand-400 via-violet-400 to-brand-300 bg-clip-text text-transparent;
+  }
+
+  /* ─ Icon wrapper ─ */
+  .icon-box {
+    @apply flex h-11 w-11 items-center justify-center rounded-xl;
+  }
+
+  .icon-box-brand {
+    @apply icon-box bg-brand-50 text-brand-600;
+  }
+
+  .icon-box-violet {
+    @apply icon-box bg-violet-50 text-violet-600;
+  }
+
+  .icon-box-emerald {
+    @apply icon-box bg-emerald-50 text-emerald-600;
+  }
+
+  .icon-box-amber {
+    @apply icon-box bg-amber-50 text-amber-600;
+  }
+
+  /* ─ Check list item ─ */
+  .check-item {
+    @apply flex items-center gap-2 text-sm;
+  }
+
+  /* ─ Toast ─ */
+  .toast {
+    @apply flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-card-lg text-sm text-slate-700;
+  }
+
+  .toast-success {
+    @apply toast border-emerald-200 bg-emerald-50 text-emerald-800;
+  }
+
+  .toast-error {
+    @apply toast border-red-200 bg-red-50 text-red-800;
+  }
+}
+
+/* ── Utility overrides ───────────────────────────────────────────────────── */
+@layer utilities {
+  .bg-white\/8 { background-color: rgba(255,255,255,.08); }
+  .bg-white\/12 { background-color: rgba(255,255,255,.12); }
+
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #334155;
+    border-radius: 2px;
+  }
+
+  /* Glow helpers */
+  .glow-brand {
+    box-shadow: 0 0 40px -8px rgba(99,102,241,.5);
+  }
+
+  /* Hero grid background */
+  .bg-grid { background-size: 40px 40px; }
 }
