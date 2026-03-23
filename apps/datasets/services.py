@@ -1431,7 +1431,7 @@ def _waterfall_config(labels: list, values: list, label: str, palette: str = "in
 def _get_ai_client():
     """Return (client, model) tuple for the configured AI provider, or (None, None).
 
-    Priority: DeepSeek → OpenAI → Gemini (first key found wins).
+    Priority: DeepSeek → Gemini (first key found wins).
     All providers use the openai SDK; DeepSeek and Gemini use custom base URLs.
     """
     import importlib.util
@@ -1451,13 +1451,6 @@ def _get_ai_client():
             base_url="https://api.deepseek.com",
             max_retries=max_retries,
         )
-        return client, model
-
-    # ── OpenAI ────────────────────────────────────────────────────────────────
-    openai_key = getattr(settings, "OPENAI_API_KEY", "")
-    if openai_key:
-        model = getattr(settings, "OPENAI_MODEL", "gpt-4o")
-        client = openai_module.OpenAI(api_key=openai_key)
         return client, model
 
     # ── Gemini (via OpenAI-compatible endpoint) ───────────────────────────────
