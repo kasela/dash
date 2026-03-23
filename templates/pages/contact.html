@@ -125,7 +125,7 @@
                 id="contact-email"
                 name="email"
                 required
-                value="{{ form_data.email|default:user.email|default:'' }}"
+                value="{{ form_data.email|default:initial_email }}"
                 placeholder="jane@company.com"
                 class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               />

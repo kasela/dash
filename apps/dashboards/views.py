@@ -418,7 +418,8 @@ def contact_page(request: HttpRequest) -> HttpResponse:
                 "form_data": {"name": name, "email": email, "subject": subject, "message": message},
             })
 
-    return render(request, "pages/contact.html")
+    initial_email = request.user.email if request.user.is_authenticated else ""
+    return render(request, "pages/contact.html", {"initial_email": initial_email})
 
 
 @login_required
