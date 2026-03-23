@@ -2589,6 +2589,7 @@ def ai_generate_dashboard_specs(
             "insight_depth": "foundational",
             "focus": "clear starter dashboard with essential trends and breakdowns",
             "advanced_enabled": False,
+            "advanced_target": "0",
         },
         "light": {
             "label": "LIGHT",
@@ -2598,6 +2599,7 @@ def ai_generate_dashboard_specs(
             "insight_depth": "practical",
             "focus": "more diagnostic analysis with one or two advanced visuals when useful",
             "advanced_enabled": True,
+            "advanced_target": "1-2",
         },
         "plus": {
             "label": "PLUS",
@@ -2607,6 +2609,7 @@ def ai_generate_dashboard_specs(
             "insight_depth": "advanced",
             "focus": "multi-angle analysis with richer segmentation, variance and relationship views",
             "advanced_enabled": True,
+            "advanced_target": "2-3",
         },
         "pro": {
             "label": "PRO",
@@ -2616,6 +2619,7 @@ def ai_generate_dashboard_specs(
             "insight_depth": "executive+advanced",
             "focus": "board-ready narrative with advanced diagnostics and decision support",
             "advanced_enabled": True,
+            "advanced_target": "3-5",
         },
         "enterprise": {
             "label": "ENTERPRISE",
@@ -2625,6 +2629,7 @@ def ai_generate_dashboard_specs(
             "insight_depth": "executive+advanced",
             "focus": "board-ready narrative with advanced diagnostics and decision support",
             "advanced_enabled": True,
+            "advanced_target": "3-5",
         },
     }
     selected_plan = plan_spec.get(_plan_lower, plan_spec["free"])
@@ -2772,6 +2777,7 @@ def ai_generate_dashboard_specs(
             "kpi_range": selected_plan["kpi_range"],
             "chart_range": selected_plan["chart_range"],
             "advanced_chart_enabled": selected_plan["advanced_enabled"],
+            "advanced_chart_target": selected_plan["advanced_target"],
         },
     }
 
@@ -2997,6 +3003,7 @@ def ai_generate_dashboard_specs(
         has_line = any(s.get("chart_type") == "line" for s in repaired)
         has_breakdown = any(s.get("chart_type") in ("bar", "hbar") for s in repaired)
         has_table = any(s.get("chart_type") == "table" for s in repaired)
+        existing_types = {str(s.get("chart_type") or "").lower() for s in repaired}
 
         if not has_kpi and primary_numeric:
             repaired.append({
@@ -3045,6 +3052,72 @@ def ai_generate_dashboard_specs(
                     "ai_insight": "",
                 })
 
+        # Advanced-chart backfill for tiers that support them.
+        if selected_plan["advanced_enabled"]:
+            tertiary_numeric = numeric_columns[2] if len(numeric_columns) > 2 else secondary_numeric
+            if "gauge" in allowed_chart_types and "gauge" not in existing_types and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Performance Gauge",
+                    "chart_type": "gauge",
+                    "dimension": "",
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "emerald",
+                    "ai_insight": "",
+                })
+            if "mixed" in allowed_chart_types and "mixed" not in existing_types and primary_numeric and secondary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Comparison",
+                    "chart_type": "mixed",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric, secondary_numeric],
+                    "size": "lg",
+                    "palette": "ocean",
+                    "ai_insight": "",
+                })
+            if "polararea" in allowed_chart_types and "polararea" not in existing_types and default_category and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Distribution by {_humanize_col(default_category)}",
+                    "chart_type": "polararea",
+                    "dimension": default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "vibrant",
+                    "ai_insight": "",
+                })
+            if "funnel" in allowed_chart_types and "funnel" not in existing_types and (default_rank_category or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Funnel by {_humanize_col(default_rank_category or default_category)}",
+                    "chart_type": "funnel",
+                    "dimension": default_rank_category or default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "amber",
+                    "ai_insight": "",
+                })
+            if "waterfall" in allowed_chart_types and "waterfall" not in existing_types and (default_date or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Contribution Waterfall",
+                    "chart_type": "waterfall",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric],
+                    "size": "lg",
+                    "palette": "blue",
+                    "ai_insight": "",
+                })
+            if "bubble" in allowed_chart_types and "bubble" not in existing_types and len(numeric_columns) >= 2:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Opportunity Map",
+                    "chart_type": "bubble",
+                    "dimension": "",
+                    "measures": [tertiary_numeric] if tertiary_numeric else [],
+                    "x_measure": primary_numeric,
+                    "y_measure": secondary_numeric,
+                    "size": "md",
+                    "palette": "sunset",
+                    "ai_insight": "",
+                })
+
         return repaired
 
     # Build plan-specific instruction for chart types and dashboard sophistication
@@ -3056,9 +3129,10 @@ def ai_generate_dashboard_specs(
         f"Target KPI range: {selected_plan['kpi_range']}. "
         f"Target chart range: {selected_plan['chart_range']}. "
         f"Insight depth: {selected_plan['insight_depth']}.\n"
+        f"Target advanced charts: {selected_plan['advanced_target']} when data supports.\n"
         f"Plan focus: {selected_plan['focus']}\n"
         + (
-            "Advanced charts available for this plan — use them only when data context clearly fits: "
+            "Advanced charts available for this plan — include a meaningful subset within target advanced count when data context fits: "
             "funnel → stage/conversion data, gauge → single KPI vs target, "
             "waterfall → period-over-period variance, bubble → 3-variable relationship, "
             "polararea → category comparison, mixed → bar+line dual-axis overlay."
