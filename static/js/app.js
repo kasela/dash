@@ -71,6 +71,38 @@
     return cfg;
   }
 
+  // Inject Y-axis (and X-axis for hbar) tick formatter for large numbers
+  // Triggered by _large_num_fmt: true or _largeNumFmt: true in scale ticks
+  function _injectAxisFormatters(cfg) {
+    try {
+      var largeNumFmt = cfg._large_num_fmt === true;
+      if (!largeNumFmt) return cfg;
+      var scales = cfg.options && cfg.options.scales;
+      if (!scales) return cfg;
+      var formatter = function (val) {
+        if (typeof val !== 'number') return val;
+        var abs = Math.abs(val);
+        if (abs >= 1e9) return (val / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+        if (abs >= 1e6) return (val / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+        if (abs >= 1e3) return (val / 1e3).toFixed(0) + 'K';
+        return val.toLocaleString();
+      };
+      // Inject into y-axis (vertical charts) and x-axis (horizontal bar)
+      ['y', 'x'].forEach(function (axis) {
+        var scale = scales[axis];
+        if (scale && scale.ticks) {
+          var ticks = scale.ticks;
+          if (ticks._largeNumFmt || largeNumFmt) {
+            if (typeof ticks.callback !== 'function') {
+              ticks.callback = formatter;
+            }
+          }
+        }
+      });
+    } catch (_) {}
+    return cfg;
+  }
+
   function renderWidgetCharts() {
     document.querySelectorAll('[data-widget-chart]').forEach(function (wrap) {
       var canvas = wrap.querySelector('canvas');
@@ -81,6 +113,7 @@
         cfg.options.responsive = true;
         cfg.options.maintainAspectRatio = false;
         _injectTooltipCallback(cfg);
+        _injectAxisFormatters(cfg);
         var widgetId = wrap.dataset.widgetId;
         var chart = new Chart(canvas, cfg);
         if (widgetId) widgetCharts[widgetId] = { chart: chart, config: cfg, canvas: canvas };
