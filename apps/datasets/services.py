@@ -2818,6 +2818,68 @@ def ai_generate_dashboard_specs(
         except Exception:
             pass
 
+    field_profiles: list[dict] = []
+    for col in list(df.columns[:50]):
+        col_name = str(col)
+        try:
+            unique_count = int(df[col].nunique(dropna=True))
+            null_pct = round(float(df[col].isna().mean() * 100), 2)
+            dtype = str(df[col].dtype)
+        except Exception:
+            unique_count = 0
+            null_pct = 0.0
+            dtype = "unknown"
+        role_hint = "text"
+        if col_name in date_cols:
+            role_hint = "date"
+        elif col_name in profile.numeric_columns:
+            role_hint = "measure"
+        elif col_name in profile.categorical_columns:
+            role_hint = "dimension"
+        field_profiles.append({
+            "column": col_name,
+            "dtype": dtype,
+            "role_hint": role_hint,
+            "null_pct": null_pct,
+            "unique_count": unique_count,
+        })
+
+    grouping_blueprints: list[dict] = []
+    for dim in [str(c) for c in profile.categorical_columns[:8]]:
+        for meas in [str(c) for c in profile.numeric_columns[:5]]:
+            if dim in df.columns and meas in df.columns and dim != meas:
+                grouping_blueprints.append({
+                    "dimension": dim,
+                    "measure": meas,
+                    "agg": "sum",
+                    "top_n": 12,
+                    "question": f"How does {_humanize_col(meas)} vary across {_humanize_col(dim)}?",
+                })
+    grouping_blueprints = grouping_blueprints[:20]
+
+    derived_field_suggestions: list[dict] = []
+    if profile.numeric_columns:
+        top_num = str(profile.numeric_columns[0])
+        derived_field_suggestions.append({
+            "name": f"{top_num}_pct_of_total",
+            "formula": f"{top_num} / SUM({top_num})",
+            "usage": "share / contribution analysis (pie/doughnut/polararea)",
+        })
+    if len(profile.numeric_columns) >= 2:
+        n1 = str(profile.numeric_columns[0])
+        n2 = str(profile.numeric_columns[1])
+        derived_field_suggestions.append({
+            "name": f"{n1}_to_{n2}_ratio",
+            "formula": f"{n1} / NULLIF({n2}, 0)",
+            "usage": "efficiency / productivity KPI",
+        })
+    if date_cols:
+        d = str(date_cols[0])
+        derived_field_suggestions.extend([
+            {"name": f"{d}_year", "formula": f"YEAR({d})", "usage": "year-over-year trend"},
+            {"name": f"{d}_month", "formula": f"MONTH({d})", "usage": "monthly seasonality trend"},
+        ])
+
     date_ranges: dict = {}
     for col in date_cols[:3]:
         try:
@@ -2888,39 +2950,6 @@ def ai_generate_dashboard_specs(
         reverse=True,
     )[:8]
 
-    # Build multi-measure groups: sets of numeric columns that share domain context
-    # (e.g. revenue+cost+profit, clicks+impressions+conversions) for grouped charts.
-    multi_measure_groups: list[list[str]] = []
-    try:
-        _num_cols_clean = [str(c) for c in profile.numeric_columns[:16] if str(c) in df.columns]
-        # Group by shared keyword stems to find related metrics
-        _STEM_MAP: dict[str, list[str]] = {}
-        _FINANCE_STEMS = ["revenue", "cost", "profit", "sales", "income", "spend", "budget", "margin"]
-        _FUNNEL_STEMS = ["click", "impression", "conversion", "lead", "session", "visit", "open", "order"]
-        _PERF_STEMS = ["score", "rating", "nps", "csat", "satisfaction", "accuracy", "efficiency"]
-        for stem_group in [_FINANCE_STEMS, _FUNNEL_STEMS, _PERF_STEMS]:
-            matched = [c for c in _num_cols_clean if any(s in c.lower() for s in stem_group)]
-            if len(matched) >= 2:
-                multi_measure_groups.append(matched[:4])
-        # Also add high-correlation pairs from correlation_matrix
-        for pair_key, corr_val in correlation_matrix.items():
-            if abs(corr_val) >= 0.5:
-                parts = pair_key.split(" vs ")
-                if len(parts) == 2 and all(p.strip() in df.columns for p in parts):
-                    pair = [p.strip() for p in parts]
-                    if pair not in multi_measure_groups and [pair[1], pair[0]] not in multi_measure_groups:
-                        multi_measure_groups.append(pair)
-    except Exception:
-        pass
-
-    # Compute date span info for frontend period labeling hint
-    date_span_days: dict[str, int] = {}
-    for col, rng in date_ranges.items():
-        try:
-            date_span_days[col] = int(rng.get("span_days", 0))
-        except Exception:
-            pass
-
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
         "columns": [str(c) for c in df.columns[:60]],
@@ -2945,8 +2974,9 @@ def ai_generate_dashboard_specs(
         "boolean_columns": boolean_cols,
         "text_columns": text_cols,
         "precomputed_kpis": kpi_candidates_precomputed,
-        # Multi-measure groups for grouped bar / multi-line chart suggestions
-        "multi_measure_groups": multi_measure_groups[:5],
+        "field_profiles": field_profiles,
+        "grouping_blueprints": grouping_blueprints,
+        "derived_field_suggestions": derived_field_suggestions,
         # Plan-based chart type gating
         "user_plan": _plan_lower,
         "allowed_chart_types": allowed_chart_types,
@@ -3411,6 +3441,15 @@ def ai_generate_dashboard_specs(
                         "Verify each column name character-by-character against the list before writing it.\n"
                         "NEVER use text or id columns as chart dimensions or measures.\n\n"
 
+                        "═══ PREPROCESSING + DERIVED FIELDS (MANDATORY THINKING STEP) ═══\n"
+                        "Before designing widgets, inspect 'field_profiles', 'grouping_blueprints', and "
+                        "'derived_field_suggestions' from payload.\n"
+                        "1) Identify best dimensions/measures and reject weak noisy fields.\n"
+                        "2) Define grouped calculations first (top-N, trend, share, variance, ratio).\n"
+                        "3) Use derived fields conceptually in KPI/chart logic when they improve decision quality.\n"
+                        "4) Prioritize actionable comparisons: target vs actual, top vs bottom segments, "
+                        "growth vs decline, concentration risk, outlier detection.\n\n"
+
                         "═══ UNIQUENESS RULE (CRITICAL) ═══\n"
                         "EVERY chart MUST be unique — no two charts can use the same chart_type + x + y combination.\n"
                         "Each chart visualizes a DIFFERENT business question or data relationship.\n"
@@ -3490,6 +3529,12 @@ def ai_generate_dashboard_specs(
                         "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
                         "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
                         "The bottom 4 categories combined account for only 12% — consolidation opportunity.'\n\n"
+
+                        "═══ LAYOUT QUALITY (PROFESSIONAL DASHBOARD COMPOSITION) ═══\n"
+                        "Order widgets for executive reading flow:\n"
+                        "1) KPI block (top row), 2) trends/comparisons (middle), 3) diagnostics/detail tables (bottom).\n"
+                        "Use size intentionally: high-priority charts as lg, supporting charts as md.\n"
+                        "Dashboard must feel boardroom-grade and decision-oriented, not generic BI clutter.\n\n"
 
                         "═══ SIZE RULES ═══\n"
                         "kpi=sm, line/area/waterfall/mixed=lg, bar/hbar/funnel=md, "
@@ -3796,37 +3841,23 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "2) Use these exact CDN versions:\n"
         "   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\n"
         "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
-        "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n\n"
-        "DASHBOARD GOALS (schema-agnostic):\n"
-        "- Build analytical views from the provided payload column metadata, not hard-coded domain fields.\n"
-        "- Infer semantic roles dynamically (date/time, category, metric, id/text) via robust case-insensitive matching.\n"
-        "- Use only columns that exist in payload.columns (no invented names).\n"
-        "- If a preferred field is missing, gracefully fallback to the next best available column.\n\n"
-        "REQUIRED FEATURES:\n"
-        "1) File upload (csv/xls/xlsx) parsed with SheetJS; dashboard renders from uploaded data in-browser.\n"
-        "2) Global interactive filters generated from top categorical/date columns; all filters update KPIs, charts, and table together.\n"
-        "3) KPI strip (4-6 cards) chosen from strongest numeric metrics:\n"
-        "   total, average, max/min, and at least one ratio/share metric when possible.\n"
-        "4) Chart section (minimum 6 charts), automatically selected by available data:\n"
-        "   - trend chart (line/area) when date-like columns exist\n"
-        "   - ranking chart (bar/hbar) for top categories by key metric\n"
-        "   - composition chart (doughnut/pie) for category share\n"
-        "   - comparison chart (grouped bar or mixed) when multiple metrics exist\n"
-        "   - relationship chart (scatter/bubble) when 2+ numeric columns exist\n"
-        "   - distribution chart (histogram-style bar via binned values) for a major metric when feasible\n"
-        "5) Scrollable detail table for filtered rows with searchable columns and basic pagination.\n"
-        "6) Download button that saves current dashboard HTML as a .html file.\n"
-        "7) Footer text: 'Powered by DashAI | Data stays in your browser'.\n\n"
-        "DESIGN REQUIREMENTS:\n"
-        "- Modern executive UI: gradient header, glassmorphism cards, subtle shadows, smooth transitions.\n"
-        "- Responsive CSS grid layout for desktop/tablet/mobile.\n"
-        "- Color system: indigo/blue primary, emerald positive, rose negative, amber neutral.\n"
-        "- Readable typography and strong contrast.\n\n"
-        "ANALYTICAL QUALITY BAR:\n"
-        "- Titles must express business questions/insights (not raw column names only).\n"
-        "- Tooltips should show formatted values with locale separators.\n"
-        "- Prefer intelligent defaults based on payload.numeric_stats and categorical_top_values.\n"
-        "- Include empty-state handling when uploaded data is invalid or too sparse.\n"
+        "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
+        "3. Data ingestion: user uploads .xlsx/.xls/.csv; parse with SheetJS and build all visuals dynamically.\n"
+        "4. FIRST PHASE (mandatory): identify data types + field roles from payload columns (date, dimension, measure, id/text).\n"
+        "5. SECOND PHASE (mandatory): compute grouped datasets + derived metrics before rendering widgets:\n"
+        "   - totals, averages, counts, unique counts, shares %, variance, growth/trend rates.\n"
+        "6. THIRD PHASE (mandatory): design dashboard items from these computed datasets, not raw rows.\n"
+        "7. KPI design: create 5-8 high-value KPI cards with clear business labels and contextual micro-insights.\n"
+        "8. Chart design: choose chart types based on data semantics (trend, comparison, composition, correlation, distribution).\n"
+        "9. Include a professional chart pool (where data supports): line, area, bar, hbar, doughnut, pie, radar, scatter, bubble, mixed, funnel, gauge, waterfall.\n"
+        "10. Auto-assign chart size + order for executive storytelling: top=KPIs, middle=primary trends/comparisons, lower=diagnostics/table.\n"
+        "11. Interactive filters for top dimensions; all filters must update KPIs, charts, and table together.\n"
+        "12. Include both buttons: (a) Download Dashboard HTML, (b) Full Screen toggle for the dashboard canvas/page.\n"
+        "13. Build a modern UI: glassmorphism cards, gradient header, responsive CSS grid, smooth transitions.\n"
+        "14. Use color semantics: indigo/blue primary, emerald positive, rose negative, amber neutral.\n"
+        "15. Add a scrollable detailed table with calculated helper columns (e.g., share %, variance %) when relevant.\n"
+        "16. Focus on decision-making insights: highlight outliers, concentration risk, growth/decline pockets, and actionable comparisons.\n"
+        "17. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
     )
 
     user_message = (
