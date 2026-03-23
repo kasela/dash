@@ -1477,11 +1477,7 @@ def _waterfall_config(labels: list, values: list, label: str, palette: str = "in
 
 
 def _get_ai_client():
-    """Return (client, model) tuple for the configured AI provider, or (None, None).
-
-    Priority: DeepSeek → OpenAI → Gemini (first key found wins).
-    All providers use the openai SDK; DeepSeek and Gemini use custom base URLs.
-    """
+    """Return (client, model) tuple for OpenAI, or (None, None)."""
     import importlib.util
     from django.conf import settings
 
@@ -1489,32 +1485,13 @@ def _get_ai_client():
         return None, None
     openai_module = __import__("openai")
 
-    # ── DeepSeek ──────────────────────────────────────────────────────────────
-    deepseek_key = getattr(settings, "DEEPSEEK_API_KEY", "")
-    if deepseek_key:
-        model = getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-        max_retries = int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0))
-        client = openai_module.OpenAI(
-            api_key=deepseek_key,
-            base_url="https://api.deepseek.com",
-            max_retries=max_retries,
-        )
-        return client, model
-
-    # ── OpenAI ────────────────────────────────────────────────────────────────
-    openai_key = getattr(settings, "OPENAI_API_KEY", "")
+    openai_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
     if openai_key:
         model = getattr(settings, "OPENAI_MODEL", "gpt-4o")
-        client = openai_module.OpenAI(api_key=openai_key)
-        return client, model
-
-    # ── Gemini (via OpenAI-compatible endpoint) ───────────────────────────────
-    gemini_key = getattr(settings, "GEMINI_API_KEY", "")
-    if gemini_key:
-        model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        max_retries = int(getattr(settings, "OPENAI_MAX_RETRIES", 0))
         client = openai_module.OpenAI(
-            api_key=gemini_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=openai_key,
+            max_retries=max_retries,
         )
         return client, model
 
@@ -1522,70 +1499,8 @@ def _get_ai_client():
 
 
 def _get_ai_client_for_task(task: str = "general"):
-    """Return (client, model) with provider preference based on task intent.
-
-    task='analysis' -> DeepSeek Reasoner first (brain-heavy analysis).
-    task='design'   -> OpenAI first (UI/chart/KPI design and presentation quality).
-    """
-    import importlib.util
-    from django.conf import settings
-
-    if importlib.util.find_spec("openai") is None:
-        return None, None
-    openai_module = __import__("openai")
-
-    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
-    openai_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
-    gemini_key = str(getattr(settings, "GEMINI_API_KEY", "") or "").strip()
-
-    if task == "analysis":
-        if deepseek_key:
-            model = (
-                str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
-                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
-            )
-            client = openai_module.OpenAI(
-                api_key=deepseek_key,
-                base_url="https://api.deepseek.com",
-                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
-            )
-            return client, model
-        if openai_key:
-            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
-        if gemini_key:
-            return (
-                openai_module.OpenAI(
-                    api_key=gemini_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                ),
-                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
-            )
-        return None, None
-
-    if task == "design":
-        if openai_key:
-            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
-        if deepseek_key:
-            model = (
-                str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip()
-                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
-            )
-            client = openai_module.OpenAI(
-                api_key=deepseek_key,
-                base_url="https://api.deepseek.com",
-                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
-            )
-            return client, model
-        if gemini_key:
-            return (
-                openai_module.OpenAI(
-                    api_key=gemini_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                ),
-                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
-            )
-        return None, None
-
+    """Return (client, model) for OpenAI for all AI task types."""
+    _ = task
     return _get_ai_client()
 
 
@@ -2686,8 +2601,8 @@ def ai_generate_dashboard_specs(
     client, model = _get_ai_client_for_task("design")
     if client is None:
         return None
-    specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
-    connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
+    specs_timeout = int(getattr(settings, "OPENAI_SPECS_TIMEOUT", 60))
+    connect_timeout = int(getattr(settings, "OPENAI_CONNECT_TIMEOUT", 10))
     planning_model = model
 
     # Determine allowed chart types + planning depth by user plan
@@ -3774,7 +3689,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
 def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> str | None:
     """Generate a complete, standalone HTML dashboard file using the configured AI provider.
 
-    Uses DeepSeek if DEEPSEEK_API_KEY is set, otherwise Gemini if GEMINI_API_KEY is set.
+    Uses OpenAI when OPENAI_API_KEY is set.
     Returns a full HTML string ready to save/serve as a .html file, or None on failure.
     """
     import json as _json
@@ -3783,14 +3698,6 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
-    from django.conf import settings
-    # Design-heavy task: always prefer chat model over reasoner.
-    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
-    if deepseek_key:
-        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
-            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
-        )
-
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
     numeric_cols = [str(c) for c in profile.numeric_columns[:10]]
