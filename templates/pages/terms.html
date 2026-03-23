@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service · DashAI{% endblock %}
+{% block meta_description %}DashAI Terms of Service — the rules and conditions governing your use of our platform.{% endblock %}
+
+{% block content %}
+
+<section class="py-16 border-b border-slate-100 text-center">
+  <div class="mx-auto max-w-3xl px-5">
+    <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">Legal</p>
+    <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Terms of Service</h1>
+    <p class="mt-3 text-slate-500">Last updated: March 2025</p>
+  </div>
+</section>
+
+<section class="py-16">
+  <div class="mx-auto max-w-3xl px-5 md:px-10">
+    <div class="space-y-10 text-slate-700 leading-relaxed">
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">1. Acceptance of terms</h2>
+        <p>By creating an account or using DashAI ("the Service"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service. These terms apply to all users, including visitors, registered users, and paying subscribers.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">2. Your account</h2>
+        <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately of any unauthorised access. DashAI is not liable for any loss resulting from unauthorised use of your account.</p>
+        <p class="mt-3">You must be at least 16 years old to use DashAI. By using the Service you represent that you meet this requirement.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">3. Acceptable use</h2>
+        <p>You agree not to use DashAI to:</p>
+        <ul class="list-disc pl-6 mt-2 space-y-1">
+          <li>Upload content that is illegal, harmful, defamatory, or infringes third-party rights</li>
+          <li>Attempt to reverse engineer, decompile, or exploit the Service</li>
+          <li>Scrape or harvest data from the platform without permission</li>
+          <li>Interfere with the integrity or performance of the Service</li>
+          <li>Use the Service to send unsolicited messages (spam)</li>
+        </ul>
+        <p class="mt-3">We reserve the right to suspend or terminate accounts that violate these rules.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">4. Your content</h2>
+        <p>You retain ownership of any datasets, dashboards, and other content you upload to DashAI. By uploading content, you grant DashAI a limited licence to store, process, and display that content solely for the purpose of providing the Service to you.</p>
+        <p class="mt-3">You represent that you have the rights to upload all content you submit to DashAI.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">5. Public share links</h2>
+        <p>You acknowledge that dashboards shared via public links are accessible to anyone with the URL. You are solely responsible for the content of publicly shared dashboards. Do not share dashboards containing sensitive or confidential information via public links.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">6. Plans, billing, and cancellation</h2>
+        <p>The Starter plan is free with no credit card required. Paid plans are billed monthly or annually as selected. Prices are shown on our <a href="{% url 'pricing' %}" class="text-indigo-600 hover:underline">Pricing page</a>.</p>
+        <p class="mt-3">You may cancel your subscription at any time. Upon cancellation you retain access to paid features until the end of your current billing period, after which your account reverts to the Starter plan.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">7. Service availability</h2>
+        <p>We aim for high availability but do not guarantee uninterrupted access. We may perform maintenance at any time. We are not liable for any loss resulting from downtime or data loss, except as required by applicable law.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">8. Termination</h2>
+        <p>You may delete your account at any time. We may suspend or terminate your access if you breach these terms, with or without notice, depending on the severity of the breach.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">9. Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, DashAI's liability for any claim arising out of or related to the Service is limited to the amount you paid us in the 12 months preceding the claim. We are not liable for indirect, incidental, or consequential damages.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">10. Changes to these terms</h2>
+        <p>We may update these terms from time to time. We will provide notice of material changes via email or in-product notification. Continued use after the effective date constitutes acceptance.</p>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-3">11. Contact</h2>
+        <p>Questions about these terms? <a href="{% url 'contact' %}" class="text-indigo-600 hover:underline">Contact us</a> or email <a href="mailto:legal@dashai.io" class="text-indigo-600 hover:underline">legal@dashai.io</a>.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{% endblock %}

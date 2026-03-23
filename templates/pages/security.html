@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Security · DashAI{% endblock %}
+{% block meta_description %}How DashAI keeps your data safe — encryption, access controls, vulnerability disclosure, and more.{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<section class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 py-24 text-center">
+  <div class="mx-auto max-w-3xl px-5 md:px-10">
+    <div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
+      <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+      </svg>
+    </div>
+    <p class="text-sm font-semibold uppercase tracking-widest text-emerald-400 mb-3">Security</p>
+    <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">Your data security is our priority</h1>
+    <p class="mt-5 text-lg leading-relaxed text-slate-300">We take security seriously at every layer — from how your files are stored to how your dashboards are shared.</p>
+  </div>
+</section>
+
+<!-- Security measures -->
+<section class="py-24">
+  <div class="mx-auto max-w-7xl px-5 md:px-10">
+    <div class="grid gap-8 md:grid-cols-3">
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Encryption in transit & at rest</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">All data transmitted between your browser and DashAI is encrypted via TLS 1.2+. Uploaded datasets and account data are encrypted at rest using AES-256.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Access controls</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Your dashboards and datasets are private by default. Sharing requires an explicit action from you. Share links use cryptographically random UUID tokens and can be revoked at any time.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Authentication security</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Passwords are hashed using Django's PBKDF2-SHA256 with per-user salts. We support secure password reset flows and session management with CSRF protection on all forms.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Infrastructure</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">DashAI runs on reputable cloud infrastructure with automated backups, network-level firewalls, and regular security patches applied to all system components.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016zM12 9v2m0 4h.01"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">API key security</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">API keys are hashed before storage and displayed only once at creation time. Keys can be revoked instantly from your account settings. Treat them like passwords.</p>
+      </div>
+
+      <div class="rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Data isolation</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Each workspace's data is logically isolated. Queries are scoped to the authenticated user's workspace, preventing cross-user data access through our API or UI.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Vulnerability disclosure -->
+<section class="bg-slate-50 py-20">
+  <div class="mx-auto max-w-3xl px-5 md:px-10 text-center">
+    <h2 class="text-3xl font-bold tracking-tight text-slate-900">Responsible disclosure</h2>
+    <p class="mt-4 text-slate-600 leading-relaxed">If you discover a security vulnerability in DashAI, please report it responsibly. We will investigate all reports and work quickly to fix confirmed issues. We ask that you:</p>
+    <ul class="mt-6 text-left text-slate-600 space-y-2 max-w-lg mx-auto">
+      <li class="flex items-start gap-2"><svg class="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Do not access or modify other users' data</li>
+      <li class="flex items-start gap-2"><svg class="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Give us reasonable time to fix issues before public disclosure</li>
+      <li class="flex items-start gap-2"><svg class="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Provide enough detail to reproduce the issue</li>
+    </ul>
+    <div class="mt-8">
+      <a href="mailto:security@dashai.io" class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-7 py-3.5 text-base font-semibold text-white transition-all hover:bg-slate-700">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        security@dashai.io
+      </a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

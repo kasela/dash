@@ -343,7 +343,71 @@ def pricing_page(request: HttpRequest) -> HttpResponse:
             },
         ],
     }
+    # Pass current user plan for highlighting
+    current_plan = "free"
+    if request.user.is_authenticated:
+        try:
+            from apps.billing.models import UserProfile
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            current_plan = profile.plan
+        except Exception:
+            pass
+    context["current_plan"] = current_plan
+
     return render(request, "pricing.html", context)
+
+
+# ── Static marketing pages ──────────────────────────────────────────────────────
+
+def about_page(request: HttpRequest) -> HttpResponse:
+    return render(request, "pages/about.html")
+
+
+def blog_page(request: HttpRequest) -> HttpResponse:
+    return render(request, "pages/blog.html")
+
+
+def privacy_page(request: HttpRequest) -> HttpResponse:
+    return render(request, "pages/privacy.html")
+
+
+def terms_page(request: HttpRequest) -> HttpResponse:
+    return render(request, "pages/terms.html")
+
+
+def security_page(request: HttpRequest) -> HttpResponse:
+    return render(request, "pages/security.html")
+
+
+def contact_page(request: HttpRequest) -> HttpResponse:
+    from django.core.mail import send_mail
+    from django.contrib import messages as django_messages
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        email = request.POST.get("email", "").strip()
+        subject = request.POST.get("subject", "").strip()
+        message = request.POST.get("message", "").strip()
+
+        if name and email and subject and message:
+            try:
+                send_mail(
+                    subject=f"[DashAI Contact] {subject}",
+                    message=f"From: {name} <{email}>\n\n{message}",
+                    from_email="noreply@dashai.io",
+                    recipient_list=["hello@dashai.io"],
+                    fail_silently=True,
+                )
+            except Exception:
+                pass
+            return render(request, "pages/contact.html", {"success": True})
+        else:
+            return render(request, "pages/contact.html", {
+                "error": "Please fill in all fields.",
+                "form_data": {"name": name, "email": email, "subject": subject, "message": message},
+            })
+
+    return render(request, "pages/contact.html")
 
 
 @login_required

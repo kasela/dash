@@ -140,18 +140,18 @@
           <div>
             <h4 class="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-300">Company</h4>
             <ul class="space-y-2.5 text-sm">
-              <li><a href="#" class="transition-colors hover:text-white">About</a></li>
-              <li><a href="#" class="transition-colors hover:text-white">Blog</a></li>
-              <li><a href="mailto:hello@dashai.io" class="transition-colors hover:text-white">Contact</a></li>
+              <li><a href="{% url 'about' %}" class="transition-colors hover:text-white">About</a></li>
+              <li><a href="{% url 'blog' %}" class="transition-colors hover:text-white">Blog</a></li>
+              <li><a href="{% url 'contact' %}" class="transition-colors hover:text-white">Contact</a></li>
             </ul>
           </div>
 
           <div>
             <h4 class="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-300">Legal</h4>
             <ul class="space-y-2.5 text-sm">
-              <li><a href="#" class="transition-colors hover:text-white">Privacy Policy</a></li>
-              <li><a href="#" class="transition-colors hover:text-white">Terms of Service</a></li>
-              <li><a href="#" class="transition-colors hover:text-white">Security</a></li>
+              <li><a href="{% url 'privacy' %}" class="transition-colors hover:text-white">Privacy Policy</a></li>
+              <li><a href="{% url 'terms' %}" class="transition-colors hover:text-white">Terms of Service</a></li>
+              <li><a href="{% url 'security' %}" class="transition-colors hover:text-white">Security</a></li>
             </ul>
           </div>
         </div>

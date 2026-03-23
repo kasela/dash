@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}About · DashAI{% endblock %}
+{% block meta_description %}Learn about DashAI — the no-code, AI-powered dashboard builder built for business users who live in spreadsheets.{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<section class="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 py-24 text-center">
+  <div class="mx-auto max-w-3xl px-5 md:px-10">
+    <p class="text-sm font-semibold uppercase tracking-widest text-indigo-400 mb-3">Our story</p>
+    <h1 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">Built for the people behind the spreadsheets</h1>
+    <p class="mt-5 text-lg leading-relaxed text-slate-300">DashAI was born from a simple frustration: beautiful data insights shouldn't require an engineering degree.</p>
+  </div>
+</section>
+
+<!-- Mission -->
+<section class="py-24">
+  <div class="mx-auto max-w-4xl px-5 md:px-10">
+    <div class="grid gap-16 md:grid-cols-2 items-center">
+      <div>
+        <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">Our mission</p>
+        <h2 class="text-3xl font-bold tracking-tight text-slate-900">Democratise data visualisation</h2>
+        <p class="mt-4 text-slate-600 leading-relaxed">We believe every analyst, operations manager, and small business owner deserves powerful data tools — not just companies with large engineering teams.</p>
+        <p class="mt-4 text-slate-600 leading-relaxed">DashAI removes the barriers. Upload a file, let our AI profile your data, and have a shareable dashboard in seconds. No SQL. No code. No waiting on a developer.</p>
+      </div>
+      <div class="rounded-2xl bg-indigo-50 p-10 text-center">
+        <div class="text-6xl font-extrabold text-indigo-600">3<span class="text-3xl align-top mt-2 inline-block">s</span></div>
+        <p class="mt-2 text-slate-600 font-medium">Average time from upload to first chart</p>
+        <div class="mt-8 text-6xl font-extrabold text-indigo-600">1M+</div>
+        <p class="mt-2 text-slate-600 font-medium">Rows supported per dataset</p>
+        <div class="mt-8 text-6xl font-extrabold text-indigo-600">10+</div>
+        <p class="mt-2 text-slate-600 font-medium">Chart types powered by Chart.js</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Values -->
+<section class="bg-slate-50 py-24">
+  <div class="mx-auto max-w-7xl px-5 md:px-10">
+    <div class="text-center mb-16">
+      <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">What we believe</p>
+      <h2 class="text-3xl font-bold tracking-tight text-slate-900">Our values</h2>
+    </div>
+    <div class="grid gap-8 md:grid-cols-3">
+
+      <div class="rounded-2xl bg-white border border-slate-100 p-8 shadow-sm">
+        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Speed first</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Insights delayed are insights lost. Every feature we ship is designed to get you from raw data to shareable chart as fast as possible.</p>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-100 p-8 shadow-sm">
+        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Privacy by design</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Your data is yours. We don't sell it, train models on it without consent, or share it with third parties. Security is baked in from day one.</p>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-100 p-8 shadow-sm">
+        <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">Built for teams</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-500">Data decisions are rarely made alone. DashAI is built with collaboration in mind — share dashboards in one click, no account required to view.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Team / founding story -->
+<section class="py-24">
+  <div class="mx-auto max-w-3xl px-5 md:px-10 text-center">
+    <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">Get in touch</p>
+    <h2 class="text-3xl font-bold tracking-tight text-slate-900">We'd love to hear from you</h2>
+    <p class="mt-4 text-slate-600 leading-relaxed">Have a question, feature request, or just want to say hi? Our team reads every message.</p>
+    <div class="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+      <a href="{% url 'contact' %}" class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg transition-all hover:bg-indigo-500 hover:-translate-y-0.5">
+        Contact us
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <a href="{% url 'pricing' %}" class="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-7 py-3.5 text-base font-semibold text-slate-700 transition-all hover:bg-slate-50">
+        See pricing
+      </a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
