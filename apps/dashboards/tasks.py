@@ -728,20 +728,38 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Mixed (bar + line) ────────────────────────────────────────────
             elif chart_type == "mixed" and dimension and dimension in df.columns:
                 from apps.datasets.services import _mixed_config
-                bar_measures = [m for m in measures[:2] if m and m in df.columns]
-                line_measures = [m for m in measures[2:4] if m and m in df.columns]
-                if not bar_measures and measure and measure in df.columns:
+                bar_measures = [m for m in measures[:2] if m and m in df.columns and m != dimension]
+                line_measures = [m for m in measures[2:4] if m and m in df.columns and m != dimension]
+                if not bar_measures and measure and measure in df.columns and measure != dimension:
                     bar_measures = [measure]
                 # Need at least 1 bar measure
                 if bar_measures:
-                    all_mix_cols = bar_measures + line_measures
+                    # Keep only truly numeric measures and remove duplicates while preserving order.
+                    all_mix_cols: list[str] = []
+                    for candidate in bar_measures + line_measures:
+                        if candidate in all_mix_cols:
+                            continue
+                        numeric_candidate = _numeric_series(candidate)
+                        if numeric_candidate.notna().sum() > 0:
+                            all_mix_cols.append(candidate)
+                    if not all_mix_cols:
+                        continue
+                    bar_measures = [m for m in bar_measures if m in all_mix_cols]
+                    line_measures = [m for m in line_measures if m in all_mix_cols and m not in bar_measures]
+                    if not bar_measures:
+                        bar_measures = [all_mix_cols[0]]
                     _mix_tmp = pd.DataFrame({"_dim": _col_series(dimension)})
                     for _mc in all_mix_cols:
                         _mix_tmp[_mc] = _numeric_series(_mc)
                     grouped = _mix_tmp.groupby("_dim")[all_mix_cols].sum().head(12)
                     labels = [str(l) for l in grouped.index]
-                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in bar_measures]
-                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in line_measures]
+                    def _series_from_group(col_name: str):
+                        series_or_df = grouped[col_name]
+                        if isinstance(series_or_df, pd.DataFrame):
+                            return series_or_df.iloc[:, 0]
+                        return series_or_df
+                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in bar_measures]
+                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in line_measures]
                     config = _mixed_config(labels, bar_ds, line_ds, palette,
                                           x_label=_humanize_col(dimension),
                                           y_label=_humanize_col(bar_measures[0]) if bar_measures else "")
