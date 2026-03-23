@@ -35,6 +35,7 @@ from apps.dashboards.views import (
     dashboard_ai_clean_dataset,
     dashboard_ai_executive_summary,
     dashboard_ai_enhance_presentation_text,
+    dashboard_ai_generate_html,
     landing_page,
     pricing_page,
 )
@@ -137,4 +138,5 @@ urlpatterns = [
     path("dashboards/<uuid:dashboard_id>/ai/clean-dataset/", dashboard_ai_clean_dataset, name="dashboard-ai-clean-dataset"),
     path("dashboards/<uuid:dashboard_id>/ai/executive-summary/", dashboard_ai_executive_summary, name="dashboard-ai-executive-summary"),
     path("dashboards/<uuid:dashboard_id>/ai/enhance-presentation-text/", dashboard_ai_enhance_presentation_text, name="dashboard-ai-enhance-presentation-text"),
+    path("dashboards/<uuid:dashboard_id>/ai/generate-html/", dashboard_ai_generate_html, name="dashboard-ai-generate-html"),
 ]

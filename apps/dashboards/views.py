@@ -42,6 +42,7 @@ from apps.datasets.services import (
     ai_generate_executive_summary,
     ai_detect_column_roles,
     ai_generate_comprehensive_insights,
+    ai_generate_html_dashboard,
     _compute_kpi_trend,
     _detect_kpi_meta,
     _humanize_col,
@@ -2137,3 +2138,35 @@ def dashboard_ai_enhance_presentation_text(request: HttpRequest, dashboard_id) -
     if not enhanced.endswith("."):
         enhanced += "."
     return JsonResponse({"success": True, "enhanced_text": enhanced, "ai_powered": False})
+
+
+@login_required
+def dashboard_ai_generate_html(request: HttpRequest, dashboard_id) -> JsonResponse:
+    """Generate a complete standalone HTML dashboard using DeepSeek chat (V3).
+
+    POST /dashboards/<uuid>/ai/generate-html/
+    Returns JSON: {"success": true, "html": "<full html string>"}
+    The client can open the HTML in a new tab or offer it as a download.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, workspace__owner=request.user)
+    dataset_version = _get_default_dataset_version(dashboard)
+    if not dataset_version:
+        return JsonResponse({"error": "No dataset linked to this dashboard"}, status=400)
+
+    df = _load_df_from_version(dataset_version)
+    if df is None:
+        return JsonResponse({"error": "Could not load dataset file"}, status=500)
+
+    profile = build_profile_summary(df)
+    html = ai_generate_html_dashboard(df=df, profile=profile, dataset_name=dashboard.title)
+
+    if html is None:
+        return JsonResponse(
+            {"error": "HTML generation unavailable. Ensure DEEPSEEK_API_KEY is set."},
+            status=503,
+        )
+
+    return JsonResponse({"success": True, "html": html})
