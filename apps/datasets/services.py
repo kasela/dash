@@ -2881,15 +2881,18 @@ def ai_generate_dashboard_specs(
         ])
 
     date_ranges: dict = {}
+    date_span_days = 0
     for col in date_cols[:3]:
         try:
             tmp = _to_datetime_safe(df[col]).dropna()
             if len(tmp) > 0:
+                span_days = int((tmp.max() - tmp.min()).days)
                 date_ranges[str(col)] = {
                     "min": str(tmp.min().date()),
                     "max": str(tmp.max().date()),
-                    "span_days": int((tmp.max() - tmp.min()).days),
+                    "span_days": span_days,
                 }
+                date_span_days = max(date_span_days, span_days)
         except Exception:
             pass
 
@@ -2964,7 +2967,7 @@ def ai_generate_dashboard_specs(
         "categorical_cardinality": categorical_cardinality,
         "categorical_top_values": categorical_top_values,
         "date_ranges": date_ranges,
-        "date_span_days": date_span_days,
+        "date_span_days": int(date_span_days),
         "null_rate_pct": null_rate,
         "notable_correlations": correlation_matrix,
         # Column semantic types for smarter chart and aggregation selection
