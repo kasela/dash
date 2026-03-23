@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import warnings
 
 import pandas as pd
 
@@ -342,9 +343,14 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
     secondary_value = f"{mean_val:,.1f}"
 
     # Try period-over-period comparison using a date column
+    # Prefer semantic date detection to produce better trend dashboards.
+    col_types = profile.column_types or detect_column_types(df)
     date_cols = [
         c for c in df.columns
-        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+        if (
+            any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter", "time"])
+            or str((col_types.get(str(c), {}) or {}).get("semantic_type", "")) == "date"
+        )
     ]
     if date_cols:
         try:
@@ -705,6 +711,26 @@ def _humanize_col(name: str) -> str:
     s = s.replace('_', ' ').replace('-', ' ')
     s = _re.sub(r'\s+', ' ', s).strip()
     return s.title()
+
+
+def _format_dashboard_value(value) -> str:
+    """Format values for table/KPI display in generated dashboards."""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, (int, float)):
+        return f"{float(value):,.2f}"
+    if isinstance(value, (pd.Timestamp, )):
+        try:
+            return value.strftime("%Y-%m-%d")
+        except Exception:
+            return str(value)
+    return str(value)
 
 
 def _detect_kpi_meta(col_name: str, semantic_type: str = "") -> dict:
@@ -3997,9 +4023,14 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
             "dataset_version_id": version_id,
         }
 
+    # Prefer semantic date detection to produce better trend dashboards.
+    col_types = profile.column_types or detect_column_types(df)
     date_cols = [
         c for c in df.columns
-        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+        if (
+            any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter", "time"])
+            or str((col_types.get(str(c), {}) or {}).get("semantic_type", "")) == "date"
+        )
     ]
 
     # ── KPI 1: Total rows ────────────────────────────────────────────────────
@@ -4317,8 +4348,13 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
         if not table_cols:
             table_cols = [str(c) for c in df.columns[:5]]
         preview = df[table_cols].head(50).fillna("")
-        rows = [[str(v) for v in row] for row in preview.values.tolist()]
-        table_cfg: dict = {"columns": table_cols, "rows": rows, "layout": {"size": "lg"}}
+        rows = [[_format_dashboard_value(v) for v in row] for row in preview.values.tolist()]
+        table_cfg: dict = {
+            "columns": table_cols,
+            "display_columns": [_humanize_col(c) for c in table_cols],
+            "rows": rows,
+            "layout": {"size": "lg"},
+        }
         table_cfg["builder"] = _make_builder(measures=profile.numeric_columns[:3])
         specs.append({"title": "Detailed Data View", "widget_type": "table", "config": table_cfg, "position": position})
         position += 1
