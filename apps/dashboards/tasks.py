@@ -7,6 +7,34 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_for_json(value):
+    """Recursively convert values to JSON-safe primitives for JSONField storage.
+
+    Prevents sqlite JSON_VALID failures from NaN/Infinity and non-serializable scalars.
+    """
+    import math
+
+    if isinstance(value, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, tuple):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    # numpy/pandas scalar support
+    if hasattr(value, "item") and callable(getattr(value, "item")):
+        try:
+            return _sanitize_for_json(value.item())
+        except Exception:
+            return str(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)
 def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str = "free"):
     """Background task: generate all widgets for a newly created dashboard.
@@ -148,12 +176,13 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str 
         # ── Save widgets to DB ────────────────────────────────────────────────
         if widget_specs:
             for spec in widget_specs:
+                safe_config = _sanitize_for_json(spec.get("config", {}))
                 DashboardWidget.objects.create(
                     dashboard=dashboard,
                     title=spec["title"],
                     widget_type=spec["widget_type"],
                     position=spec["position"],
-                    chart_config=spec["config"],
+                    chart_config=safe_config,
                 )
         else:
             DashboardWidget.objects.create(
