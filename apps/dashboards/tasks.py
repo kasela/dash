@@ -59,9 +59,11 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str 
         PALETTES,
         _area_config,
         _bar_config,
+        _multi_bar_config,
         _doughnut_config,
         _hbar_config,
         _line_config,
+        _multi_line_config,
         _pie_config,
         _radar_config,
         _scatter_config,
@@ -368,6 +370,84 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 warnings.simplefilter("ignore", UserWarning)
                 return pd.to_datetime(series, errors="coerce")
 
+    # ── Enhancement helpers ──────────────────────────────────────────────────
+
+    def _get_role_agg(col_name: str) -> str:
+        """Return the correct aggregation method for a column based on its role/semantic type."""
+        if col_name in column_roles:
+            agg = str(column_roles[col_name].get("agg") or "sum").strip().lower()
+            if agg in ("sum", "avg", "count", "nunique", "max", "min"):
+                return agg
+        if profile.column_types:
+            sem = profile.column_types.get(col_name, {}).get("semantic_type", "")
+            if sem == "percentage":
+                return "avg"
+        return "sum"
+
+    def _smart_groupby(dim_series, val_series, agg: str = "sum", top_n: int = 12):
+        """Group val_series by dim_series using the specified aggregation, return top N."""
+        tmp = pd.DataFrame({
+            "_d": dim_series,
+            "_v": pd.to_numeric(val_series, errors="coerce"),
+        }).dropna(subset=["_d", "_v"])
+        grp = tmp.groupby("_d")["_v"]
+        agg_fns = {
+            "avg": lambda g: g.mean(),
+            "count": lambda g: g.count(),
+            "nunique": lambda g: g.nunique(),
+            "max": lambda g: g.max(),
+            "min": lambda g: g.min(),
+        }
+        result = agg_fns.get(agg, lambda g: g.sum())(grp)
+        return result.nlargest(top_n)
+
+    def _get_date_granularity(dt_series) -> str:
+        """Return optimal pandas period alias based on the date range span."""
+        try:
+            clean = dt_series.dropna()
+            if len(clean) < 2:
+                return "M"
+            span = int((clean.max() - clean.min()).days)
+            if span < 60:
+                return "D"
+            elif span < 180:
+                return "W"
+            elif span < 730:
+                return "M"
+            elif span < 3650:
+                return "Q"
+            else:
+                return "A"
+        except Exception:
+            return "M"
+
+    _GRAN_LABELS = {"D": "Daily", "W": "Weekly", "M": "Monthly", "Q": "Quarterly", "A": "Yearly"}
+
+    def _smart_top_n(col_name: str, default: int = 12) -> int:
+        """Choose top-N chart limit based on dimension column cardinality."""
+        try:
+            card = int(df[col_name].nunique(dropna=True))
+            if card <= 8:
+                return card
+            elif card <= 20:
+                return min(card, 15)
+            elif card <= 50:
+                return 15
+            else:
+                return default
+        except Exception:
+            return default
+
+    def _flag_large_numbers(config: dict, values) -> dict:
+        """Set _large_num_fmt flag on config when values are large (≥10K)."""
+        try:
+            flat_vals = [v for v in values if isinstance(v, (int, float)) and v is not None]
+            if flat_vals and max(abs(v) for v in flat_vals) >= 10_000:
+                config["_large_num_fmt"] = True
+        except Exception:
+            pass
+        return config
+
     specs = []
     position = 1
     _used_kpi_cols: set[str] = set()
@@ -575,80 +655,197 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         )
 
             # ── Bar chart ─────────────────────────────────────────────────────
-            elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(12)
-                labels = [str(l) for l in top.index]
-                values = [round(float(v), 2) for v in top.values]
-                config = _bar_config(labels, values, _humanize_col(measure), palette,
-                                     x_label=_humanize_col(dimension), y_label=_humanize_col(measure))
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    try:
-                        ai_insight, _ = ai_analyze_chart("bar", labels, values, title)
-                    except Exception:
-                        pass
+            elif chart_type == "bar" and dimension and dimension in df.columns:
+                valid_measures = [m for m in measures if m and m in df.columns]
+                if not valid_measures and measure and measure in df.columns:
+                    valid_measures = [measure]
+                if valid_measures:
+                    top_n = _smart_top_n(dimension)
+                    if len(valid_measures) > 1:
+                        # Multi-series grouped bar chart
+                        _agg_frames: dict = {}
+                        for m in valid_measures[:4]:
+                            m_agg = _get_role_agg(m)
+                            _agg_frames[m] = _smart_groupby(
+                                _col_series(dimension), _numeric_series(m), m_agg, top_n=999
+                            )
+                        # Pick top-N dimensions by combined absolute total
+                        total_df = pd.DataFrame(_agg_frames).abs().fillna(0)
+                        top_dims = list(total_df.sum(axis=1).nlargest(top_n).index)
+                        labels = [str(l) for l in top_dims]
+                        bar_datasets = [
+                            {
+                                "label": _humanize_col(m),
+                                "data": [round(float(_agg_frames[m].get(d, 0)), 2) for d in top_dims],
+                            }
+                            for m in valid_measures[:4] if m in _agg_frames
+                        ]
+                        config = _multi_bar_config(labels, bar_datasets, palette,
+                                                   x_label=_humanize_col(dimension),
+                                                   y_label=_humanize_col(valid_measures[0]))
+                        config["layout"] = {"size": size}
+                        all_vals = [v for ds in bar_datasets for v in ds["data"]]
+                        _flag_large_numbers(config, all_vals)
+                        if not ai_insight and labels and bar_datasets:
+                            try:
+                                ai_insight, _ = ai_analyze_chart("bar", labels, bar_datasets[0]["data"], title)
+                            except Exception:
+                                pass
+                    else:
+                        m = valid_measures[0]
+                        agg_m = _get_role_agg(m)
+                        top = _smart_groupby(_col_series(dimension), _numeric_series(m), agg_m, top_n)
+                        labels = [str(l) for l in top.index]
+                        values = [round(float(v), 2) for v in top.values]
+                        config = _bar_config(labels, values, _humanize_col(m), palette,
+                                             x_label=_humanize_col(dimension), y_label=_humanize_col(m))
+                        config["layout"] = {"size": size}
+                        _flag_large_numbers(config, values)
+                        if not ai_insight and labels and values:
+                            try:
+                                ai_insight, _ = ai_analyze_chart("bar", labels, values, title)
+                            except Exception:
+                                pass
 
             # ── Horizontal bar ────────────────────────────────────────────────
-            elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(12)
-                labels = [str(l) for l in top.index]
-                values = [round(float(v), 2) for v in top.values]
-                config = _hbar_config(labels, values, _humanize_col(measure), palette,
-                                      x_label=_humanize_col(measure), y_label=_humanize_col(dimension))
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    try:
-                        ai_insight, _ = ai_analyze_chart("hbar", labels, values, title)
-                    except Exception:
-                        pass
+            elif chart_type == "hbar" and dimension and dimension in df.columns:
+                valid_measures = [m for m in measures if m and m in df.columns]
+                if not valid_measures and measure and measure in df.columns:
+                    valid_measures = [measure]
+                if valid_measures:
+                    m = valid_measures[0]
+                    agg_m = _get_role_agg(m)
+                    top_n = _smart_top_n(dimension)
+                    top = _smart_groupby(_col_series(dimension), _numeric_series(m), agg_m, top_n)
+                    labels = [str(l) for l in top.index]
+                    values = [round(float(v), 2) for v in top.values]
+                    config = _hbar_config(labels, values, _humanize_col(m), palette,
+                                          x_label=_humanize_col(m), y_label=_humanize_col(dimension))
+                    config["layout"] = {"size": size}
+                    _flag_large_numbers(config, values)
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("hbar", labels, values, title)
+                        except Exception:
+                            pass
 
             # ── Line chart ────────────────────────────────────────────────────
-            elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
-                tmp = pd.DataFrame({
-                    "_dim": _col_series(dimension),
-                    "_measure": _numeric_series(measure),
-                })
-                try:
-                    tmp["_dim"] = _to_datetime_series(tmp["_dim"])
-                    tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
-                    trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
-                    labels = [str(p) for p in trend_data.index]
-                except Exception:
-                    trend_data = tmp.groupby("_dim")["_measure"].sum()
-                    labels = [str(p) for p in trend_data.index]
-                values = [round(float(v), 2) for v in trend_data.values]
-                config = _line_config(labels, values, _humanize_col(measure), palette,
-                                      x_label="Period", y_label=_humanize_col(measure))
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    try:
-                        ai_insight, _ = ai_analyze_chart("line", labels, values, title)
-                    except Exception:
-                        pass
+            elif chart_type == "line" and dimension and dimension in df.columns:
+                valid_measures = [m for m in measures if m and m in df.columns]
+                if not valid_measures and measure and measure in df.columns:
+                    valid_measures = [measure]
+                if valid_measures:
+                    dt_series = _to_datetime_series(_col_series(dimension))
+                    is_temporal = dt_series.notna().mean() >= 0.6
+                    if is_temporal:
+                        period = _get_date_granularity(dt_series)
+                        x_label = _GRAN_LABELS.get(period, "Period")
+                    else:
+                        period = None
+                        x_label = _humanize_col(dimension)
+
+                    if len(valid_measures) > 1:
+                        # Multi-series line chart
+                        if is_temporal:
+                            _tmp = pd.DataFrame({"_dim": dt_series})
+                        else:
+                            _tmp = pd.DataFrame({"_dim": _col_series(dimension)})
+                        for m in valid_measures[:4]:
+                            _tmp[m] = _numeric_series(m)
+                        _tmp = _tmp.dropna(subset=["_dim"])
+                        if is_temporal:
+                            _tmp = _tmp.sort_values("_dim")
+                            _grouped = _tmp.groupby(_tmp["_dim"].dt.to_period(period))
+                        else:
+                            _grouped = _tmp.groupby("_dim")
+                        all_line_labels = None
+                        line_datasets = []
+                        for m in valid_measures[:4]:
+                            m_agg = _get_role_agg(m)
+                            if m_agg == "avg":
+                                _s = _grouped[m].mean()
+                            elif m_agg == "count":
+                                _s = _grouped[m].count()
+                            else:
+                                _s = _grouped[m].sum()
+                            if all_line_labels is None:
+                                all_line_labels = [str(p) for p in _s.index]
+                            line_datasets.append({
+                                "label": _humanize_col(m),
+                                "data": [round(float(v), 2) for v in _s.values],
+                            })
+                        labels = all_line_labels or []
+                        config = _multi_line_config(labels, line_datasets, palette,
+                                                     x_label=x_label,
+                                                     y_label=_humanize_col(valid_measures[0]))
+                        config["layout"] = {"size": size}
+                        all_vals = [v for ds in line_datasets for v in ds["data"]]
+                        _flag_large_numbers(config, all_vals)
+                        if not ai_insight and labels and line_datasets:
+                            try:
+                                ai_insight, _ = ai_analyze_chart("line", labels, line_datasets[0]["data"], title)
+                            except Exception:
+                                pass
+                    else:
+                        m = valid_measures[0]
+                        m_agg = _get_role_agg(m)
+                        _tmp = pd.DataFrame({"_dim": dt_series if is_temporal else _col_series(dimension),
+                                              "_val": _numeric_series(m)})
+                        _tmp = _tmp.dropna(subset=["_dim"])
+                        if is_temporal:
+                            _tmp = _tmp.sort_values("_dim")
+                            if m_agg == "avg":
+                                trend_data = _tmp.groupby(_tmp["_dim"].dt.to_period(period))["_val"].mean()
+                            else:
+                                trend_data = _tmp.groupby(_tmp["_dim"].dt.to_period(period))["_val"].sum()
+                        else:
+                            trend_data = _tmp.groupby("_dim")["_val"].sum()
+                        labels = [str(p) for p in trend_data.index]
+                        values = [round(float(v), 2) for v in trend_data.values]
+                        config = _line_config(labels, values, _humanize_col(m), palette,
+                                              x_label=x_label, y_label=_humanize_col(m))
+                        config["layout"] = {"size": size}
+                        _flag_large_numbers(config, values)
+                        if not ai_insight and labels and values:
+                            try:
+                                ai_insight, _ = ai_analyze_chart("line", labels, values, title)
+                            except Exception:
+                                pass
 
             # ── Area chart ────────────────────────────────────────────────────
-            elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
-                tmp = pd.DataFrame({
-                    "_dim": _col_series(dimension),
-                    "_measure": _numeric_series(measure),
-                })
-                try:
-                    tmp["_dim"] = _to_datetime_series(tmp["_dim"])
-                    tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
-                    trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
+            elif chart_type == "area" and dimension and dimension in df.columns:
+                valid_measures = [m for m in measures if m and m in df.columns]
+                if not valid_measures and measure and measure in df.columns:
+                    valid_measures = [measure]
+                if valid_measures:
+                    m = valid_measures[0]
+                    m_agg = _get_role_agg(m)
+                    dt_series = _to_datetime_series(_col_series(dimension))
+                    is_temporal = dt_series.notna().mean() >= 0.6
+                    if is_temporal:
+                        period = _get_date_granularity(dt_series)
+                        x_label = _GRAN_LABELS.get(period, "Period")
+                        _tmp = pd.DataFrame({"_dim": dt_series, "_val": _numeric_series(m)})
+                        _tmp = _tmp.dropna(subset=["_dim"]).sort_values("_dim")
+                        if m_agg == "avg":
+                            trend_data = _tmp.groupby(_tmp["_dim"].dt.to_period(period))["_val"].mean()
+                        else:
+                            trend_data = _tmp.groupby(_tmp["_dim"].dt.to_period(period))["_val"].sum()
+                    else:
+                        x_label = _humanize_col(dimension)
+                        _tmp = pd.DataFrame({"_dim": _col_series(dimension), "_val": _numeric_series(m)})
+                        trend_data = _tmp.groupby("_dim")["_val"].sum()
                     labels = [str(p) for p in trend_data.index]
-                except Exception:
-                    trend_data = tmp.groupby("_dim")["_measure"].sum()
-                    labels = [str(p) for p in trend_data.index]
-                values = [round(float(v), 2) for v in trend_data.values]
-                config = _area_config(labels, values, _humanize_col(measure), palette,
-                                      x_label="Period", y_label=_humanize_col(measure))
-                config["layout"] = {"size": size}
-                if not ai_insight and labels and values:
-                    try:
-                        ai_insight, _ = ai_analyze_chart("area", labels, values, title)
-                    except Exception:
-                        pass
+                    values = [round(float(v), 2) for v in trend_data.values]
+                    config = _area_config(labels, values, _humanize_col(m), palette,
+                                          x_label=x_label, y_label=_humanize_col(m))
+                    config["layout"] = {"size": size}
+                    _flag_large_numbers(config, values)
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("area", labels, values, title)
+                        except Exception:
+                            pass
 
             # ── Pie / Doughnut ────────────────────────────────────────────────
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
@@ -871,21 +1068,40 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 all_candidates = ([dimension] if dimension else []) + measures
                 cols = [c for c in all_candidates if c and c in df.columns]
                 if not cols:
-                    # Fall back: first categorical col + up to 5 numeric cols
+                    # Smart fallback: date cols first, then categorical, then numeric
+                    date_like = [
+                        c for c in df.columns
+                        if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])
+                        and c in df.columns
+                    ]
                     cols = (
-                        profile.categorical_columns[:1] + profile.numeric_columns[:5]
-                    )
-                    cols = [c for c in cols if c in df.columns][:6]
+                        date_like[:1]
+                        + [c for c in profile.categorical_columns[:2] if c in df.columns]
+                        + [c for c in profile.numeric_columns[:4] if c in df.columns]
+                    )[:6]
                 if not cols:
                     cols = [str(c) for c in df.columns[:6]]
-                preview = df[cols].head(50).fillna("")
+                # Sort by the first numeric column descending for top-record view
+                sort_col = next(
+                    (c for c in cols if c in profile.numeric_columns and c in df.columns), None
+                )
+                try:
+                    preview = df[cols].copy()
+                    if sort_col:
+                        preview[sort_col] = pd.to_numeric(preview[sort_col], errors="coerce")
+                        preview = preview.sort_values(sort_col, ascending=False)
+                    preview = preview.head(100).fillna("")
+                except Exception:
+                    preview = df[cols].head(100).fillna("")
                 rows = [[str(v) for v in row] for row in preview.values.tolist()]
                 config = {"columns": cols, "rows": rows, "layout": {"size": size}}
                 if not ai_insight:
                     human_cols = [_humanize_col(c) for c in cols[:4]]
                     ai_insight = (
-                        f"Showing {len(rows)} records across {len(cols)} columns: "
-                        f"{', '.join(human_cols[:3])}{'...' if len(cols) > 3 else ''}. "
+                        f"Showing top {len(rows)} records"
+                        + (f" sorted by {_humanize_col(sort_col)} (descending)" if sort_col else "")
+                        + f" across {len(cols)} columns: "
+                        + f"{', '.join(human_cols[:3])}{'...' if len(cols) > 3 else ''}. "
                         f"Use filters to drill into specific segments and identify outliers."
                     )
 

@@ -660,16 +660,23 @@ _LEGEND_OPTS = {
 }
 
 
-def _scale_opts(x_label: str = "", y_label: str = "") -> dict:
+def _scale_opts(x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
+    tick_opts: dict = {"color": "#94a3b8", "font": {"size": 11}, "maxRotation": 35}
+    y_tick_opts: dict = {"color": "#94a3b8", "font": {"size": 11}}
+    if large_num_fmt:
+        # Signal to frontend JS to inject large-number tick formatter
+        tick_opts["_largeNumFmt"] = True
+        y_tick_opts["_largeNumFmt"] = True
     x = {
         "grid": {"display": False},
         "border": {"display": False},
-        "ticks": {"color": "#94a3b8", "font": {"size": 11}, "maxRotation": 35},
+        "ticks": tick_opts,
     }
     y = {
-        "grid": {"color": "rgba(148,163,184,0.12)", "drawBorder": False},
+        "grid": {"color": "rgba(148,163,184,0.10)", "drawBorder": False},
         "border": {"display": False, "dash": [4, 4]},
-        "ticks": {"color": "#94a3b8", "font": {"size": 11}},
+        "ticks": y_tick_opts,
+        "beginAtZero": True,
     }
     if x_label:
         x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}, "padding": {"top": 6}}
@@ -822,8 +829,10 @@ def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
 def _bar_config(labels: list, values: list, label: str, palette: str = "vibrant",
                 x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    cfg = {
         "type": "bar",
         "data": {
             "labels": labels,
@@ -848,27 +857,36 @@ def _bar_config(labels: list, values: list, label: str, palette: str = "vibrant"
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo",
-                      x_label: str = "", y_label: str = "") -> dict:
-    """Multi-series bar chart. datasets = [{"label": str, "data": list}, ...]"""
+                      x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
+    """Multi-series grouped bar chart. datasets = [{"label": str, "data": list}, ...]"""
     chart_datasets = []
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": _humanize_col(ds["label"]),
+            "label": _humanize_col(ds["label"]) if "_" in ds["label"] or ds["label"].islower() else ds["label"],
             "data": ds["data"],
-            "backgroundColor": color + "dd",
+            "backgroundColor": color + "cc",
             "borderColor": color,
-            "borderWidth": 1,
-            "borderRadius": 6,
+            "borderWidth": 1.5,
+            "borderRadius": 5,
             "borderSkipped": False,
             "hoverBackgroundColor": color,
+            "hoverBorderWidth": 0,
+            "barPercentage": 0.85,
+            "categoryPercentage": 0.75,
         })
+    # Compute if large numbers present
+    all_vals = [v for ds in datasets for v in (ds.get("data") or []) if isinstance(v, (int, float))]
+    _large = large_num_fmt or (bool(all_vals) and max(abs(v) for v in all_vals) >= 10_000)
     return {
         "type": "bar",
         "data": {"labels": labels, "datasets": chart_datasets},
@@ -880,8 +898,9 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
                 "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
         },
+        **({"_large_num_fmt": True} if _large else {}),
     }
 
 
@@ -889,8 +908,10 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    cfg = {
         "type": "line",
         "data": {
             "labels": labels,
@@ -898,7 +919,7 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                 "label": human_label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "22",
+                "backgroundColor": border + "20",
                 "tension": 0.42,
                 "fill": False,
                 "pointRadius": 4,
@@ -918,23 +939,26 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
             "interaction": {"mode": "index", "intersect": False},
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indigo",
-                       x_label: str = "", y_label: str = "") -> dict:
+                       x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
     chart_datasets = []
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": _humanize_col(ds["label"]),
+            "label": _humanize_col(ds["label"]) if "_" in ds["label"] or ds["label"].islower() else ds["label"],
             "data": ds["data"],
             "borderColor": color,
-            "backgroundColor": color + "18",
-            "tension": 0.45,
+            "backgroundColor": color + "15",
+            "tension": 0.42,
             "fill": False,
             "pointRadius": 4,
             "pointHoverRadius": 7,
@@ -944,6 +968,8 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
             "borderWidth": 2.5,
             "spanGaps": True,
         })
+    all_vals = [v for ds in datasets for v in (ds.get("data") or []) if isinstance(v, (int, float))]
+    _large = large_num_fmt or (bool(all_vals) and max(abs(v) for v in all_vals) >= 10_000)
     return {
         "type": "line",
         "data": {"labels": labels, "datasets": chart_datasets},
@@ -955,9 +981,10 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
                 "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
             "interaction": {"mode": "index", "intersect": False},
         },
+        **({"_large_num_fmt": True} if _large else {}),
     }
 
 
@@ -1087,8 +1114,26 @@ def _doughnut_config(labels: list, values: list, palette: str = "candy") -> dict
 def _hbar_config(labels: list, values: list, label: str, palette: str = "tropical",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    # For hbar, x is the value axis and y is the category axis
+    x_scale = {
+        "grid": {"color": "rgba(148,163,184,0.10)", "drawBorder": False},
+        "border": {"display": False},
+        "ticks": {"color": "#94a3b8", "font": {"size": 11}, **({"_largeNumFmt": True} if _large else {})},
+        "beginAtZero": True,
+    }
+    y_scale = {
+        "grid": {"display": False},
+        "border": {"display": False},
+        "ticks": {"color": "#475569", "font": {"size": 11, "weight": "500"}},
+    }
+    if x_label:
+        x_scale["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}}
+    if y_label:
+        y_scale["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}}
+    cfg = {
         "type": "bar",
         "data": {
             "labels": labels,
@@ -1114,9 +1159,12 @@ def _hbar_config(labels: list, values: list, label: str, palette: str = "tropica
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": {"x": x_scale, "y": y_scale},
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _scatter_config(x_values: list, y_values: list, x_label: str = "", y_label: str = "",
@@ -2840,6 +2888,39 @@ def ai_generate_dashboard_specs(
         reverse=True,
     )[:8]
 
+    # Build multi-measure groups: sets of numeric columns that share domain context
+    # (e.g. revenue+cost+profit, clicks+impressions+conversions) for grouped charts.
+    multi_measure_groups: list[list[str]] = []
+    try:
+        _num_cols_clean = [str(c) for c in profile.numeric_columns[:16] if str(c) in df.columns]
+        # Group by shared keyword stems to find related metrics
+        _STEM_MAP: dict[str, list[str]] = {}
+        _FINANCE_STEMS = ["revenue", "cost", "profit", "sales", "income", "spend", "budget", "margin"]
+        _FUNNEL_STEMS = ["click", "impression", "conversion", "lead", "session", "visit", "open", "order"]
+        _PERF_STEMS = ["score", "rating", "nps", "csat", "satisfaction", "accuracy", "efficiency"]
+        for stem_group in [_FINANCE_STEMS, _FUNNEL_STEMS, _PERF_STEMS]:
+            matched = [c for c in _num_cols_clean if any(s in c.lower() for s in stem_group)]
+            if len(matched) >= 2:
+                multi_measure_groups.append(matched[:4])
+        # Also add high-correlation pairs from correlation_matrix
+        for pair_key, corr_val in correlation_matrix.items():
+            if abs(corr_val) >= 0.5:
+                parts = pair_key.split(" vs ")
+                if len(parts) == 2 and all(p.strip() in df.columns for p in parts):
+                    pair = [p.strip() for p in parts]
+                    if pair not in multi_measure_groups and [pair[1], pair[0]] not in multi_measure_groups:
+                        multi_measure_groups.append(pair)
+    except Exception:
+        pass
+
+    # Compute date span info for frontend period labeling hint
+    date_span_days: dict[str, int] = {}
+    for col, rng in date_ranges.items():
+        try:
+            date_span_days[col] = int(rng.get("span_days", 0))
+        except Exception:
+            pass
+
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
         "columns": [str(c) for c in df.columns[:60]],
@@ -2854,6 +2935,7 @@ def ai_generate_dashboard_specs(
         "categorical_cardinality": categorical_cardinality,
         "categorical_top_values": categorical_top_values,
         "date_ranges": date_ranges,
+        "date_span_days": date_span_days,
         "null_rate_pct": null_rate,
         "notable_correlations": correlation_matrix,
         # Column semantic types for smarter chart and aggregation selection
@@ -2863,6 +2945,8 @@ def ai_generate_dashboard_specs(
         "boolean_columns": boolean_cols,
         "text_columns": text_cols,
         "precomputed_kpis": kpi_candidates_precomputed,
+        # Multi-measure groups for grouped bar / multi-line chart suggestions
+        "multi_measure_groups": multi_measure_groups[:5],
         # Plan-based chart type gating
         "user_plan": _plan_lower,
         "allowed_chart_types": allowed_chart_types,
@@ -3368,14 +3452,29 @@ def ai_generate_dashboard_specs(
                         "Sentence 2: distribution (p75 vs median, skewness, % above mean).\n"
                         "'change': benchmark string or null.\n\n"
 
+                        "═══ MULTI-SERIES CHART RULES (NEW — CRITICAL) ═══\n"
+                        "The 'y' field in a chart spec can be a LIST of column names for grouped/multi-series charts.\n"
+                        "Multi-series charts are MORE powerful and data-dense than single-series:\n"
+                        "  • Multi-series bar (type='bar', y=['col1','col2','col3']): "
+                        "Use when multi_measure_groups in payload has related metrics. "
+                        "EXAMPLE: Revenue vs Cost vs Profit by Category — far more insightful than 3 separate bars.\n"
+                        "  • Multi-series line (type='line', y=['col1','col2']): "
+                        "Use when date column + 2-4 related measures exist. "
+                        "EXAMPLE: Revenue and Cost Trends over Time — shows trajectory and convergence.\n"
+                        "RULE: If multi_measure_groups has any groups, CREATE at least one multi-series chart using those groups.\n"
+                        "RULE: For date-based dashboards with 2+ numeric measures, prefer multi-line over multiple single-line.\n\n"
+
                         "═══ CHART SELECTION RULES ═══\n"
                         f"Generate {selected_plan['chart_range']} charts. ALL must be UNIQUE (different chart_type OR different x+y). "
                         "Cover ALL these analytical patterns:\n"
-                        "  • Date column present → MUST include: line (primary metric over time) + "
-                        "area (secondary metric or cumulative), both size=lg\n"
+                        "  • Date column present → MUST include: line (primary metric over time, size=lg) + "
+                        "area (secondary metric or cumulative, size=lg). "
+                        "If 2+ related measures exist, make the line chart MULTI-SERIES (y=[list]).\n"
+                        "  • multi_measure_groups in payload → grouped multi-series bar (type='bar', y=[list]) "
+                        "for the best group, to compare related metrics side-by-side\n"
                         "  • notable_correlations (r≥0.4) → scatter chart for each pair\n"
                         "  • Category cardinality 2-10 + currency/number → vertical bar chart\n"
-                        "  • Category cardinality >10 + numeric → horizontal bar (hbar) with top-12\n"
+                        "  • Category cardinality >10 + numeric → horizontal bar (hbar) with top-15\n"
                         "  • Part-to-whole breakdown (cardinality ≤8) → doughnut chart\n"
                         "  • Secondary part-to-whole (DIFFERENT category) → pie chart\n"
                         "  • Multi-numeric columns → radar (performance across dimensions)\n"
@@ -3386,7 +3485,7 @@ def ai_generate_dashboard_specs(
                         "  • Financial P&L or period variance → waterfall (Pro)\n\n"
                         "Chart titles MUST answer a business question (NOT column names):\n"
                         "  GOOD: 'Monthly Revenue Growth Trend', 'Revenue by Product Category', "
-                        "'Top 10 Customers by Spend', 'Sales vs Target Comparison'\n"
+                        "'Top 10 Customers by Spend', 'Revenue vs Cost vs Profit by Segment'\n"
                         "  BAD: 'sales_amount trend', 'bar of qty', 'Column2 vs Column3'\n\n"
                         "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
                         "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
