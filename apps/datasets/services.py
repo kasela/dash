@@ -3579,6 +3579,13 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
+    from django.conf import settings
+    # Design-heavy task: always prefer chat model over reasoner.
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
