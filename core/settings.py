@@ -113,6 +113,10 @@ DEEPSEEK_SPECS_TIMEOUT = int(os.environ.get("DEEPSEEK_SPECS_TIMEOUT", 60))
 # Number of automatic retries on transient server errors (0 = no retries)
 DEEPSEEK_MAX_RETRIES = int(os.environ.get("DEEPSEEK_MAX_RETRIES", 0))
 
+# ── AI settings (Gemini) ───────────────────────────────────────────────────────
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
 # Site metadata for SEO
 SITE_NAME = "DashAI"
 SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "https://dashai.io")
