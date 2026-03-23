@@ -26,6 +26,12 @@ class ProfileSummary:
     categorical_columns: list[str]
     suggested_dimensions: list[str]
     suggested_measures: list[str]
+    # Detailed semantic type per column: currency|percentage|number|text|date|boolean|id|category
+    column_types: dict = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.column_types is None:
+            self.column_types = {}
 
 
 @dataclass
@@ -135,12 +141,172 @@ def infer_column_kind(series: pd.Series) -> str:
     return "dimension"
 
 
+def detect_column_types(df: pd.DataFrame) -> dict[str, dict]:
+    """Detect detailed semantic type for every column in the DataFrame.
+
+    Semantic types (mutually exclusive, in priority order):
+      date       – temporal: datetime dtype OR string parseable as date
+      boolean    – true/false or yes/no or 0/1 with ≤2-3 unique values
+      id         – surrogate keys / UUIDs with very high uniqueness ratio
+      currency   – monetary numeric (name keywords OR actual $ £ € ¥ signs in data)
+      percentage – ratio/rate numeric (name keywords OR values 0-100 with pct signal)
+      number     – generic numeric (int or float)
+      category   – low-to-medium cardinality strings (≤50 unique values)
+      text       – high cardinality strings / free text
+
+    Returns dict: {col_name: {"semantic_type": str, "cardinality": int,
+                               "null_pct": float, "sample_values": list}}
+    """
+    import re as _re
+
+    result: dict[str, dict] = {}
+    n = max(len(df), 1)
+
+    _CURRENCY_NAME_KWS = [
+        "revenue", "sales", "profit", "cost", "price", "amount", "income",
+        "spend", "budget", "earning", "margin", "value", "gmv", "arpu", "ltv",
+        "fee", "payment", "invoice", "cash", "dollar", "usd", "eur", "gbp",
+        "sgd", "aud", "jpy", "inr", "cny", "lkr", "chf", "cad",
+    ]
+    _PCT_NAME_KWS = [
+        "rate", "ratio", "pct", "percent", "share", "growth", "churn",
+        "conversion", "efficiency", "utilization", "retention", "accuracy",
+        "discount", "yield", "margin_pct", "markup", "tax_rate",
+    ]
+    _DATE_NAME_KWS = [
+        "date", "time", "timestamp", "created", "updated", "modified",
+        "month", "year", "quarter", "period", "week", "day",
+    ]
+    _ID_NAME_KWS = [
+        "_id", "id_", "_key", "_uuid", "_ref", "_pk", "_no",
+        "rowid", "row_id", "record_id", "index",
+    ]
+    _BOOL_VALUES = {
+        frozenset({"true", "false"}), frozenset({"yes", "no"}),
+        frozenset({"1", "0"}), frozenset({"y", "n"}),
+        frozenset({"active", "inactive"}), frozenset({"enabled", "disabled"}),
+    }
+
+    for col in df.columns:
+        col_str = str(col)
+        col_lower = col_str.lower()
+        series = df[col]
+        null_pct = round(float(series.isna().mean() * 100), 2)
+        cardinality = int(series.nunique(dropna=True))
+        sample_vals = [str(v) for v in series.dropna().head(6).tolist()]
+        entry: dict = {
+            "semantic_type": "text",  # default
+            "cardinality": cardinality,
+            "null_pct": null_pct,
+            "sample_values": sample_vals,
+        }
+
+        # ── 1. Date detection ────────────────────────────────────────────────
+        if pd.api.types.is_datetime64_any_dtype(series):
+            entry["semantic_type"] = "date"
+            result[col_str] = entry
+            continue
+        if any(k in col_lower for k in _DATE_NAME_KWS):
+            try:
+                parsed = _to_datetime_safe(series.dropna().head(20))
+                if parsed.notna().mean() >= 0.7:
+                    entry["semantic_type"] = "date"
+                    result[col_str] = entry
+                    continue
+            except Exception:
+                pass
+
+        # ── 2. Boolean detection ─────────────────────────────────────────────
+        if cardinality <= 3:
+            unique_lower = {str(v).strip().lower() for v in series.dropna().unique()}
+            if unique_lower - {"nan", ""} and frozenset(unique_lower - {"nan", ""}) in _BOOL_VALUES:
+                entry["semantic_type"] = "boolean"
+                result[col_str] = entry
+                continue
+
+        # ── 3. ID detection ──────────────────────────────────────────────────
+        _id_name_match = (
+            col_lower == "id"
+            or col_lower.endswith("_id")
+            or col_lower.startswith("id_")
+            or "uuid" in col_lower
+            or any(col_lower.endswith(k) or col_lower.startswith(k.lstrip("_")) for k in _ID_NAME_KWS)
+        )
+        if _id_name_match:
+            entry["semantic_type"] = "id"
+            result[col_str] = entry
+            continue
+        # High uniqueness ratio for numeric/string columns signals an ID
+        if n > 20 and cardinality / n > 0.9 and pd.api.types.is_integer_dtype(series):
+            entry["semantic_type"] = "id"
+            result[col_str] = entry
+            continue
+
+        # ── 4. Numeric-based detection ───────────────────────────────────────
+        if pd.api.types.is_numeric_dtype(series):
+            # Currency: name keywords
+            if any(k in col_lower for k in _CURRENCY_NAME_KWS):
+                entry["semantic_type"] = "currency"
+                result[col_str] = entry
+                continue
+            # Percentage: name keywords OR values tightly in [0, 100] with keyword signal
+            if any(k in col_lower for k in _PCT_NAME_KWS):
+                entry["semantic_type"] = "percentage"
+                result[col_str] = entry
+                continue
+            num_series = pd.to_numeric(series, errors="coerce").dropna()
+            if len(num_series) > 0:
+                pct_in_0_1 = ((num_series >= 0) & (num_series <= 1)).mean()
+                pct_in_0_100 = ((num_series >= 0) & (num_series <= 100)).mean()
+                if pct_in_0_1 > 0.95 and "pct" in col_lower:
+                    entry["semantic_type"] = "percentage"
+                    result[col_str] = entry
+                    continue
+                if pct_in_0_100 > 0.98 and any(k in col_lower for k in ["pct", "percent", "rate", "ratio"]):
+                    entry["semantic_type"] = "percentage"
+                    result[col_str] = entry
+                    continue
+            entry["semantic_type"] = "number"
+            result[col_str] = entry
+            continue
+
+        # ── 5. String-based detection ────────────────────────────────────────
+        # Check if string column looks like currency (leading $ £ € ¥ signs)
+        str_sample = series.dropna().head(30).astype(str)
+        currency_sign_pct = str_sample.str.match(r"^[\$£€¥₹₩]").mean() if len(str_sample) > 0 else 0
+        if currency_sign_pct > 0.5:
+            entry["semantic_type"] = "currency"
+            result[col_str] = entry
+            continue
+
+        # Try parsing as date from string
+        try:
+            parsed = _to_datetime_safe(series.dropna().head(30))
+            if parsed.notna().mean() >= 0.8 and cardinality > 1:
+                entry["semantic_type"] = "date"
+                result[col_str] = entry
+                continue
+        except Exception:
+            pass
+
+        # Category vs text based on cardinality
+        if cardinality <= 50:
+            entry["semantic_type"] = "category"
+        else:
+            entry["semantic_type"] = "text"
+        result[col_str] = entry
+
+    return result
+
+
 def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
     numeric_columns = [str(c) for c in df.select_dtypes(include=["number"]).columns]
     categorical_columns = [str(c) for c in df.select_dtypes(exclude=["number", "datetime"]).columns]
 
     suggested_dimensions = categorical_columns[:6]
     suggested_measures = numeric_columns[:6]
+
+    column_types = detect_column_types(df)
 
     return ProfileSummary(
         total_rows=int(df.shape[0]),
@@ -151,6 +317,7 @@ def build_profile_summary(df: pd.DataFrame) -> ProfileSummary:
         categorical_columns=categorical_columns,
         suggested_dimensions=suggested_dimensions,
         suggested_measures=suggested_measures,
+        column_types=column_types,
     )
 
 
@@ -533,30 +700,69 @@ def _humanize_col(name: str) -> str:
     return s.title()
 
 
-def _detect_kpi_meta(col_name: str) -> dict:
-    """Detect KPI display metadata (format + icon + unit prefix/suffix) from a column name.
+def _detect_kpi_meta(col_name: str, semantic_type: str = "") -> dict:
+    """Detect KPI display metadata (format + icon + unit prefix/suffix) from column name + semantic type.
+
+    Args:
+        col_name: Raw column name
+        semantic_type: Pre-detected semantic type from detect_column_types()
+                       ('currency', 'percentage', 'number', 'date', 'boolean', etc.)
 
     Returns a dict with:
         format:  'currency' | 'percent' | 'count' | 'number'
         icon:    'money' | 'percent' | 'people' | 'clock' | 'chart'
-        prefix:  unit prefix string (e.g. '$', '€', '')
+        prefix:  unit prefix string (e.g. '$', '€', '£', '¥', '')
         suffix:  unit suffix string (e.g. '%', 'x', '')
     """
     lower = str(col_name).lower()
+
+    # Use semantic_type as a strong prior signal if available
+    if semantic_type == "percentage":
+        return {'format': 'percent', 'icon': 'percent', 'prefix': '', 'suffix': '%'}
+    if semantic_type == "currency":
+        # Try to detect currency symbol from column name
+        if 'eur' in lower or 'euro' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '€', 'suffix': ''}
+        if 'gbp' in lower or 'pound' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '£', 'suffix': ''}
+        if 'jpy' in lower or 'yen' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '¥', 'suffix': ''}
+        if 'inr' in lower or 'rupee' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '₹', 'suffix': ''}
+        if 'cny' in lower or 'rmb' in lower or 'yuan' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '¥', 'suffix': ''}
+        if 'lkr' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': 'LKR ', 'suffix': ''}
+        if 'aud' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': 'A$', 'suffix': ''}
+        if 'cad' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': 'C$', 'suffix': ''}
+        if 'sgd' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': 'S$', 'suffix': ''}
+        return {'format': 'currency', 'icon': 'money', 'prefix': '$', 'suffix': ''}
+
+    # Name-based detection (for when semantic_type is not provided)
     if any(k in lower for k in [
         'revenue', 'sales', 'profit', 'cost', 'price', 'amount', 'income',
         'spend', 'budget', 'earning', 'margin', 'value', 'gmv', 'arpu', 'ltv',
         'fee', 'payment', 'invoice', 'receipt', 'cash', 'dollar', 'usd',
+        'arr', 'mrr', 'acv', 'tcv', 'aov',
     ]):
+        if 'eur' in lower or 'euro' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '€', 'suffix': ''}
+        if 'gbp' in lower or 'pound' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '£', 'suffix': ''}
+        if 'jpy' in lower or 'yen' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '¥', 'suffix': ''}
+        if 'inr' in lower or 'rupee' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': '₹', 'suffix': ''}
+        if 'lkr' in lower:
+            return {'format': 'currency', 'icon': 'money', 'prefix': 'LKR ', 'suffix': ''}
         return {'format': 'currency', 'icon': 'money', 'prefix': '$', 'suffix': ''}
-    if 'eur' in lower or 'euro' in lower:
-        return {'format': 'currency', 'icon': 'money', 'prefix': '€', 'suffix': ''}
-    if 'gbp' in lower or 'pound' in lower:
-        return {'format': 'currency', 'icon': 'money', 'prefix': '£', 'suffix': ''}
     if any(k in lower for k in [
         'rate', 'ratio', 'pct', 'percent', 'share', 'growth', 'churn',
         'conversion', 'efficiency', 'utilization', 'retention', 'accuracy',
-        'discount', 'yield', 'margin_pct',
+        'discount', 'yield', 'margin_pct', 'markup', 'tax_rate',
     ]):
         return {'format': 'percent', 'icon': 'percent', 'prefix': '', 'suffix': '%'}
     if any(k in lower for k in [
@@ -564,14 +770,17 @@ def _detect_kpi_meta(col_name: str) -> dict:
         'transactions', 'users', 'customers', 'visitors', 'sessions',
         'clicks', 'leads', 'signups', 'views', 'records', 'rows',
         'employees', 'headcount', 'staff', 'members', 'subscribers',
-        'tickets', 'cases', 'incidents', 'requests', 'units',
+        'tickets', 'cases', 'incidents', 'requests', 'units', 'stores',
+        'branches', 'outlets', 'locations', 'offices',
     ]):
         return {'format': 'count', 'icon': 'people', 'prefix': '', 'suffix': ''}
     if any(k in lower for k in [
         'days', 'hours', 'minutes', 'duration', 'time', 'age', 'tenure',
-        'latency', 'ttl', 'ttfb', 'response',
+        'latency', 'ttl', 'ttfb', 'response', 'cycle',
     ]):
         return {'format': 'number', 'icon': 'clock', 'prefix': '', 'suffix': ''}
+    if any(k in lower for k in ['score', 'rating', 'rank', 'index', 'nps', 'csat']):
+        return {'format': 'number', 'icon': 'chart', 'prefix': '', 'suffix': ''}
     if col_name in ('rows', 'records', 'total_rows'):
         return {'format': 'count', 'icon': 'people', 'prefix': '', 'suffix': ''}
     return {'format': 'number', 'icon': 'chart', 'prefix': '', 'suffix': ''}
@@ -1243,13 +1452,23 @@ def _get_ai_client():
 def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     """AI-powered column role detection: classifies each column as measure/dimension/date/id.
 
-    Returns dict: {column_name: {role, agg, label, cardinality}}
+    Returns dict: {column_name: {role, data_type, agg, label, cardinality}}
 
     Roles:
     - 'measure': quantitative, aggregatable (revenue, amount, count, score, rate, price)
     - 'dimension': categorical grouping variables (region, category, name, type, status)
     - 'date': temporal columns (date, month, year, quarter, period, timestamp)
     - 'id': identifier/key columns to skip (id, uuid, code, ref, key, index)
+
+    data_type (fine-grained):
+    - 'currency': monetary values ($, £, €, revenue, cost, price, sales)
+    - 'percentage': rates, ratios, pct, utilization (0-100 or 0-1 range)
+    - 'number': generic integer/float metric
+    - 'date': temporal / time-series
+    - 'boolean': binary flag (yes/no, true/false, active/inactive)
+    - 'category': low-to-medium cardinality string grouping variable
+    - 'text': free-form text / high cardinality string
+    - 'id': surrogate key / identifier
 
     agg: best aggregation ('sum', 'avg', 'count', 'max', 'min', 'group', 'none')
     cardinality: for dimensions ('low'<10, 'medium'=10-50, 'high'>50), None for others
@@ -1258,6 +1477,9 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     import re as _re
 
     client, model = _get_ai_client()
+
+    # Incorporate heuristic column types for richer context
+    heuristic_types = profile.column_types or detect_column_types(df)
 
     # Build sample values per column
     col_samples: dict = {}
@@ -1284,8 +1506,16 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     def _heuristic_roles() -> dict:
         roles: dict = {}
         for col in profile.numeric_columns:
+            col_type_info = heuristic_types.get(str(col), {})
+            sem_type = col_type_info.get("semantic_type", "number")
+            if sem_type == "currency":
+                agg = "sum"
+            elif sem_type == "percentage":
+                agg = "avg"
+            else:
+                agg = "sum"
             roles[str(col)] = {
-                "role": "measure", "agg": "sum",
+                "role": "measure", "data_type": sem_type, "agg": agg,
                 "label": _humanize_col(col), "cardinality": None,
             }
         for col in profile.categorical_columns:
@@ -1294,8 +1524,10 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                 tier = "low" if card < 10 else "medium" if card < 50 else "high"
             except Exception:
                 tier = "medium"
+            col_type_info = heuristic_types.get(str(col), {})
+            sem_type = col_type_info.get("semantic_type", "category")
             roles[str(col)] = {
-                "role": "dimension", "agg": "group",
+                "role": "dimension", "data_type": sem_type, "agg": "group",
                 "label": _humanize_col(col), "cardinality": tier,
             }
         date_keywords = ["date", "month", "year", "period", "quarter", "time", "timestamp"]
@@ -1303,7 +1535,7 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
             col_lower = str(col).lower()
             if any(k in col_lower for k in date_keywords):
                 roles[str(col)] = {
-                    "role": "date", "agg": "none",
+                    "role": "date", "data_type": "date", "agg": "none",
                     "label": _humanize_col(col), "cardinality": None,
                 }
         return roles
@@ -1311,12 +1543,16 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     if client is None:
         return _heuristic_roles()
 
+    # Include heuristic types in payload to give AI richer context
+    col_semantic_types = {str(c): v.get("semantic_type", "") for c, v in heuristic_types.items()}
+
     payload = {
         "columns": [str(c) for c in df.columns[:50]],
         "sample_values": col_samples,
         "numeric_cols": [str(c) for c in profile.numeric_columns[:20]],
         "categorical_cols": [str(c) for c in profile.categorical_columns[:20]],
         "column_stats": col_stats,
+        "heuristic_semantic_types": col_semantic_types,
         "total_rows": int(profile.total_rows),
     }
 
@@ -1327,8 +1563,9 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                 {
                     "role": "system",
                     "content": (
-                        "You are a senior BI data architect specializing in dimensional modeling and column classification. "
-                        "Classify EVERY column in the dataset into exactly one role.\n\n"
+                        "You are a senior BI data architect specializing in dimensional modeling and column classification "
+                        "for multinational enterprise analytics platforms. "
+                        "Classify EVERY column into exactly one role AND one data_type.\n\n"
                         "ROLES:\n"
                         "1. 'measure': Quantitative, aggregatable numeric values\n"
                         "   Examples: revenue, sales, amount, quantity, score, rate, price, cost, profit, "
@@ -1348,19 +1585,36 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
                         "4. 'id': Pure identifier/surrogate key columns with no analytical value\n"
                         "   Examples: id, uuid, row_id, record_id, pk, fk, index, serial_number\n"
                         "   IMPORTANT: only classify as 'id' if the column is clearly a surrogate key "
-                        "with no business meaning. Business codes like product_sku, customer_code "
-                        "that have analytical value should be 'dimension'.\n\n"
+                        "with no business meaning.\n\n"
+                        "DATA TYPES (fine-grained):\n"
+                        "- 'currency': monetary values — revenue, cost, price, sales, profit, salary, budget, "
+                        "income, spend, GMV, LTV, ARR, fee, payment, invoice ($, £, €, ¥, ₹ etc.)\n"
+                        "- 'percentage': rate/ratio — churn rate, conversion %, growth %, utilization, "
+                        "efficiency, retention, margin %, discount, yield, accuracy\n"
+                        "- 'number': generic integer/float — count, quantity, units, score, volume, "
+                        "weight, age, distance, duration, headcount\n"
+                        "- 'date': temporal data — dates, timestamps, periods, years, months, quarters\n"
+                        "- 'boolean': binary flag — active/inactive, yes/no, true/false, approved/pending\n"
+                        "- 'category': low-to-medium cardinality string — region, status, type, "
+                        "department, brand, tier, segment (≤50 unique values)\n"
+                        "- 'text': high cardinality or free text — names, descriptions, notes, "
+                        "addresses, URLs, emails (>50 unique values)\n"
+                        "- 'id': identifier/key — no analytical value\n\n"
+                        "Use 'heuristic_semantic_types' from the payload as a starting point but override "
+                        "when you have stronger evidence from sample_values or column name.\n\n"
                         "FOR EACH COLUMN specify:\n"
                         "- role: measure | dimension | date | id\n"
-                        "- agg: sum (totals/financials), avg (rates/ratios/scores), count (occurrences), "
+                        "- data_type: currency | percentage | number | date | boolean | category | text | id\n"
+                        "- agg: sum (currency/count), avg (rates/ratios/scores), count (occurrences), "
                         "nunique (distinct entity counts), max/min (extremes), group (dimensions), none (id/date)\n"
-                        "- label: human-friendly business label "
-                        "('total_revenue_usd' → 'Total Revenue (USD)', 'num_empl' → 'Employees', "
+                        "- label: human-friendly business label in Title Case\n"
+                        "  ('total_revenue_usd' → 'Total Revenue (USD)', 'num_empl' → 'Employees', "
                         "'avg_score' → 'Avg Score', 'cust_id' → 'Customer ID')\n"
-                        "- cardinality: for dimensions only — 'low' (<10 unique), 'medium' (10-50), 'high' (>50); "
-                        "use null for measures, dates, ids\n\n"
+                        "- cardinality: for dimensions only — 'low' (<10), 'medium' (10-50), 'high' (>50); "
+                        "null for measures, dates, ids\n\n"
                         "RETURN ONLY valid JSON (no markdown, no extra text):\n"
                         "{\"roles\": {\"column_name\": {\"role\": \"measure|dimension|date|id\", "
+                        "\"data_type\": \"currency|percentage|number|date|boolean|category|text|id\", "
                         "\"agg\": \"sum|avg|count|nunique|max|min|group|none\", "
                         "\"label\": \"Business Label\", \"cardinality\": \"low|medium|high|null\"}}}"
                     ),
@@ -1380,7 +1634,14 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
             fallback = _heuristic_roles()
             for col in df.columns:
                 if str(col) not in roles:
-                    roles[str(col)] = fallback.get(str(col), {"role": "dimension", "agg": "group", "label": _humanize_col(col), "cardinality": "medium"})
+                    roles[str(col)] = fallback.get(str(col), {
+                        "role": "dimension", "data_type": "category",
+                        "agg": "group", "label": _humanize_col(col), "cardinality": "medium",
+                    })
+                # Backfill data_type if missing from AI response
+                if "data_type" not in roles.get(str(col), {}):
+                    ht = heuristic_types.get(str(col), {})
+                    roles[str(col)]["data_type"] = ht.get("semantic_type", "number")
             return roles
     except Exception:
         pass
@@ -2197,12 +2458,81 @@ def _heuristic_chart_analysis(chart_type: str, labels: list, values: list, title
     return f"'{title}' — {len(numeric_values)} data points, total {total:,.0f}, avg {avg_val:,.1f}."
 
 
-def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> list[dict] | None:
+def deduplicate_chart_specs(specs: list[dict]) -> list[dict]:
+    """Remove duplicate chart widget specs to ensure every chart shows unique data.
+
+    A duplicate is defined as two non-structural widgets (not kpi/heading/text_canvas/table)
+    sharing the same: chart_type + primary dimension + primary measure.
+
+    Strategy:
+    1. Keep all structural widgets (headings, narrative, kpi, table) — they are always preserved.
+    2. For chart widgets: track (chart_type, dimension, measure) tuples.
+       If a duplicate key is found, skip the later occurrence.
+    3. Additionally, limit each chart_type to at most 2 occurrences overall
+       (e.g. max 2 bar charts, max 2 line charts, etc.) to force visual diversity.
+    """
+    _STRUCTURAL = {"kpi", "heading", "text_canvas", "table"}
+    _MAX_PER_TYPE = {
+        "bar": 2, "hbar": 2, "line": 2, "area": 2,
+        "pie": 1, "doughnut": 1, "scatter": 2, "radar": 1,
+        "bubble": 1, "polararea": 1, "mixed": 1, "funnel": 1,
+        "gauge": 2, "waterfall": 1,
+    }
+
+    seen_keys: set[tuple] = set()
+    type_counts: dict[str, int] = {}
+    result: list[dict] = []
+
+    for spec in specs:
+        chart_type = str(spec.get("chart_type") or spec.get("widget_type") or "").lower()
+
+        # Always keep structural widgets
+        if chart_type in _STRUCTURAL:
+            result.append(spec)
+            continue
+
+        # Build uniqueness key from chart_type + dimension + first measure
+        dimension = str(spec.get("dimension") or "").strip()
+        measures = spec.get("measures") or []
+        first_measure = str(measures[0]).strip() if measures else ""
+        unique_key = (chart_type, dimension, first_measure)
+
+        # Check for exact duplicate
+        if unique_key in seen_keys and dimension:  # allow charts without dimension (scatter, gauge)
+            logger.debug("Dedup: skipping duplicate chart '%s' (%s)", spec.get("title"), unique_key)
+            continue
+
+        # Enforce per-type limits to maintain visual diversity
+        current_count = type_counts.get(chart_type, 0)
+        max_allowed = _MAX_PER_TYPE.get(chart_type, 3)
+        if current_count >= max_allowed:
+            logger.debug("Dedup: skipping '%s' — %s limit %d reached", spec.get("title"), chart_type, max_allowed)
+            continue
+
+        seen_keys.add(unique_key)
+        type_counts[chart_type] = current_count + 1
+        result.append(spec)
+
+    return result
+
+
+def ai_generate_dashboard_specs(
+    df: pd.DataFrame,
+    profile: "ProfileSummary",
+    dataset_name: str = "",
+    plan: str = "free",
+    column_roles: dict | None = None,
+) -> list[dict] | None:
     """Ask AI to design a schema-agnostic, comprehensive dashboard plan and normalize it to widget specs.
 
     Returns a list of widget specs or None if AI is unavailable.
     Each spec includes an 'ai_insight' field with a data-driven analytical insight.
     Narrative and section headings are injected at appropriate positions.
+
+    Args:
+        plan: User subscription plan ('free', 'pro', 'enterprise'). Controls available chart types.
+              Free: basic charts only. Pro/Enterprise: all advanced chart types.
+        column_roles: Pre-computed column role info with data_type for smarter chart selection.
     """
     import json as _json
     import re as _re
@@ -2214,7 +2544,19 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
 
+    # Determine allowed chart types based on user plan
+    _plan_lower = str(plan).lower()
+    _is_pro = _plan_lower in ("pro", "enterprise")
+    _FREE_CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"]
+    _PRO_CHART_TYPES_LIST = ["bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"]
+    allowed_chart_types = _FREE_CHART_TYPES + (_PRO_CHART_TYPES_LIST if _is_pro else [])
+
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
+    # Also detect date columns by semantic type
+    col_types = profile.column_types or {}
+    for col, type_info in col_types.items():
+        if type_info.get("semantic_type") == "date" and col not in date_cols:
+            date_cols.append(col)
 
     # Compute rich statistical context for AI (including quartiles and distribution shape)
     sample_stats: dict = {}
@@ -2300,6 +2642,22 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
     if profile.total_rows and int(profile.total_rows) > 150000:
         mode = "operational"
 
+    # Build column semantic type map for AI context
+    col_semantic_types: dict = {}
+    col_types_local = profile.column_types or {}
+    for col in df.columns[:60]:
+        col_str = str(col)
+        if col_str in col_types_local:
+            col_semantic_types[col_str] = col_types_local[col_str].get("semantic_type", "")
+        elif column_roles and col_str in column_roles:
+            col_semantic_types[col_str] = column_roles[col_str].get("data_type", "")
+
+    # Build currency/percentage column lists for AI to prefer correct aggregations
+    currency_cols = [c for c, t in col_semantic_types.items() if t == "currency"]
+    percentage_cols = [c for c, t in col_semantic_types.items() if t == "percentage"]
+    boolean_cols = [c for c, t in col_semantic_types.items() if t == "boolean"]
+    text_cols = [c for c, t in col_semantic_types.items() if t == "text"]
+
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
         "columns": [str(c) for c in df.columns[:60]],
@@ -2316,10 +2674,15 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
         "date_ranges": date_ranges,
         "null_rate_pct": null_rate,
         "notable_correlations": correlation_matrix,
-        "allowed_chart_types": [
-            "kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table",
-            "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
-        ],
+        # Column semantic types for smarter chart and aggregation selection
+        "column_semantic_types": col_semantic_types,
+        "currency_columns": currency_cols,
+        "percentage_columns": percentage_cols,
+        "boolean_columns": boolean_cols,
+        "text_columns": text_cols,
+        # Plan-based chart type gating
+        "user_plan": _plan_lower,
+        "allowed_chart_types": allowed_chart_types,
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
         "mode": mode,
@@ -2454,6 +2817,22 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
 
         return specs
 
+    # Build plan-specific instruction for chart types
+    plan_chart_instruction = (
+        f"User plan: {_plan_lower.upper()}. "
+        f"ONLY use chart types from this list: {allowed_chart_types}. "
+        + (
+            "Advanced charts available (bubble, polararea, mixed, funnel, gauge, waterfall) — "
+            "use them STRATEGICALLY where they add unique analytical value. "
+            "funnel → stage/conversion data, gauge → single KPI vs target, "
+            "waterfall → period-over-period variance, bubble → 3-variable relationship, "
+            "polararea → category comparison, mixed → bar+line dual-axis overlay."
+            if _is_pro else
+            "Free plan: use only bar, line, area, pie, doughnut, hbar, scatter, radar, table, kpi. "
+            "NEVER suggest bubble, polararea, mixed, funnel, gauge, or waterfall."
+        )
+    )
+
     try:
         response = client.chat.completions.create(
             model=model,
@@ -2461,25 +2840,49 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                 {
                     "role": "system",
                     "content": (
-                        "You are a world-class Senior BI Dashboard Architect. "
-                        "Your dashboards are used by Fortune 500 CEOs, CFOs, and board directors for multi-million-dollar decisions. "
+                        "You are a world-class Senior BI Dashboard Architect and Data Scientist. "
+                        "Your dashboards are trusted by Fortune 500 CEOs, CFOs, and boards of directors at "
+                        "multinational companies across Finance, Retail, Healthcare, Manufacturing, and Technology. "
                         "Every widget must earn its place — insight-dense, narratively coherent, visually purposeful.\n\n"
-                        "Design a COMPREHENSIVE, schema-agnostic dashboard plan for the dataset below.\n"
-                        "Use 'dataset_name' to infer the business domain (Sales, HR, Finance, Supply Chain, etc.).\n"
+
+                        "Design a COMPREHENSIVE, schema-agnostic enterprise dashboard for the dataset below.\n"
+                        "Use 'dataset_name' and column names to infer the business domain "
+                        "(Sales, HR, Finance, Supply Chain, Marketing, Operations, E-commerce, Logistics, etc.).\n"
                         "Mode: executive | analytical | operational — adjust insight depth accordingly.\n"
                         "'notable_correlations' → suggest scatter charts for each correlated pair (r≥0.4).\n"
-                        "Stats include sum/mean/median/p25/p75/p90/skewness — cite these for richer insights.\n\n"
+                        "Stats include sum/mean/median/p25/p75/p90/skewness/above_mean_pct — "
+                        "CITE THESE EXACT NUMBERS for richer, data-dense insights.\n\n"
+
+                        "═══ PLAN & CHART TYPE RULES ═══\n"
+                        f"{plan_chart_instruction}\n\n"
+
+                        "═══ COLUMN TYPE AWARENESS ═══\n"
+                        "The payload includes 'column_semantic_types' — use these to make smarter decisions:\n"
+                        "- currency columns → use agg=sum, prefix=$, format large values as $1.2M\n"
+                        "- percentage columns → use agg=avg, show as %, use for conversion/efficiency KPIs\n"
+                        "- date columns → ALWAYS create at least 1 line chart and 1 area chart for trends\n"
+                        "- boolean columns → ideal for doughnut/pie (yes/no split) or bar (by status)\n"
+                        "- category columns (low cardinality ≤10) → bar or doughnut/pie\n"
+                        "- category columns (medium 10-50) → hbar (ranked top-N list)\n"
+                        "- text/id columns → NEVER use as measure or dimension in charts\n\n"
 
                         "═══ CRITICAL: COLUMN NAME RULES ═══\n"
                         "ALL 'measure', 'x', 'y', 'x_measure', 'y_measure', and 'columns' values MUST be "
                         "copied VERBATIM from the payload 'columns' list. Zero tolerance for invented names.\n"
-                        "Verify each column name character-by-character against the list before writing it.\n\n"
+                        "Verify each column name character-by-character against the list before writing it.\n"
+                        "NEVER use text or id columns as chart dimensions or measures.\n\n"
 
-                        "═══ DASHBOARD TITLE RULES ═══\n"
-                        "- 'kpi_section_title': Precise domain heading. "
+                        "═══ UNIQUENESS RULE (CRITICAL) ═══\n"
+                        "EVERY chart MUST be unique — no two charts can use the same chart_type + x + y combination.\n"
+                        "Each chart visualizes a DIFFERENT business question or data relationship.\n"
+                        "Maximize insight coverage: financial performance, operational efficiency, "
+                        "geographic/segment breakdown, trend analysis, correlation, distribution.\n\n"
+
+                        "═══ SECTION TITLE RULES ═══\n"
+                        "- 'kpi_section_title': Domain-specific heading. "
                         "GOOD: 'Sales Revenue KPIs', 'Workforce Productivity Metrics', 'Financial Health Indicators'. "
                         "BAD: 'Key Metrics', 'KPI Overview', 'Dashboard Summary'.\n"
-                        "- 'chart_section_title': Action-oriented section header. "
+                        "- 'chart_section_title': Action-oriented header. "
                         "GOOD: 'Revenue Performance Deep-Dive', 'Customer Acquisition Trends', 'Product Mix Analysis'. "
                         "BAD: 'Charts Section', 'Analytics', 'Performance'.\n"
                         "- 'table_section_title': Specific record type. "
@@ -2487,62 +2890,95 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                         "BAD: 'Data Table', 'Records', 'Details'.\n\n"
 
                         "═══ KPI RULES ═══\n"
-                        "Generate 5-7 KPIs. Each MUST serve a distinct analytical purpose:\n"
-                        "  1. Total volume (primary financial/operational metric, agg=sum)\n"
-                        "  2. Average/rate metric (agg=avg) — operational benchmark\n"
-                        "  3. Unique entity count (categorical column, agg=nunique) — scope indicator\n"
-                        "  4. Peak/max value (agg=max) — best-case benchmark\n"
-                        "  5. Records count or secondary metric (agg=count or sum)\n"
-                        "  6-7. Domain-specific metrics (churn rate, conversion %, margin, etc.)\n\n"
-                        "KPI naming (non-negotiable):\n"
-                        "  GOOD: 'Total Revenue', 'Avg Order Value', 'Active Customers', 'Peak Transaction', 'Conversion Rate'\n"
-                        "  BAD: 'sales_amount', 'col_revenue_usd', 'KPI 1', 'Value'\n\n"
+                        "Generate 5-7 DISTINCT KPIs — each serving a unique analytical purpose:\n"
+                        "  1. Total volume KPI: primary currency/financial metric (agg=sum) — e.g. 'Total Revenue'\n"
+                        "  2. Average benchmark KPI: per-unit or rate metric (agg=avg) — e.g. 'Avg Order Value'\n"
+                        "  3. Entity count KPI: unique entities for scope (agg=nunique) — e.g. 'Active Customers'\n"
+                        "  4. Peak performance KPI: maximum value (agg=max) — e.g. 'Peak Single Transaction'\n"
+                        "  5. Secondary volume KPI: another numeric column (agg=sum or count)\n"
+                        "  6. Percentage/rate KPI: use a percentage column (agg=avg) if available\n"
+                        "  7. Growth or health KPI: margin, efficiency, or data quality metric\n\n"
+                        "KPI naming rules (non-negotiable):\n"
+                        "  GOOD: 'Total Revenue', 'Avg Order Value', 'Active Customers', 'Peak Transaction'\n"
+                        "  BAD: 'sales_amount', 'col_revenue_usd', 'KPI 1', 'Value', 'Metric'\n"
+                        "For currency KPIs: format large sums as '$1.2M' or '€450K' in the insight.\n"
+                        "For percentage KPIs: show as '18.3%' with avg/median context.\n\n"
                         "'measure' MUST be an exact column name from payload 'columns'.\n"
-                        "'agg': sum | avg | count | nunique | max | min\n"
-                        "'insight': 2 sentences. Sentence 1: exact computed value + record count. "
-                        "Sentence 2: distribution context (p75 vs median, skewness, % above mean).\n"
-                        "GOOD: 'Total revenue of $4.2M across 1,250 transactions. "
-                        "The 75th-percentile deal ($3,200) is 2x the median ($1,650), indicating "
-                        "a concentration of high-value clients in the top quartile.'\n"
-                        "'change': benchmark string like '18% above mean', 'top quartile: $3,200', '2.3x median', or null.\n\n"
+                        "'agg': sum (currency/volume), avg (rates/percentages/scores), "
+                        "count (records), nunique (distinct entities), max/min (extremes)\n"
+                        "'insight': 2 sentences with specific numbers from sample_stats. "
+                        "Sentence 1: exact total/avg + record count. "
+                        "Sentence 2: distribution (p75 vs median, skewness, % above mean).\n"
+                        "'change': benchmark string or null.\n\n"
 
                         "═══ CHART SELECTION RULES ═══\n"
-                        "Generate 7-10 charts covering ALL these patterns:\n"
-                        "  • Date present → line chart (primary metric trend) + area chart (secondary metric), both size=lg\n"
-                        "  • notable_correlations → one scatter per correlated pair\n"
-                        "  • Cardinality 2-10 + numeric → bar: title 'Revenue by Region' not 'sales_amount by region'\n"
-                        "  • Cardinality >10 + numeric → hbar top-12: title 'Top 12 Products by Revenue'\n"
-                        "  • Part-to-whole (cardinality ≤8) → doughnut: title 'Revenue Share by Segment'\n"
-                        "  • Multi-numeric profile → radar: title 'Performance Across Dimensions'\n"
-                        "  • Stage progression → funnel: title 'Customer Acquisition Funnel'\n\n"
-                        "Chart titles MUST be a business question or finding, NOT column names:\n"
-                        "  GOOD: 'Monthly Revenue Growth', 'Revenue by Product Category', 'Top 10 Customers by Spend'\n"
+                        "Generate 7-12 charts. ALL must be UNIQUE (different chart_type OR different x+y). "
+                        "Cover ALL these analytical patterns:\n"
+                        "  • Date column present → MUST include: line (primary metric over time) + "
+                        "area (secondary metric or cumulative), both size=lg\n"
+                        "  • notable_correlations (r≥0.4) → scatter chart for each pair\n"
+                        "  • Category cardinality 2-10 + currency/number → vertical bar chart\n"
+                        "  • Category cardinality >10 + numeric → horizontal bar (hbar) with top-12\n"
+                        "  • Part-to-whole breakdown (cardinality ≤8) → doughnut chart\n"
+                        "  • Secondary part-to-whole (DIFFERENT category) → pie chart\n"
+                        "  • Multi-numeric columns → radar (performance across dimensions)\n"
+                        "  • Pro: stage/funnel data → funnel chart\n"
+                        "  • Pro: 3-variable relationship → bubble chart\n"
+                        "  • Pro: dual-axis (volume + rate) → mixed bar+line\n"
+                        "  • Pro: single metric vs target → gauge\n"
+                        "  • Financial P&L or period variance → waterfall (Pro)\n\n"
+                        "Chart titles MUST answer a business question (NOT column names):\n"
+                        "  GOOD: 'Monthly Revenue Growth Trend', 'Revenue by Product Category', "
+                        "'Top 10 Customers by Spend', 'Sales vs Target Comparison'\n"
                         "  BAD: 'sales_amount trend', 'bar of qty', 'Column2 vs Column3'\n\n"
-                        "Chart insights (2 sentences each):\n"
-                        "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category Apparel ($570K). "
-                        "The bottom 4 categories combined account for only 12% — consolidation opportunity.'\n"
-                        "  BAD: 'The chart shows revenue by category', 'data indicates patterns'\n\n"
+                        "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
+                        "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
+                        "The bottom 4 categories combined account for only 12% — consolidation opportunity.'\n\n"
 
                         "═══ SIZE RULES ═══\n"
-                        "kpi=sm, line/area/waterfall=lg, bar/hbar/mixed/funnel=md, "
-                        "pie/doughnut/radar/scatter=md, table=lg\n\n"
+                        "kpi=sm, line/area/waterfall/mixed=lg, bar/hbar/funnel=md, "
+                        "pie/doughnut/radar/scatter/bubble/polararea/gauge=md, table=lg\n\n"
 
                         "═══ PALETTE RULES ═══\n"
-                        "emerald=revenue/growth/profit (positive), rose=loss/churn/risk (negative), "
+                        "emerald=revenue/growth/profit (positive), rose=loss/churn/risk/cost (negative), "
                         "ocean=time-series/trends, vibrant=multi-category comparisons, "
-                        "amber=ranking/distribution, sunset=scatter/correlations, "
-                        "indigo=neutral/KPIs, blue=secondary trends\n\n"
+                        "amber=ranking/distribution, sunset=scatter/correlations/bubble, "
+                        "indigo=neutral/KPIs/headings, blue=secondary trends, "
+                        "tropical=hbar rankings, candy=doughnut/pie\n\n"
 
                         "Return ONLY valid JSON — no markdown fences, no comments, no trailing commas:\n"
                         "{"
-                        "\"narrative\":\"3-sentence executive summary: scope + primary metric (cite exact sum) + strategic implication\","
-                        "\"kpi_section_title\":\"Precise domain KPI heading (e.g. Sales Revenue KPIs)\","
-                        "\"chart_section_title\":\"Action-oriented chart heading (e.g. Revenue Performance Deep-Dive)\","
-                        "\"table_section_title\":\"Specific table heading (e.g. Top Transactions by Value)\","
-                        "\"kpis\":[{\"name\":\"Business-friendly 2-5 word name\",\"measure\":\"EXACT_col_from_columns_list\",\"agg\":\"sum|avg|count|nunique|max|min\",\"change\":\"benchmark or null\",\"insight\":\"2 sentences with exact numbers and quartile context\"}],"
-                        "\"charts\":[{\"type\":\"bar|line|area|hbar|pie|doughnut|scatter|radar\",\"title\":\"Business question title not column names\",\"x\":\"EXACT_col_from_columns_list\",\"y\":[\"EXACT_col_from_columns_list\"],\"x_measure\":\"\",\"y_measure\":\"\",\"size\":\"md\",\"palette\":\"emerald\",\"insight\":\"2 sentences with specific numbers and action\"}],"
-                        "\"tables\":[{\"title\":\"Descriptive record-type name\",\"columns\":[\"EXACT_col\",\"EXACT_col\"],\"insight\":\"data-driven sentence with numbers\"}],"
-                        "\"insights\":[\"Global finding 1 with specific number + implication\",\"Finding 2: quartile + action\",\"Finding 3: correlation or anomaly\"]"
+                        "\"narrative\":\"3-sentence executive summary: scope (rows+domain) + "
+                        "primary metric (cite exact sum/total) + strategic implication or risk\","
+                        "\"kpi_section_title\":\"Domain-specific KPI heading\","
+                        "\"chart_section_title\":\"Action-oriented chart section header\","
+                        "\"table_section_title\":\"Specific record-type table heading\","
+                        "\"kpis\":[{"
+                        "\"name\":\"Business-friendly 2-5 word KPI title\","
+                        "\"measure\":\"EXACT_col_from_columns_list\","
+                        "\"agg\":\"sum|avg|count|nunique|max|min\","
+                        "\"change\":\"benchmark string or null\","
+                        "\"insight\":\"2 sentences: exact value+count, then distribution context\""
+                        "}],"
+                        "\"charts\":[{"
+                        "\"type\":\"bar|line|area|hbar|pie|doughnut|scatter|radar|bubble|polararea|mixed|funnel|gauge|waterfall\","
+                        "\"title\":\"Business question or finding as chart title\","
+                        "\"x\":\"EXACT_col_from_columns_list\","
+                        "\"y\":[\"EXACT_col_from_columns_list\"],"
+                        "\"x_measure\":\"\","
+                        "\"y_measure\":\"\","
+                        "\"size\":\"sm|md|lg\","
+                        "\"palette\":\"emerald|rose|ocean|vibrant|amber|sunset|indigo|blue|tropical|candy\","
+                        "\"insight\":\"2 sentences with exact numbers and strategic action\""
+                        "}],"
+                        "\"tables\":[{"
+                        "\"title\":\"Descriptive record-type table name\","
+                        "\"columns\":[\"EXACT_col\",\"EXACT_col\",\"EXACT_col\"],"
+                        "\"insight\":\"1 data-driven sentence with specific numbers\""
+                        "}],"
+                        "\"insights\":[\"Global finding 1: specific number + implication\","
+                        "\"Finding 2: quartile insight + action\","
+                        "\"Finding 3: correlation or anomaly\"]"
                         "}"
                     ),
                 },
@@ -2574,6 +3010,14 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
             parsed = _json.loads(match_obj.group(0) if match_obj else content)
         specs = _normalize_plan_to_specs(parsed)
         if specs:
+            # Post-process: remove chart types not allowed for user's plan
+            _pro_set = set(_PRO_CHART_TYPES_LIST)
+            allowed_set = set(allowed_chart_types)
+            specs = [
+                s for s in specs
+                if s.get("chart_type") in ("kpi", "heading", "text_canvas", "table") or
+                s.get("chart_type") in allowed_set
+            ]
             return specs
         logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
