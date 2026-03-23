@@ -54,6 +54,12 @@
   }
 
   // Inject live JS tooltip callback (Python cannot serialize JS functions to JSON)
+  function _formatReadableNumber(val) {
+    var n = Number(val);
+    if (!Number.isFinite(n)) return String(val);
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   function _injectTooltipCallback(cfg) {
     try {
       var tooltip = cfg && cfg.options && cfg.options.plugins && cfg.options.plugins.tooltip;
@@ -62,8 +68,9 @@
         if (typeof tooltip.callbacks.label !== 'function') {
           tooltip.callbacks.label = function (ctx) {
             var v = ctx.parsed && ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
-            if (typeof v === 'number') return ' ' + v.toLocaleString();
-            return ' ' + v;
+            var metric = (ctx && ctx.dataset && ctx.dataset.label) ? String(ctx.dataset.label) : 'Value';
+            if (typeof v === 'number') return ' ' + metric + ': ' + _formatReadableNumber(v);
+            return ' ' + metric + ': ' + v;
           };
         }
       }
@@ -81,11 +88,7 @@
       if (!scales) return cfg;
       var formatter = function (val) {
         if (typeof val !== 'number') return val;
-        var abs = Math.abs(val);
-        if (abs >= 1e9) return (val / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
-        if (abs >= 1e6) return (val / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-        if (abs >= 1e3) return (val / 1e3).toFixed(0) + 'K';
-        return val.toLocaleString();
+        return _formatReadableNumber(val);
       };
       // Inject into y-axis (vertical charts) and x-axis (horizontal bar)
       ['y', 'x'].forEach(function (axis) {
