@@ -43,6 +43,7 @@ from apps.datasets.services import (
     ai_detect_column_roles,
     ai_generate_comprehensive_insights,
     ai_generate_html_dashboard,
+    _get_ai_client,
     _compute_kpi_trend,
     _detect_kpi_meta,
     _humanize_col,
@@ -173,8 +174,8 @@ def _normalize_smart_recommendation(parsed: dict, profile, clean_prompt: str) ->
     }
 
 
-def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
-    """Ask DeepSeek for best chart + fields; returns normalized recommendation."""
+def _ai_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
+    """Ask the configured AI provider for best chart + fields; returns normalized recommendation."""
     clean_prompt = (prompt or "").strip()
     if not clean_prompt:
         clean_prompt = "Suggest the best chart for this dataset."
@@ -188,16 +189,12 @@ def _deepseek_smart_chart(df: pd.DataFrame, prompt: str) -> dict:
         "allowed_chart_types": sorted(list(_VALID_CHART_TYPES - {"smart"})),
         "sample_rows": min(int(len(df.index)), 50000),
     }
-    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
-    if not api_key:
+    client, model = _get_ai_client()
+    if client is None:
         return _fallback_smart_chart(df, clean_prompt)
-    if importlib.util.find_spec("openai") is None:
-        return _fallback_smart_chart(df, clean_prompt)
-    openai_module = __import__("openai")
-    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     try:
         response = client.chat.completions.create(
-            model=getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -1360,7 +1357,7 @@ def _build_widget_config(dashboard: Dashboard, data: dict) -> dict:
         df = apply_df_filters(df, filters)
         if chart_type == "smart":
             ai_prompt = str(data.get("ai_prompt", "")).strip() or title
-            rec = _deepseek_smart_chart(df, ai_prompt)
+            rec = _ai_smart_chart(df, ai_prompt)
             chart_type = rec.get("chart_type", "bar")
             title = rec.get("title", title)
             if rec.get("dimension"):
@@ -2182,13 +2179,11 @@ def dashboard_ai_enhance_presentation_text(request: HttpRequest, dashboard_id) -
     if not raw_text:
         return JsonResponse({"error": "Text is required"}, status=400)
 
-    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
-    if api_key and importlib.util.find_spec("openai") is not None:
+    client, model = _get_ai_client()
+    if client is not None:
         try:
-            openai_module = __import__("openai")
-            client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
             response = client.chat.completions.create(
-                model=getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+                model=model,
                 messages=[
                     {
                         "role": "system",
