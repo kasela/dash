@@ -215,6 +215,13 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
         sp_max = max(abs(v) for v in sparkline) or 1
         sparkline_pct = [max(8, round(abs(v) / sp_max * 100)) for v in sparkline]
 
+    try:
+        p25 = round(float(col.quantile(0.25)), 2)
+        p75 = round(float(col.quantile(0.75)), 2)
+        median_val = round(float(col.median()), 2)
+    except Exception:
+        p25 = p75 = median_val = 0.0
+
     return {
         "trend_dir": trend_dir,
         "trend_pct": abs(trend_pct),
@@ -225,6 +232,9 @@ def _compute_kpi_trend(df: pd.DataFrame, measure: str) -> dict:
         "avg": round(float(col.mean()), 2),
         "max_val": round(float(col.max()), 2),
         "min_val": round(float(col.min()), 2),
+        "median_val": median_val,
+        "p25": p25,
+        "p75": p75,
         "count": len(col),
     }
 
@@ -524,38 +534,47 @@ def _humanize_col(name: str) -> str:
 
 
 def _detect_kpi_meta(col_name: str) -> dict:
-    """Detect KPI display metadata (format + icon type) from a column name.
+    """Detect KPI display metadata (format + icon + unit prefix/suffix) from a column name.
 
     Returns a dict with:
-        format: 'currency' | 'percent' | 'count' | 'number'
-        icon:   'money' | 'percent' | 'people' | 'clock' | 'chart'
+        format:  'currency' | 'percent' | 'count' | 'number'
+        icon:    'money' | 'percent' | 'people' | 'clock' | 'chart'
+        prefix:  unit prefix string (e.g. '$', '€', '')
+        suffix:  unit suffix string (e.g. '%', 'x', '')
     """
     lower = str(col_name).lower()
     if any(k in lower for k in [
         'revenue', 'sales', 'profit', 'cost', 'price', 'amount', 'income',
         'spend', 'budget', 'earning', 'margin', 'value', 'gmv', 'arpu', 'ltv',
-        'fee', 'payment', 'invoice', 'receipt', 'cash', 'dollar', 'usd', 'eur',
+        'fee', 'payment', 'invoice', 'receipt', 'cash', 'dollar', 'usd',
     ]):
-        return {'format': 'currency', 'icon': 'money'}
+        return {'format': 'currency', 'icon': 'money', 'prefix': '$', 'suffix': ''}
+    if 'eur' in lower or 'euro' in lower:
+        return {'format': 'currency', 'icon': 'money', 'prefix': '€', 'suffix': ''}
+    if 'gbp' in lower or 'pound' in lower:
+        return {'format': 'currency', 'icon': 'money', 'prefix': '£', 'suffix': ''}
     if any(k in lower for k in [
         'rate', 'ratio', 'pct', 'percent', 'share', 'growth', 'churn',
         'conversion', 'efficiency', 'utilization', 'retention', 'accuracy',
+        'discount', 'yield', 'margin_pct',
     ]):
-        return {'format': 'percent', 'icon': 'percent'}
+        return {'format': 'percent', 'icon': 'percent', 'prefix': '', 'suffix': '%'}
     if any(k in lower for k in [
         'count', 'num', 'number', 'qty', 'quantity', 'volume', 'orders',
         'transactions', 'users', 'customers', 'visitors', 'sessions',
         'clicks', 'leads', 'signups', 'views', 'records', 'rows',
+        'employees', 'headcount', 'staff', 'members', 'subscribers',
+        'tickets', 'cases', 'incidents', 'requests', 'units',
     ]):
-        return {'format': 'count', 'icon': 'people'}
+        return {'format': 'count', 'icon': 'people', 'prefix': '', 'suffix': ''}
     if any(k in lower for k in [
         'days', 'hours', 'minutes', 'duration', 'time', 'age', 'tenure',
         'latency', 'ttl', 'ttfb', 'response',
     ]):
-        return {'format': 'number', 'icon': 'clock'}
+        return {'format': 'number', 'icon': 'clock', 'prefix': '', 'suffix': ''}
     if col_name in ('rows', 'records', 'total_rows'):
-        return {'format': 'count', 'icon': 'people'}
-    return {'format': 'number', 'icon': 'chart'}
+        return {'format': 'count', 'icon': 'people', 'prefix': '', 'suffix': ''}
+    return {'format': 'number', 'icon': 'chart', 'prefix': '', 'suffix': ''}
 
 
 def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
@@ -1389,19 +1408,25 @@ def ai_generate_comprehensive_insights(
 
     client, model = _get_ai_client()
 
-    # Build rich statistics context
+    # Build rich statistics context including quartiles and distribution shape
     numeric_stats: dict = {}
     for col in profile.numeric_columns[:12]:
         try:
             s = df[col].dropna()
+            mean_v = float(s.mean())
             numeric_stats[str(col)] = {
                 "sum": round(float(s.sum()), 2),
-                "mean": round(float(s.mean()), 2),
+                "mean": round(mean_v, 2),
                 "median": round(float(s.median()), 2),
                 "std": round(float(s.std()), 2),
                 "min": round(float(s.min()), 2),
                 "max": round(float(s.max()), 2),
+                "p25": round(float(s.quantile(0.25)), 2),
+                "p75": round(float(s.quantile(0.75)), 2),
+                "p90": round(float(s.quantile(0.90)), 2),
                 "count_non_null": int(s.count()),
+                "above_mean_pct": round(float((s > mean_v).mean() * 100), 1),
+                "skewness": round(float(s.skew()), 2),
                 "human_label": _humanize_col(col),
             }
         except Exception:
@@ -1513,29 +1538,36 @@ def ai_generate_comprehensive_insights(
                         "international BI experience across Fortune 500 companies, investment banks, and "
                         "management consulting firms in North America, Europe, and Asia-Pacific.\n\n"
                         "TASK: Write a comprehensive, data-driven analytical narrative for this business dashboard.\n\n"
+                        "The payload now includes quartile stats (p25, p75, p90), skewness, and above_mean_pct. "
+                        "USE THESE to produce distribution-aware insights, not just total/average.\n\n"
                         "REQUIREMENTS:\n"
-                        "executive_summary: 2-3 sentences synthesizing the overall data story. "
-                        "MUST mention the primary metric value, key trend, and business implication. "
-                        "Write as an experienced analyst presenting to a C-suite audience.\n\n"
-                        "key_findings: Exactly 4-5 specific, numbered insights. "
-                        "EVERY finding MUST cite a specific number from the provided statistics. "
+                        "executive_summary: 3 sentences synthesizing the overall data story. "
+                        "Sentence 1: dataset scope (rows, columns, domain). "
+                        "Sentence 2: primary metric total + most important categorical breakdown (cite exact numbers). "
+                        "Sentence 3: key risk/opportunity or strategic implication.\n\n"
+                        "key_findings: Exactly 5 specific, numbered insights. "
+                        "EVERY finding MUST cite at least TWO specific numbers (e.g. total AND p75, mean AND std). "
+                        "Include distribution insights (skewness, quartile spread, above-mean percentage). "
                         "Order by business impact (most impactful first). "
-                        "Format: 'Finding [N]: [Specific insight with number and business context].'\n\n"
-                        "strategic_recs: 2-3 action-oriented recommendations. "
-                        "Each MUST specify WHO should do WHAT, by WHEN, and WHY with expected impact. "
-                        "Be concrete, not generic.\n\n"
-                        "data_health: 1 sentence on data completeness and its analytical implications.\n\n"
-                        "analyst_note: 1 sentence expert commentary on what this data reveals about the "
-                        "business's strategic position or operational maturity.\n\n"
-                        "STYLE: Confident, authoritative, data-dense executive tone. "
-                        "Never vague or generic. Always cite specific numbers. "
-                        "Write as if preparing a board-level briefing document.\n\n"
+                        "Format: 'Finding [N]: [Primary number]. [Distribution context]. [Business implication].'\n\n"
+                        "strategic_recs: 3 action-oriented recommendations. "
+                        "Each MUST specify WHO does WHAT, targeting WHICH metric, and WHY (cite the specific gap or opportunity). "
+                        "Example: 'Revenue team should focus on the top-quartile customer segment ($3,200+ orders) "
+                        "which represents 25% of customers but 58% of revenue — a prime expansion target.'\n\n"
+                        "data_health: 1-2 sentences on data completeness (missing %, duplicates) "
+                        "and any data quality concern that could affect analytical conclusions.\n\n"
+                        "analyst_note: 1 sentence expert insight on what the distribution shape (skewness, quartile spread) "
+                        "or notable correlation reveals about the business's structure or maturity.\n\n"
+                        "STYLE: Board-level briefing tone. Authoritative, data-dense, zero filler words. "
+                        "Every sentence must contain a number. No vague phrases.\n\n"
                         "Return ONLY valid JSON (no markdown, no extra text):\n"
-                        "{\"executive_summary\":\"...\","
-                        "\"key_findings\":[\"Finding 1: ...\",\"Finding 2: ...\"],"
-                        "\"strategic_recs\":[\"...\"],"
-                        "\"data_health\":\"...\","
-                        "\"analyst_note\":\"...\"}"
+                        "{\"executive_summary\":\"3 sentences with specific numbers\","
+                        "\"key_findings\":[\"Finding 1: primary number + distribution context\","
+                        "\"Finding 2: ...\",\"Finding 3: ...\",\"Finding 4: ...\",\"Finding 5: ...\"],"
+                        "\"strategic_recs\":[\"Rec 1: WHO does WHAT targeting WHICH metric\","
+                        "\"Rec 2: ...\",\"Rec 3: ...\"],"
+                        "\"data_health\":\"missing % + quality implication\","
+                        "\"analyst_note\":\"distribution/correlation expert insight\"}"
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
@@ -2091,28 +2123,28 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
                 {
                     "role": "system",
                     "content": (
-                        "You are a sharp business data analyst writing executive-level chart commentary "
-                        "for a professional BI dashboard report.\n\n"
-                        "TASK: Write 2-3 punchy, numerically specific insights for the chart. "
+                        "You are a senior BI analyst writing authoritative chart commentary "
+                        "for an executive-level professional dashboard report.\n\n"
+                        "TASK: Write 3 punchy, numerically specific insights for the chart. "
                         "Use ONLY the pre-computed statistics provided — cite precise values, labels, and percentages.\n\n"
                         "RULES:\n"
                         "- Plain text ONLY — no markdown, no bullet points, no headers, no hyphens.\n"
-                        "- EVERY sentence must contain at least one specific number or label from the statistics.\n"
-                        "- NEVER use vague phrases like 'shows a trend', 'indicates patterns', 'data reveals', "
-                        "'interesting to note', 'worth mentioning'.\n"
-                        "- bar/hbar: name the top performer with its exact value, cite the gap vs average, "
-                        "state how many categories are above/below average.\n"
-                        "- line/area: state the overall trend direction and magnitude (% change from start to end), "
-                        "name the peak period and its value, note any significant reversal.\n"
-                        "- pie/doughnut/polararea: state dominant segment's % share, cite top-2 combined %, "
-                        "name the smallest segment.\n"
-                        "- scatter/bubble: describe correlation direction (positive/negative/none), "
-                        "name any visible outlier by label if available.\n"
-                        "- kpi: compare the value to the dataset mean, state whether it is above or below average "
-                        "and by how much.\n"
-                        "- radar: identify highest and lowest dimension, note the range spread.\n"
-                        "- End with ONE forward-looking action sentence: what to investigate or optimize next.\n"
-                        "- Keep total under 100 words. Be direct, confident, and data-specific."
+                        "- EVERY sentence must contain at least one specific number from the statistics.\n"
+                        "- NEVER use vague phrases: 'shows a trend', 'indicates patterns', 'data reveals', "
+                        "'interesting to note', 'worth mentioning', 'it appears'.\n"
+                        "- bar/hbar: name the #1 performer with exact value + % of total. "
+                        "State how many of {data_points} categories are above the average. "
+                        "Name the bottom performer and the spread_ratio.\n"
+                        "- line/area: state trend direction + exact % change (start_to_end_pct_change). "
+                        "Name the peak period and its value. If coefficient_of_variation_pct > 30, call out volatility.\n"
+                        "- pie/doughnut/polararea: state dominant segment's exact % (top_pct_of_total). "
+                        "State top-2 combined % (top2_combined_pct). Name smallest segment.\n"
+                        "- scatter/bubble: state correlation direction. If spread_ratio > 5, "
+                        "call out the extreme outlier range.\n"
+                        "- radar: identify highest and lowest dimension with exact values. "
+                        "Cite the range spread (max - min).\n"
+                        "- End with ONE forward-looking sentence citing which label/segment to prioritize or investigate.\n"
+                        "- Maximum 120 words total. Be authoritative, specific, and actionable."
                     ),
                 },
                 {"role": "user", "content": _json.dumps(payload)},
@@ -2184,22 +2216,46 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
-    # Compute rich statistical context for AI
+    # Compute rich statistical context for AI (including quartiles and distribution shape)
     sample_stats: dict = {}
     for col in profile.numeric_columns[:12]:
         try:
             s = df[col].dropna()
+            total_val = round(float(s.sum()), 2)
+            mean_val = round(float(s.mean()), 2)
             sample_stats[str(col)] = {
-                "sum": round(float(s.sum()), 2),
-                "mean": round(float(s.mean()), 2),
+                "sum": total_val,
+                "mean": mean_val,
                 "median": round(float(s.median()), 2),
                 "std": round(float(s.std()), 2),
                 "min": round(float(s.min()), 2),
                 "max": round(float(s.max()), 2),
+                "p25": round(float(s.quantile(0.25)), 2),
+                "p75": round(float(s.quantile(0.75)), 2),
+                "p90": round(float(s.quantile(0.90)), 2),
+                "non_null_count": int(s.count()),
+                "null_count": int(df[col].isna().sum()),
+                "skewness": round(float(s.skew()), 2),
+                "above_mean_pct": round(float((s > mean_val).mean() * 100), 1),
                 "human_label": _humanize_col(col),
             }
         except Exception:
             pass
+
+    # Compute pairwise correlations between top numeric columns
+    correlation_matrix: dict = {}
+    try:
+        num_cols = [c for c in profile.numeric_columns[:8] if pd.api.types.is_numeric_dtype(df[c])]
+        if len(num_cols) >= 2:
+            corr = df[num_cols].corr(numeric_only=True)
+            for c1 in num_cols:
+                for c2 in num_cols:
+                    if c1 < c2:
+                        val = round(float(corr.loc[c1, c2]), 2) if not pd.isna(corr.loc[c1, c2]) else 0.0
+                        if abs(val) >= 0.4:  # only include notable correlations
+                            correlation_matrix[f"{c1} vs {c2}"] = val
+    except Exception:
+        pass
 
     categorical_cardinality: dict[str, int] = {}
     categorical_top_values: dict[str, dict] = {}
@@ -2259,6 +2315,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
         "categorical_top_values": categorical_top_values,
         "date_ranges": date_ranges,
         "null_rate_pct": null_rate,
+        "notable_correlations": correlation_matrix,
         "allowed_chart_types": [
             "kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table",
             "bubble", "polararea", "mixed", "funnel", "gauge", "waterfall",
@@ -2322,7 +2379,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                 "measures": [value_col] if value_col else [],
                 "size": "sm",
                 "palette": "indigo",
-                "ai_insight": full_insight[:400],
+                "ai_insight": full_insight[:600],
             }
             if _agg in ("sum", "avg", "count", "nunique", "max", "min"):
                 spec["_agg"] = _agg
@@ -2362,7 +2419,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                 "y_measure": y_measure,
                 "size": str(chart.get("size") or "md").strip().lower(),
                 "palette": str(chart.get("palette") or "indigo").strip().lower(),
-                "ai_insight": insight[:400],
+                "ai_insight": insight[:600],
             })
 
         # ── Tables section ─────────────────────────────────────────────────
@@ -2392,7 +2449,7 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                 "measures": measures,
                 "size": "lg",
                 "palette": "slate",
-                "ai_insight": insight[:400],
+                "ai_insight": insight[:600],
             })
 
         return specs
@@ -2409,53 +2466,58 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                         "They are modern, insight-dense, narratively coherent, and built for confident executive decision-making.\n\n"
                         "Create a COMPREHENSIVE, schema-agnostic BI dashboard plan for the provided dataset.\n"
                         "The payload includes 'dataset_name' — use it to infer business domain (Sales, HR, Finance, etc.).\n"
-                        "Mode is provided in payload: executive | analytical | operational.\n\n"
+                        "Mode is provided in payload: executive | analytical | operational.\n"
+                        "The payload also includes 'notable_correlations' — use these to suggest scatter/mixed charts.\n"
+                        "Stats include p25/p75/p90 quartiles — cite these in insights for richer context.\n\n"
                         "═══ COLUMN NAME RULES (CRITICAL) ═══\n"
                         "- ALL 'measure', 'x', 'y', 'x_measure', 'y_measure', and 'columns' fields MUST use "
                         "EXACT column names copied verbatim from the payload 'columns' list.\n"
                         "- NEVER invent column names. NEVER paraphrase column names.\n"
                         "- If unsure which column to use, pick the closest match from the provided list.\n\n"
                         "═══ NAMING RULES (non-negotiable) ═══\n"
-                        "- KPI names: 2-4 business-friendly words. 'total_revenue_usd' → 'Total Revenue'. "
-                        "'num_orders' → 'Orders'. 'avg_order_value' → 'Avg Order Value'.\n"
-                        "- Chart titles: Write a business question being answered. "
-                        "GOOD: 'Revenue by Region', 'Monthly Growth Trend', 'Top 10 Products by Margin'. "
+                        "- KPI names: 2-5 business-friendly words. 'total_revenue_usd' → 'Total Revenue (USD)'. "
+                        "'num_orders' → 'Total Orders'. 'avg_order_value' → 'Avg Order Value'.\n"
+                        "- Chart titles: Write a specific business question being answered. "
+                        "GOOD: 'Revenue by Region', 'Monthly Sales Growth', 'Top 10 Products by Margin'. "
                         "BAD: 'sales_amount by region_name', 'chart of qty', 'Column1 Distribution'.\n"
-                        "- Insights: Lead with the finding, cite a specific number from sample_stats. "
-                        "GOOD: 'North America drives 42% of total revenue at $2.1M — the largest regional contributor.' "
-                        "BAD: 'region column shows high sales_amount values', 'data shows trends'.\n\n"
+                        "- Insights: Lead with the primary finding, cite specific numbers from sample_stats (sum, mean, p75, etc.). "
+                        "GOOD: 'North America drives 42% of total revenue at $2.1M — the top region. "
+                        "The 75th-percentile performer earns $18K vs. $9K median, a 2x spread.' "
+                        "BAD: 'region column shows high values', 'data shows trends'.\n\n"
                         "═══ NARRATIVE RULES ═══\n"
-                        "- 'narrative': Write a 2-3 sentence executive summary using the dataset_name as domain context. "
-                        "Must cite the most important metric value from sample_stats. "
-                        "Structured as: [What the data is about] + [Key finding with number] + [Strategic implication].\n"
-                        "- 'kpi_section_title': Domain-specific heading like 'Sales KPI Summary', 'HR Key Metrics', "
+                        "- 'narrative': 3 sentence executive summary using dataset_name as domain context. "
+                        "Sentence 1: what dataset is about + record count. "
+                        "Sentence 2: primary metric total from sample_stats.sum + top categorical breakdown. "
+                        "Sentence 3: strategic implication or key risk/opportunity.\n"
+                        "- 'kpi_section_title': Domain-specific like 'Sales KPI Summary', 'HR Workforce Metrics', "
                         "'Financial Performance Indicators'\n"
-                        "- 'chart_section_title': Domain-specific heading like 'Sales Performance Deep-Dive', "
+                        "- 'chart_section_title': Domain-specific like 'Sales Performance Deep-Dive', "
                         "'Trend & Distribution Analysis', 'Customer Behavior Patterns'\n"
-                        "- 'table_section_title': Domain-specific heading like 'Transaction Detail', "
+                        "- 'table_section_title': Domain-specific like 'Transaction Detail', "
                         "'Employee Records', 'Order History'\n\n"
                         "═══ KPI RULES ═══\n"
-                        "- Generate 4-6 KPIs. Cover: volume metric, financial/value metric, rate/ratio, unique count, "
-                        "and growth metric (if dates present).\n"
-                        "- For distinct entity counts (unique customers, products, suppliers): "
-                        "use categorical column as 'measure' with agg='nunique'.\n"
+                        "- Generate 5-7 KPIs. MUST cover: total volume metric, primary financial metric, "
+                        "average/rate metric, unique count, and a benchmark or growth metric.\n"
+                        "- For distinct entity counts: use categorical column as 'measure' with agg='nunique'.\n"
                         "- 'measure' MUST be an exact column name from the payload columns list.\n"
                         "- 'agg' must be one of: sum, avg, count, nunique, max, min\n"
-                        "- 'insight': 1 sentence citing actual value from sample_stats. "
-                        "Example: 'Total revenue of $4.2M across 1,250 records provides a strong performance baseline.'\n"
-                        "- 'change': Meaningful comparison or null "
-                        "(e.g. '12% above dataset average', 'top quartile of performers').\n\n"
+                        "- 'insight': 2 sentences citing actual values from sample_stats. "
+                        "Must include the computed value AND a percentile or distribution context. "
+                        "Example: 'Total revenue of $4.2M across 1,250 records. "
+                        "75th-percentile transactions are $3,200, nearly 2x the median $1,650 — "
+                        "indicating a right-skewed distribution with high-value outliers.'\n"
+                        "- 'change': Meaningful benchmark comparison or null "
+                        "(e.g. '18% above the mean', 'top quartile threshold at $3,200', '2.3x the median').\n\n"
                         "═══ CHART SELECTION RULES ═══\n"
-                        "- Date column present → ALWAYS include a line chart for primary trend + area for secondary metric.\n"
+                        "- Date column present → ALWAYS include: (1) line chart for primary metric trend, "
+                        "(2) area chart for secondary metric, (3) mixed chart if rate column exists.\n"
+                        "- notable_correlations present → include scatter for each correlated pair (r≥0.4).\n"
                         "- Category (cardinality 3-12) + numeric → bar. Title: '[Metric] by [Category]'\n"
                         "- Category (cardinality >12) + numeric → hbar top 10. Title: 'Top 10 [Category] by [Metric]'\n"
                         "- Part-to-whole (cardinality ≤8) → doughnut. Title: '[Metric] Distribution by [Category]'\n"
-                        "- Two correlated numerics → scatter. Title: '[Metric A] vs [Metric B]'\n"
-                        "- Multiple categories + single numeric → radar. Title: '[Metric] Profile Comparison'\n"
-                        "- Stage/funnel progression → funnel. Title: '[Process] Conversion Funnel'\n"
-                        "- Cumulative variance → waterfall. Title: '[Metric] Contribution by [Category]'\n"
-                        "- Time series + rate overlay → mixed. Title: '[Metric] & [Rate] Over Time'\n"
-                        "- Generate 6-10 charts covering different analytical angles (trend, distribution, ranking, composition).\n\n"
+                        "- Multiple numeric categories → radar. Title: '[Metric] Performance Comparison'\n"
+                        "- Stage progression → funnel. Title: '[Process] Conversion Funnel'\n"
+                        "- Generate 7-10 charts covering: trend, distribution, ranking, composition, correlation, profile.\n\n"
                         "═══ SIZE RULES ═══\n"
                         "kpi='sm', line/area/waterfall='lg', bar/hbar/mixed='md', pie/doughnut/radar/scatter='md', "
                         "table='lg', funnel='md'.\n\n"
@@ -2464,21 +2526,21 @@ def ai_generate_dashboard_specs(df: pd.DataFrame, profile: "ProfileSummary", dat
                         "ocean=time-series/trends, blue=secondary trends, amber=distribution/ranking, "
                         "vibrant=multi-category/comparison, sunset=relationships/scatter.\n\n"
                         "═══ INSIGHT QUALITY RULES ═══\n"
-                        "- EVERY insight must cite at least one specific number from sample_stats or cardinality.\n"
-                        "- Structure: [Key finding with number] → [Business implication] → [Recommended action].\n"
+                        "- EVERY insight must cite at least two specific numbers from sample_stats (e.g. sum AND p75, mean AND std).\n"
+                        "- Structure: [Primary finding with exact number] + [Distribution context with quartile] + [Action].\n"
                         "- Avoid vague phrases: 'shows trends', 'indicates patterns', 'data reveals', 'interesting'.\n"
-                        "- Maximum 100 words per insight. Be punchy, confident, and specific.\n\n"
+                        "- Maximum 120 words per insight. Be authoritative, specific, and actionable.\n\n"
                         "Return ONLY valid JSON (no markdown code fences, no extra text) with these exact keys:\n"
                         "{"
-                        "\"narrative\":\"2-3 sentence executive summary with specific numbers\","
+                        "\"narrative\":\"3 sentence executive summary with specific numbers from stats\","
                         "\"kpi_section_title\":\"Domain-specific KPI section heading\","
                         "\"chart_section_title\":\"Domain-specific chart section heading\","
                         "\"table_section_title\":\"Domain-specific table section heading\","
                         "\"schema\":{\"columns\":[],\"types\":{}},"
-                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"EXACT_column_name\",\"agg\":\"sum|avg|count|nunique\",\"change\":\"comparison or null\",\"insight\":\"data-driven sentence with specific number\"}],"
-                        "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"EXACT_column_name\",\"y\":[\"EXACT_column_name\"],\"x_measure\":\"EXACT_col_or_empty\",\"y_measure\":\"EXACT_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"data-driven sentence with number\"}],"
-                        "\"tables\":[{\"title\":\"Descriptive Table Name\",\"columns\":[\"EXACT_col\"],\"insight\":\"data-driven sentence\"}],"
-                        "\"insights\":[\"Global finding 1 with specific number\",\"Global finding 2 with specific number\",\"Global finding 3 with action\"]"
+                        "\"kpis\":[{\"name\":\"Business Name\",\"measure\":\"EXACT_column_name\",\"agg\":\"sum|avg|count|nunique\",\"change\":\"benchmark comparison or null\",\"insight\":\"2 sentences with specific numbers + quartile context\"}],"
+                        "\"charts\":[{\"type\":\"chart_type\",\"title\":\"Business Question Title\",\"x\":\"EXACT_column_name\",\"y\":[\"EXACT_column_name\"],\"x_measure\":\"EXACT_col_or_empty\",\"y_measure\":\"EXACT_col_or_empty\",\"size\":\"md\",\"palette\":\"indigo\",\"insight\":\"2 sentences with specific numbers and action\"}],"
+                        "\"tables\":[{\"title\":\"Descriptive Table Name\",\"columns\":[\"EXACT_col\"],\"insight\":\"data-driven sentence with numbers\"}],"
+                        "\"insights\":[\"Global finding 1: specific number + implication\",\"Global finding 2: quartile context + action\",\"Global finding 3: correlation or anomaly\"]"
                         "}"
                     ),
                 },
@@ -2803,8 +2865,12 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     kpi_rows_cfg: dict = {
         "kpi": "Total Records",
         "value": f"{profile.total_rows:,}",
-        "kpi_meta": {"format": "count", "icon": "people"},
+        "kpi_meta": {"format": "count", "icon": "people", "prefix": "", "suffix": ""},
         "layout": {"size": "sm"},
+        "ai_insight": (
+            f"This dataset contains {profile.total_rows:,} records across "
+            f"{profile.total_columns} dimensions, providing a comprehensive analytical foundation."
+        ),
     }
     kpi_rows_cfg["builder"] = _make_builder(measure="rows")
     specs.append({"title": "Total Records", "widget_type": "kpi", "config": kpi_rows_cfg, "position": position})
@@ -2814,15 +2880,22 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     if profile.suggested_measures:
         m1 = profile.suggested_measures[0]
         try:
-            total = df[m1].sum()
+            col_s1 = df[m1].dropna()
+            total = col_s1.sum()
             trend_data = _compute_kpi_trend(df, m1)
             kpi_meta = _detect_kpi_meta(m1)
             human_m1 = _humanize_col(m1)
+            prefix = kpi_meta.get("prefix", "")
             kpi_cfg: dict = {
-                "kpi": human_m1,
-                "value": f"{total:,.0f}",
+                "kpi": f"Total {human_m1}",
+                "value": f"{prefix}{total:,.0f}" if prefix else f"{total:,.0f}",
                 "kpi_meta": kpi_meta,
                 "layout": {"size": "sm"},
+                "ai_insight": (
+                    f"Total {human_m1}: {prefix}{total:,.0f} across {len(col_s1):,} records. "
+                    f"Mean {prefix}{col_s1.mean():,.2f} · Median {prefix}{col_s1.median():,.2f} · "
+                    f"75th percentile {prefix}{col_s1.quantile(0.75):,.2f}."
+                ),
             }
             if trend_data:
                 kpi_cfg["trend"] = trend_data
@@ -2836,15 +2909,22 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     if len(profile.suggested_measures) >= 2:
         m2 = profile.suggested_measures[1]
         try:
-            total2 = df[m2].sum()
+            col_s2 = df[m2].dropna()
+            total2 = col_s2.sum()
             trend_data2 = _compute_kpi_trend(df, m2)
             kpi_meta2 = _detect_kpi_meta(m2)
             human_m2 = _humanize_col(m2)
+            prefix2 = kpi_meta2.get("prefix", "")
             kpi2_cfg: dict = {
-                "kpi": human_m2,
-                "value": f"{total2:,.0f}",
+                "kpi": f"Total {human_m2}",
+                "value": f"{prefix2}{total2:,.0f}" if prefix2 else f"{total2:,.0f}",
                 "kpi_meta": kpi_meta2,
                 "layout": {"size": "sm"},
+                "ai_insight": (
+                    f"Total {human_m2}: {prefix2}{total2:,.0f}. "
+                    f"Average {prefix2}{col_s2.mean():,.2f} · P75 {prefix2}{col_s2.quantile(0.75):,.2f} · "
+                    f"Max {prefix2}{col_s2.max():,.2f}."
+                ),
             }
             if trend_data2:
                 kpi2_cfg["trend"] = trend_data2
@@ -2856,14 +2936,21 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     elif profile.suggested_measures:
         m1 = profile.suggested_measures[0]
         try:
-            avg_val = df[m1].mean()
+            col_avg = df[m1].dropna()
+            avg_val = col_avg.mean()
             kpi_meta_avg = _detect_kpi_meta(m1)
             human_m1 = _humanize_col(m1)
+            prefix_avg = kpi_meta_avg.get("prefix", "")
             avg_cfg: dict = {
-                "kpi": human_m1,
-                "value": f"{avg_val:,.2f}",
+                "kpi": f"Avg {human_m1}",
+                "value": f"{prefix_avg}{avg_val:,.2f}" if prefix_avg else f"{avg_val:,.2f}",
                 "kpi_meta": kpi_meta_avg,
                 "layout": {"size": "sm"},
+                "ai_insight": (
+                    f"Average {human_m1}: {prefix_avg}{avg_val:,.2f}. "
+                    f"Median {prefix_avg}{col_avg.median():,.2f} · "
+                    f"Range {prefix_avg}{col_avg.min():,.2f}–{prefix_avg}{col_avg.max():,.2f}."
+                ),
             }
             avg_cfg["builder"] = _make_builder(measures=[m1], measure=m1)
             specs.append({"title": f"Avg {human_m1}", "widget_type": "kpi", "config": avg_cfg, "position": position})
@@ -2875,20 +2962,51 @@ def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     if len(profile.suggested_measures) >= 3:
         m3 = profile.suggested_measures[2]
         try:
-            total3 = df[m3].sum()
+            col_s3 = df[m3].dropna()
+            total3 = col_s3.sum()
             trend_data3 = _compute_kpi_trend(df, m3)
             kpi_meta3 = _detect_kpi_meta(m3)
             human_m3 = _humanize_col(m3)
+            prefix3 = kpi_meta3.get("prefix", "")
             kpi3_cfg: dict = {
-                "kpi": human_m3,
-                "value": f"{total3:,.0f}",
+                "kpi": f"Total {human_m3}",
+                "value": f"{prefix3}{total3:,.0f}" if prefix3 else f"{total3:,.0f}",
                 "kpi_meta": kpi_meta3,
                 "layout": {"size": "sm"},
+                "ai_insight": (
+                    f"Total {human_m3}: {prefix3}{total3:,.0f}. "
+                    f"Avg {prefix3}{col_s3.mean():,.2f} · P75 {prefix3}{col_s3.quantile(0.75):,.2f}."
+                ),
             }
             if trend_data3:
                 kpi3_cfg["trend"] = trend_data3
             kpi3_cfg["builder"] = _make_builder(measures=[m3], measure=m3)
             specs.append({"title": f"Total {human_m3}", "widget_type": "kpi", "config": kpi3_cfg, "position": position})
+            position += 1
+        except Exception:
+            pass
+
+    # ── KPI 5: Unique count of first categorical dimension ───────────────────
+    if profile.suggested_dimensions:
+        d1 = profile.suggested_dimensions[0]
+        try:
+            unique_count = int(df[d1].nunique(dropna=True))
+            human_d1 = _humanize_col(d1)
+            top_val = str(df[d1].value_counts().index[0]) if len(df[d1].value_counts()) > 0 else "N/A"
+            top_cnt = int(df[d1].value_counts().values[0]) if len(df[d1].value_counts()) > 0 else 0
+            kpi5_cfg: dict = {
+                "kpi": f"Unique {human_d1}",
+                "value": f"{unique_count:,}",
+                "kpi_meta": {"format": "count", "icon": "people", "prefix": "", "suffix": ""},
+                "layout": {"size": "sm"},
+                "ai_insight": (
+                    f"{unique_count:,} unique {human_d1} values across {profile.total_rows:,} records. "
+                    f"Top category: '{top_val}' with {top_cnt:,} records "
+                    f"({round(top_cnt / profile.total_rows * 100, 1)}% of total)."
+                ),
+            }
+            kpi5_cfg["builder"] = _make_builder(dimension=d1, measure=d1)
+            specs.append({"title": f"Unique {human_d1}", "widget_type": "kpi", "config": kpi5_cfg, "position": position})
             position += 1
         except Exception:
             pass

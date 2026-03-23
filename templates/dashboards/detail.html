@@ -1127,7 +1127,7 @@
                 {% elif widget.chart_config.kpi_meta.icon == 'people' %}text-indigo-700
                 {% elif widget.chart_config.kpi_meta.icon == 'clock' %}text-amber-700
                 {% else %}text-violet-700{% endif %}">
-                {{ widget.chart_config.value|default:"–" }}
+                {{ widget.chart_config.value|default:"–" }}{% if widget.chart_config.kpi_meta.suffix %}<span class="text-xl font-semibold opacity-70">{{ widget.chart_config.kpi_meta.suffix }}</span>{% endif %}
               </span>
               <!-- Trend badge inline -->
               {% if widget.chart_config.trend %}
@@ -1150,14 +1150,26 @@
           </div>
         </div>
 
-        <!-- Stats pills: avg / peak / comparison -->
+        <!-- Stats pills: median / avg / peak / p75 / comparison -->
         {% if widget.chart_config.trend.avg %}
-        <div class="flex gap-2 mt-3">
-          <div class="kpi-stat-pill">
-            <div class="text-[10px] text-slate-400 font-medium leading-none mb-0.5">Average</div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          {% if widget.chart_config.trend.median_val %}
+          <div class="kpi-stat-pill" title="Median (50th percentile)">
+            <div class="text-[10px] text-slate-400 font-medium leading-none mb-0.5">Median</div>
+            <div class="text-xs font-bold text-slate-700 leading-none">{{ widget.chart_config.trend.median_val }}</div>
+          </div>
+          {% endif %}
+          <div class="kpi-stat-pill" title="Mean average">
+            <div class="text-[10px] text-slate-400 font-medium leading-none mb-0.5">Mean</div>
             <div class="text-xs font-bold text-slate-700 leading-none">{{ widget.chart_config.trend.avg }}</div>
           </div>
-          <div class="kpi-stat-pill">
+          {% if widget.chart_config.trend.p75 %}
+          <div class="kpi-stat-pill" title="75th percentile — top-quarter threshold">
+            <div class="text-[10px] text-slate-400 font-medium leading-none mb-0.5">Top 25%</div>
+            <div class="text-xs font-bold text-indigo-700 leading-none">≥ {{ widget.chart_config.trend.p75 }}</div>
+          </div>
+          {% endif %}
+          <div class="kpi-stat-pill" title="Maximum value">
             <div class="text-[10px] text-slate-400 font-medium leading-none mb-0.5">Peak</div>
             <div class="text-xs font-bold text-slate-700 leading-none">{{ widget.chart_config.trend.max_val }}</div>
           </div>

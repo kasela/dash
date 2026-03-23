@@ -278,7 +278,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
         size = str(spec.get("size") or "md").strip()
         if size not in {"sm", "md", "lg"}:
             size = "md"
-        ai_insight = str(spec.get("ai_insight") or "").strip()[:400]
+        ai_insight = str(spec.get("ai_insight") or "").strip()[:600]
         spec_agg = str(spec.get("_agg") or "").strip().lower()
 
         config: dict = {}
@@ -333,11 +333,13 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     if agg == "nunique":
                         display_val = f"{int(df[resolved_measure].nunique()):,}"
                         kpi_label = f"Unique {human_label}"
+                        col_data = pd.Series(dtype=float)
                         avg = 0.0
                     elif agg == "avg":
                         col_data = df[resolved_measure].dropna()
-                        avg = col_data.mean()
-                        display_val = f"{avg:,.2f}"
+                        avg = col_data.mean() if pd.api.types.is_numeric_dtype(col_data) else 0.0
+                        prefix = kpi_meta.get("prefix", "")
+                        display_val = f"{prefix}{avg:,.2f}" if prefix else f"{avg:,.2f}"
                         kpi_label = f"Avg {human_label}"
                     elif agg == "count":
                         col_data = df[resolved_measure].dropna()
@@ -346,9 +348,10 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         kpi_label = f"{human_label} Count"
                     else:
                         col_data = df[resolved_measure].dropna()
-                        total = col_data.sum()
-                        avg = col_data.mean()
-                        display_val = f"{total:,.0f}"
+                        total = col_data.sum() if pd.api.types.is_numeric_dtype(col_data) else 0
+                        avg = col_data.mean() if pd.api.types.is_numeric_dtype(col_data) else 0.0
+                        prefix = kpi_meta.get("prefix", "")
+                        display_val = f"{prefix}{total:,.0f}" if prefix else f"{total:,.0f}"
                         kpi_label = human_label
 
                     config = {
@@ -357,30 +360,78 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         "kpi_meta": kpi_meta,
                         "layout": {"size": size},
                     }
+
+                    # Always compute and attach trend (includes rich stats: min/max/median/p25/p75)
                     if agg not in ("nunique", "count"):
                         trend = _compute_kpi_trend(df, resolved_measure)
                         if trend:
                             config["trend"] = trend
+                    elif pd.api.types.is_numeric_dtype(df[resolved_measure]):
+                        # For count/nunique KPIs: still attach basic stats as a lightweight trend dict
+                        try:
+                            c = df[resolved_measure].dropna()
+                            config["trend"] = {
+                                "trend_dir": "flat",
+                                "trend_pct": 0.0,
+                                "sparkline": [],
+                                "sparkline_pct": [],
+                                "avg": round(float(c.mean()), 2),
+                                "max_val": round(float(c.max()), 2),
+                                "min_val": round(float(c.min()), 2),
+                                "median_val": round(float(c.median()), 2),
+                                "p25": round(float(c.quantile(0.25)), 2),
+                                "p75": round(float(c.quantile(0.75)), 2),
+                                "count": len(c),
+                                "secondary_label": "records",
+                                "secondary_value": f"{len(c):,}",
+                            }
+                        except Exception:
+                            pass
 
-                    # Build KPI-specific insight if not already set
+                    # Build KPI-specific insight if not already provided by AI
                     if not ai_insight:
                         try:
                             if agg == "nunique":
-                                ai_insight = f"{kpi_label}: {display_val} distinct values across {profile.total_rows:,} records."
-                            else:
-                                col_data = df[resolved_measure].dropna()
-                                avg = col_data.mean()
-                                pct_above_avg = round(sum(1 for v in col_data if v > avg) / len(col_data) * 100, 1)
                                 ai_insight = (
-                                    f"{kpi_label} totals {display_val} with a mean of {avg:,.2f}. "
-                                    f"{pct_above_avg}% of records exceed the average."
+                                    f"{kpi_label}: {display_val} distinct values across "
+                                    f"{profile.total_rows:,} records "
+                                    f"({round(int(df[resolved_measure].nunique()) / profile.total_rows * 100, 1)}% unique)."
+                                )
+                            elif agg in ("avg", "sum"):
+                                c = df[resolved_measure].dropna()
+                                avg_v = c.mean()
+                                median_v = c.median()
+                                pct_above = round(sum(1 for v in c if v > avg_v) / len(c) * 100, 1)
+                                try:
+                                    p75_v = c.quantile(0.75)
+                                    ai_insight = (
+                                        f"{kpi_label}: {display_val}. "
+                                        f"Mean {avg_v:,.2f} · Median {median_v:,.2f} · 75th pct {p75_v:,.2f}. "
+                                        f"{pct_above}% of records exceed the mean."
+                                    )
+                                except Exception:
+                                    ai_insight = (
+                                        f"{kpi_label}: {display_val} (mean {avg_v:,.2f}). "
+                                        f"{pct_above}% of records exceed the average."
+                                    )
+                            else:
+                                ai_insight = (
+                                    f"{kpi_label}: {display_val} across {profile.total_rows:,} records."
                                 )
                         except Exception:
                             pass
                 else:
-                    config = {"kpi": "Total Records", "value": f"{profile.total_rows:,}", "kpi_meta": {"icon": "people", "format": "count"}, "layout": {"size": size}}
+                    config = {
+                        "kpi": "Total Records",
+                        "value": f"{profile.total_rows:,}",
+                        "kpi_meta": {"icon": "people", "format": "count", "prefix": "", "suffix": ""},
+                        "layout": {"size": size},
+                    }
                     if not ai_insight:
-                        ai_insight = f"This dashboard analyzes {profile.total_rows:,} records across {profile.total_columns} dimensions."
+                        ai_insight = (
+                            f"This dashboard analyzes {profile.total_rows:,} records "
+                            f"across {profile.total_columns} dimensions."
+                        )
 
             # ── Bar chart ─────────────────────────────────────────────────────
             elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
@@ -515,7 +566,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
         # Attach AI insight
         if ai_insight:
-            config["ai_insight"] = ai_insight[:400]
+            config["ai_insight"] = ai_insight[:600]
 
         # Attach builder metadata for filter rebuilding
         config["builder"] = {
