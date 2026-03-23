@@ -2132,7 +2132,7 @@ def dashboard_ai_clean_dataset(request: HttpRequest, dashboard_id) -> JsonRespon
 
     _, report = ai_clean_dataframe(df)
     from django.conf import settings
-    report["ai_powered"] = bool(getattr(settings, "DEEPSEEK_API_KEY", ""))
+    report["ai_powered"] = bool(getattr(settings, "OPENAI_API_KEY", ""))
     return JsonResponse({"success": True, "report": report})
 
 
@@ -2217,7 +2217,7 @@ def dashboard_ai_enhance_presentation_text(request: HttpRequest, dashboard_id) -
 
 @login_required
 def dashboard_ai_generate_html(request: HttpRequest, dashboard_id) -> JsonResponse:
-    """Generate a complete standalone HTML dashboard using DeepSeek chat (V3).
+    """Generate a complete standalone HTML dashboard using OpenAI.
 
     POST /dashboards/<uuid>/ai/generate-html/
     Returns JSON: {"success": true, "html": "<full html string>"}
@@ -2240,7 +2240,7 @@ def dashboard_ai_generate_html(request: HttpRequest, dashboard_id) -> JsonRespon
 
     if html is None:
         return JsonResponse(
-            {"error": "HTML generation unavailable. Ensure DEEPSEEK_API_KEY is set."},
+            {"error": "HTML generation unavailable. Ensure OPENAI_API_KEY is set."},
             status=503,
         )
 
