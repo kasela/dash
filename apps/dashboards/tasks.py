@@ -270,9 +270,11 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
         PALETTES,
         _area_config, _bar_config, _doughnut_config, _hbar_config,
         _line_config, _pie_config, _radar_config, _scatter_config,
+        _multi_bar_config, _multi_line_config,
         _humanize_col, _detect_kpi_meta, _compute_kpi_trend,
         ai_analyze_chart,
     )
+    _ = (_multi_bar_config, _multi_line_config)
 
     if column_roles is None:
         column_roles = {}
@@ -316,6 +318,60 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             if col not in exclude and pd.api.types.is_numeric_dtype(df[col]):
                 return col
         return None
+
+    def _col_series(col_name: str):
+        """Return a 1-D series even when duplicate column names exist."""
+        sel = df.loc[:, col_name]
+        if isinstance(sel, pd.DataFrame):
+            return sel.iloc[:, 0]
+        return sel
+
+    def _numeric_series(col_name: str):
+        return pd.to_numeric(_col_series(col_name), errors="coerce")
+
+    def _get_role_agg(col_name: str, default: str = "sum") -> str:
+        role = (column_roles or {}).get(col_name, {}) if isinstance(column_roles, dict) else {}
+        agg = str(role.get("agg") or default).strip().lower()
+        return agg if agg in {"sum", "avg", "count", "nunique", "max", "min"} else default
+
+    def _smart_top_n(measure_col: str, dimension_col: str, n: int = 12, agg: str = "sum"):
+        """Aggregate measure by dimension with safe defaults and return top-n series."""
+        grouped = _numeric_series(measure_col).groupby(_col_series(dimension_col))
+        if agg == "avg":
+            series = grouped.mean()
+        elif agg == "count":
+            series = grouped.count()
+        elif agg == "max":
+            series = grouped.max()
+        elif agg == "min":
+            series = grouped.min()
+        else:
+            series = grouped.sum()
+        return series.nlargest(n)
+
+    def _build_month_year_period_frame(measure_col: str):
+        """If dataset has separate month + year columns, build a merged Jan-2025 period axis."""
+        month_col = next((str(c) for c in df.columns if "month" in str(c).lower()), None)
+        year_col = next((str(c) for c in df.columns if "year" in str(c).lower()), None)
+        if not month_col or not year_col:
+            return None
+        month_raw = df[month_col].astype(str).str.strip().str.lower()
+        month_map = {
+            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+            "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+            "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+        }
+        month_num = month_raw.map(month_map).fillna(pd.to_numeric(month_raw, errors="coerce"))
+        year_num = pd.to_numeric(df[year_col], errors="coerce")
+        period_dt = pd.to_datetime({"year": year_num, "month": month_num, "day": 1}, errors="coerce")
+        if int(period_dt.notna().sum()) < 3:
+            return None
+        return pd.DataFrame({
+            "_period": period_dt,
+            "_label": period_dt.dt.strftime("%b-%Y"),
+            "_measure": pd.to_numeric(df[measure_col], errors="coerce"),
+        })
 
     specs = []
     position = 1
@@ -525,7 +581,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Bar chart ─────────────────────────────────────────────────────
             elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(12)
+                top = _smart_top_n(measure, dimension, n=12, agg=_get_role_agg(measure, "sum"))
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _bar_config(labels, values, _humanize_col(measure), palette,
@@ -539,7 +595,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Horizontal bar ────────────────────────────────────────────────
             elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(12)
+                top = _smart_top_n(measure, dimension, n=12, agg=_get_role_agg(measure, "sum"))
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _hbar_config(labels, values, _humanize_col(measure), palette,
@@ -554,6 +610,21 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Line chart ────────────────────────────────────────────────────
             elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
+                merged_period = _build_month_year_period_frame(measure)
+                if merged_period is not None and ("month" in dimension.lower() or "year" in dimension.lower()):
+                    merged_period = merged_period.dropna(subset=["_period"]).sort_values("_period")
+                    trend_data = merged_period.groupby(merged_period["_period"].dt.to_period("M"))["_measure"].sum()
+                    labels = [str(p) for p in trend_data.index]
+                    values = [round(float(v), 2) for v in trend_data.values]
+                    config = _line_config(labels, values, _humanize_col(measure), palette,
+                                          x_label="Period", y_label=_humanize_col(measure))
+                    config["layout"] = {"size": size}
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("line", labels, values, title)
+                        except Exception:
+                            pass
+                    continue
                 try:
                     tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
                     tmp = tmp.dropna(subset=[dimension]).sort_values(dimension)
@@ -575,6 +646,21 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Area chart ────────────────────────────────────────────────────
             elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
                 tmp = df[[dimension, measure]].copy()
+                merged_period = _build_month_year_period_frame(measure)
+                if merged_period is not None and ("month" in dimension.lower() or "year" in dimension.lower()):
+                    merged_period = merged_period.dropna(subset=["_period"]).sort_values("_period")
+                    trend_data = merged_period.groupby(merged_period["_period"].dt.to_period("M"))["_measure"].sum()
+                    labels = [str(p) for p in trend_data.index]
+                    values = [round(float(v), 2) for v in trend_data.values]
+                    config = _area_config(labels, values, _humanize_col(measure), palette,
+                                          x_label="Period", y_label=_humanize_col(measure))
+                    config["layout"] = {"size": size}
+                    if not ai_insight and labels and values:
+                        try:
+                            ai_insight, _ = ai_analyze_chart("area", labels, values, title)
+                        except Exception:
+                            pass
+                    continue
                 try:
                     tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
                     tmp = tmp.dropna(subset=[dimension]).sort_values(dimension)
@@ -597,9 +683,9 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
                 resolved_meas_for_pie = measure if measure and measure in df.columns else None
                 vc = (
-                    pd.to_numeric(df[resolved_meas_for_pie], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                    _numeric_series(resolved_meas_for_pie).groupby(_col_series(dimension)).sum().nlargest(8)
                     if resolved_meas_for_pie
-                    else df[dimension].value_counts().head(8)
+                    else _col_series(dimension).value_counts().head(8)
                 )
                 labels = [str(l) for l in vc.index]
                 values = [round(float(v), 2) for v in vc.values]
@@ -638,7 +724,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Radar ─────────────────────────────────────────────────────────
             elif chart_type == "radar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(8)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _radar_config(labels, values, _humanize_col(measure), palette)
@@ -695,9 +781,9 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 from apps.datasets.services import _polararea_config
                 resolved_meas = measure if measure and measure in df.columns else None
                 vc = (
-                    pd.to_numeric(df[resolved_meas], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                    _numeric_series(resolved_meas).groupby(_col_series(dimension)).sum().nlargest(8)
                     if resolved_meas
-                    else df[dimension].value_counts().head(8)
+                    else _col_series(dimension).value_counts().head(8)
                 )
                 labels = [str(l) for l in vc.index]
                 values = [round(float(v), 2) for v in vc.values]
@@ -741,7 +827,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Funnel ────────────────────────────────────────────────────────
             elif chart_type == "funnel" and dimension and measure and dimension in df.columns and measure in df.columns:
                 from apps.datasets.services import _funnel_config
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(10)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(10)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _funnel_config(labels, values, _humanize_col(measure), palette)
@@ -776,7 +862,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Waterfall ─────────────────────────────────────────────────────
             elif chart_type == "waterfall" and dimension and measure and dimension in df.columns and measure in df.columns:
                 from apps.datasets.services import _waterfall_config
-                grouped = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().head(10)
+                grouped = _numeric_series(measure).groupby(_col_series(dimension)).sum().head(10)
                 labels = [str(l) for l in grouped.index]
                 values = [round(float(v), 2) for v in grouped.values]
                 config = _waterfall_config(labels, values, _humanize_col(measure), palette,
