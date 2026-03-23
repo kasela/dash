@@ -2646,6 +2646,68 @@ def ai_generate_dashboard_specs(
         except Exception:
             pass
 
+    field_profiles: list[dict] = []
+    for col in list(df.columns[:50]):
+        col_name = str(col)
+        try:
+            unique_count = int(df[col].nunique(dropna=True))
+            null_pct = round(float(df[col].isna().mean() * 100), 2)
+            dtype = str(df[col].dtype)
+        except Exception:
+            unique_count = 0
+            null_pct = 0.0
+            dtype = "unknown"
+        role_hint = "text"
+        if col_name in date_cols:
+            role_hint = "date"
+        elif col_name in profile.numeric_columns:
+            role_hint = "measure"
+        elif col_name in profile.categorical_columns:
+            role_hint = "dimension"
+        field_profiles.append({
+            "column": col_name,
+            "dtype": dtype,
+            "role_hint": role_hint,
+            "null_pct": null_pct,
+            "unique_count": unique_count,
+        })
+
+    grouping_blueprints: list[dict] = []
+    for dim in [str(c) for c in profile.categorical_columns[:8]]:
+        for meas in [str(c) for c in profile.numeric_columns[:5]]:
+            if dim in df.columns and meas in df.columns and dim != meas:
+                grouping_blueprints.append({
+                    "dimension": dim,
+                    "measure": meas,
+                    "agg": "sum",
+                    "top_n": 12,
+                    "question": f"How does {_humanize_col(meas)} vary across {_humanize_col(dim)}?",
+                })
+    grouping_blueprints = grouping_blueprints[:20]
+
+    derived_field_suggestions: list[dict] = []
+    if profile.numeric_columns:
+        top_num = str(profile.numeric_columns[0])
+        derived_field_suggestions.append({
+            "name": f"{top_num}_pct_of_total",
+            "formula": f"{top_num} / SUM({top_num})",
+            "usage": "share / contribution analysis (pie/doughnut/polararea)",
+        })
+    if len(profile.numeric_columns) >= 2:
+        n1 = str(profile.numeric_columns[0])
+        n2 = str(profile.numeric_columns[1])
+        derived_field_suggestions.append({
+            "name": f"{n1}_to_{n2}_ratio",
+            "formula": f"{n1} / NULLIF({n2}, 0)",
+            "usage": "efficiency / productivity KPI",
+        })
+    if date_cols:
+        d = str(date_cols[0])
+        derived_field_suggestions.extend([
+            {"name": f"{d}_year", "formula": f"YEAR({d})", "usage": "year-over-year trend"},
+            {"name": f"{d}_month", "formula": f"MONTH({d})", "usage": "monthly seasonality trend"},
+        ])
+
     date_ranges: dict = {}
     for col in date_cols[:3]:
         try:
@@ -2686,6 +2748,35 @@ def ai_generate_dashboard_specs(
     percentage_cols = [c for c, t in col_semantic_types.items() if t == "percentage"]
     boolean_cols = [c for c, t in col_semantic_types.items() if t == "boolean"]
     text_cols = [c for c, t in col_semantic_types.items() if t == "text"]
+    kpi_candidates_precomputed: list[dict] = []
+    for col in [str(c) for c in profile.numeric_columns[:20] if str(c) in df.columns]:
+        stats = sample_stats.get(col)
+        if not stats:
+            continue
+        semantic_type = col_semantic_types.get(col, "number")
+        preferred_agg = "avg" if semantic_type == "percentage" else "sum"
+        preferred_value = stats.get("mean") if preferred_agg == "avg" else stats.get("sum")
+        try:
+            score = abs(float(stats.get("sum", 0))) + abs(float(stats.get("max", 0)))
+        except Exception:
+            score = 0.0
+        kpi_candidates_precomputed.append({
+            "column": col,
+            "label": _humanize_col(col),
+            "semantic_type": semantic_type,
+            "preferred_agg": preferred_agg,
+            "preferred_value": preferred_value,
+            "mean": stats.get("mean"),
+            "median": stats.get("median"),
+            "p75": stats.get("p75"),
+            "skewness": stats.get("skewness"),
+            "score": round(float(score), 2),
+        })
+    kpi_candidates_precomputed = sorted(
+        kpi_candidates_precomputed,
+        key=lambda x: float(x.get("score", 0)),
+        reverse=True,
+    )[:8]
 
     payload = {
         "dataset_name": str(dataset_name or "").strip(),
@@ -2709,6 +2800,10 @@ def ai_generate_dashboard_specs(
         "percentage_columns": percentage_cols,
         "boolean_columns": boolean_cols,
         "text_columns": text_cols,
+        "precomputed_kpis": kpi_candidates_precomputed,
+        "field_profiles": field_profiles,
+        "grouping_blueprints": grouping_blueprints,
+        "derived_field_suggestions": derived_field_suggestions,
         # Plan-based chart type gating
         "user_plan": _plan_lower,
         "allowed_chart_types": allowed_chart_types,
@@ -2901,6 +2996,15 @@ def ai_generate_dashboard_specs(
                         "Verify each column name character-by-character against the list before writing it.\n"
                         "NEVER use text or id columns as chart dimensions or measures.\n\n"
 
+                        "═══ PREPROCESSING + DERIVED FIELDS (MANDATORY THINKING STEP) ═══\n"
+                        "Before designing widgets, inspect 'field_profiles', 'grouping_blueprints', and "
+                        "'derived_field_suggestions' from payload.\n"
+                        "1) Identify best dimensions/measures and reject weak noisy fields.\n"
+                        "2) Define grouped calculations first (top-N, trend, share, variance, ratio).\n"
+                        "3) Use derived fields conceptually in KPI/chart logic when they improve decision quality.\n"
+                        "4) Prioritize actionable comparisons: target vs actual, top vs bottom segments, "
+                        "growth vs decline, concentration risk, outlier detection.\n\n"
+
                         "═══ UNIQUENESS RULE (CRITICAL) ═══\n"
                         "EVERY chart MUST be unique — no two charts can use the same chart_type + x + y combination.\n"
                         "Each chart visualizes a DIFFERENT business question or data relationship.\n"
@@ -2919,6 +3023,8 @@ def ai_generate_dashboard_specs(
                         "BAD: 'Data Table', 'Records', 'Details'.\n\n"
 
                         "═══ KPI RULES ═══\n"
+                        "FIRST: review 'precomputed_kpis' in payload and use them as the primary KPI source.\n"
+                        "Each KPI should reference those precomputed metric columns unless there is a strong reason not to.\n"
                         "Generate 5-7 DISTINCT KPIs — each serving a unique analytical purpose:\n"
                         "  1. Total volume KPI: primary currency/financial metric (agg=sum) — e.g. 'Total Revenue'\n"
                         "  2. Average benchmark KPI: per-unit or rate metric (agg=avg) — e.g. 'Avg Order Value'\n"
@@ -2963,6 +3069,12 @@ def ai_generate_dashboard_specs(
                         "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
                         "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
                         "The bottom 4 categories combined account for only 12% — consolidation opportunity.'\n\n"
+
+                        "═══ LAYOUT QUALITY (PROFESSIONAL DASHBOARD COMPOSITION) ═══\n"
+                        "Order widgets for executive reading flow:\n"
+                        "1) KPI block (top row), 2) trends/comparisons (middle), 3) diagnostics/detail tables (bottom).\n"
+                        "Use size intentionally: high-priority charts as lg, supporting charts as md.\n"
+                        "Dashboard must feel boardroom-grade and decision-oriented, not generic BI clutter.\n\n"
 
                         "═══ SIZE RULES ═══\n"
                         "kpi=sm, line/area/waterfall/mixed=lg, bar/hbar/funnel=md, "
@@ -3061,6 +3173,32 @@ def ai_generate_dashboard_specs(
                 if s.get("chart_type") in ("kpi", "heading", "text_canvas", "table") or
                 s.get("chart_type") in allowed_set
             ]
+            # Ensure KPI-first planning: if AI under-produces KPIs, backfill from precomputed KPI candidates.
+            current_kpi_count = sum(1 for s in specs if s.get("chart_type") == "kpi")
+            if current_kpi_count < 4 and kpi_candidates_precomputed:
+                used_measures = {
+                    str((s.get("measures") or [""])[0]).strip()
+                    for s in specs
+                    if s.get("chart_type") == "kpi" and (s.get("measures") or [])
+                }
+                for cand in kpi_candidates_precomputed:
+                    col = str(cand.get("column") or "").strip()
+                    if not col or col in used_measures:
+                        continue
+                    specs.append({
+                        "title": str(cand.get("label") or _humanize_col(col)),
+                        "chart_type": "kpi",
+                        "dimension": None,
+                        "measures": [col],
+                        "size": "sm",
+                        "palette": "indigo",
+                        "ai_insight": "",
+                        "_agg": str(cand.get("preferred_agg") or "sum"),
+                    })
+                    used_measures.add(col)
+                    current_kpi_count += 1
+                    if current_kpi_count >= 4:
+                        break
             return specs
         logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
@@ -3233,27 +3371,22 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\n"
         "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
         "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
-        "3. Excel upload with SheetJS: user uploads .xlsx/.xls/.csv; parse and load data dynamically.\n"
-        "4. Column mapping: use flexible case-insensitive keyword matching on the exact column names from the payload.\n"
-        "5. KPI cards: Total Target, Total Achievement, Achievement %, Average Achievement Rate.\n"
-        "6. Interactive filter dropdowns for key categorical columns (Province, Branch, Regional Manager, Cluster, etc.).\n"
-        "7. Charts (all Chart.js, all data-driven from uploaded file):\n"
-        "   - Grouped bar: Top 5 branches — Achievement vs Target\n"
-        "   - Horizontal bar: Province-wise achievement rate %\n"
-        "   - Doughnut: Achievement % share by Regional Manager\n"
-        "   - Radar: Achievement % by Cluster\n"
-        "   - Line chart (if date/month/year columns exist): monthly trend of Achievement vs Target\n"
-        "8. Scrollable data table showing all filtered rows with a % Achieved badge column.\n"
-        "9. Modern design: glassmorphism cards, gradient header, smooth hover transitions, responsive CSS grid.\n"
-        "10. Colors: indigo/blue primary, emerald for achievement, rose for shortfall, amber for neutral.\n"
-        "11. All filters update KPIs, all charts, and the table simultaneously.\n"
-        "12. 'Download Dashboard' button that saves the page HTML as a .html file.\n"
-        "13. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
-        "14. Currency: LKR prefix with locale comma formatting (e.g. LKR 15,100,000).\n"
-        "15. Column mapping keywords to detect from column names:\n"
-        "    Province: 'province' | Branch: 'branch' | Category: 'category'\n"
-        "    Regional Manager: 'regional manager' or 'rm' | Cluster: 'cluster'\n"
-        "    Month: 'month' | Year: 'year' | Target: 'target' | Achievement: 'achievement'\n"
+        "3. Data ingestion: user uploads .xlsx/.xls/.csv; parse with SheetJS and build all visuals dynamically.\n"
+        "4. FIRST PHASE (mandatory): identify data types + field roles from payload columns (date, dimension, measure, id/text).\n"
+        "5. SECOND PHASE (mandatory): compute grouped datasets + derived metrics before rendering widgets:\n"
+        "   - totals, averages, counts, unique counts, shares %, variance, growth/trend rates.\n"
+        "6. THIRD PHASE (mandatory): design dashboard items from these computed datasets, not raw rows.\n"
+        "7. KPI design: create 5-8 high-value KPI cards with clear business labels and contextual micro-insights.\n"
+        "8. Chart design: choose chart types based on data semantics (trend, comparison, composition, correlation, distribution).\n"
+        "9. Include a professional chart pool (where data supports): line, area, bar, hbar, doughnut, pie, radar, scatter, bubble, mixed, funnel, gauge, waterfall.\n"
+        "10. Auto-assign chart size + order for executive storytelling: top=KPIs, middle=primary trends/comparisons, lower=diagnostics/table.\n"
+        "11. Interactive filters for top dimensions; all filters must update KPIs, charts, and table together.\n"
+        "12. Include both buttons: (a) Download Dashboard HTML, (b) Full Screen toggle for the dashboard canvas/page.\n"
+        "13. Build a modern UI: glassmorphism cards, gradient header, responsive CSS grid, smooth transitions.\n"
+        "14. Use color semantics: indigo/blue primary, emerald positive, rose negative, amber neutral.\n"
+        "15. Add a scrollable detailed table with calculated helper columns (e.g., share %, variance %) when relevant.\n"
+        "16. Focus on decision-making insights: highlight outliers, concentration risk, growth/decline pockets, and actionable comparisons.\n"
+        "17. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
     )
 
     user_message = (
