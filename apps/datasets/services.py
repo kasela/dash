@@ -3106,6 +3106,53 @@ def ai_generate_dashboard_specs(
                 "size": "md",
                 "palette": "vibrant",
                 "ai_insight": "",
+                })
+
+        # Expand base chart pool coverage for more diverse dashboards.
+        if "hbar" in allowed_chart_types and "hbar" not in existing_types and (default_rank_category or default_category) and primary_numeric:
+            repaired.append({
+                "title": f"Top {_humanize_col(default_rank_category or default_category)} by {_humanize_col(primary_numeric)}",
+                "chart_type": "hbar",
+                "dimension": default_rank_category or default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "amber",
+                "ai_insight": "",
+            })
+
+        if "doughnut" in allowed_chart_types and "doughnut" not in existing_types and default_category and primary_numeric:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Share by {_humanize_col(default_category)}",
+                "chart_type": "doughnut",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "vibrant",
+                "ai_insight": "",
+            })
+
+        if "scatter" in allowed_chart_types and "scatter" not in existing_types and len(numeric_columns) >= 2:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Relationship",
+                "chart_type": "scatter",
+                "dimension": "",
+                "measures": [primary_numeric, secondary_numeric],
+                "x_measure": primary_numeric,
+                "y_measure": secondary_numeric,
+                "size": "md",
+                "palette": "sunset",
+                "ai_insight": "",
+            })
+
+        if "radar" in allowed_chart_types and "radar" not in existing_types and default_category and primary_numeric:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Pattern Across {_humanize_col(default_category)}",
+                "chart_type": "radar",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "ocean",
+                "ai_insight": "",
             })
 
         if not has_table:
