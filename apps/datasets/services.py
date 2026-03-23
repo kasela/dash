@@ -2661,7 +2661,7 @@ def ai_generate_dashboard_specs(
 
     summary_rows = []
     try:
-        summary_rows = df.head(8).fillna("").astype(str).to_dict(orient="records")
+        summary_rows = df.head(8).fillna("").infer_objects(copy=False).astype(str).to_dict(orient="records")
     except Exception:
         summary_rows = []
 
@@ -3104,7 +3104,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
 
     sample_rows: list = []
     try:
-        sample_rows = df.head(3).fillna("").astype(str).to_dict(orient="records")
+        sample_rows = df.head(3).fillna("").infer_objects(copy=False).astype(str).to_dict(orient="records")
     except Exception:
         pass
 
