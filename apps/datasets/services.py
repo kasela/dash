@@ -2559,8 +2559,8 @@ def ai_generate_dashboard_specs(
     Narrative and section headings are injected at appropriate positions.
 
     Args:
-        plan: User subscription plan ('free', 'pro', 'enterprise'). Controls available chart types.
-              Free: basic charts only. Pro/Enterprise: all advanced chart types.
+        plan: User subscription plan ('free', 'light', 'plus', 'pro', 'enterprise').
+              Controls chart depth, advanced visuals, and insight complexity.
         column_roles: Pre-computed column role info with data_type for smarter chart selection.
     """
     import json as _json
@@ -2573,12 +2573,62 @@ def ai_generate_dashboard_specs(
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
 
-    # Determine allowed chart types based on user plan
+    # Determine allowed chart types + planning depth by user plan
     _plan_lower = str(plan).lower()
-    _is_pro = _plan_lower in ("pro", "enterprise")
     _FREE_CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"]
-    _PRO_CHART_TYPES_LIST = ["bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"]
-    allowed_chart_types = _FREE_CHART_TYPES + (_PRO_CHART_TYPES_LIST if _is_pro else [])
+    _LIGHT_PLUS_CHART_TYPES = ["mixed", "gauge"]
+    _PLUS_CHART_TYPES = ["bubble", "funnel", "waterfall"]
+    _PRO_CHART_TYPES = ["polararea"]
+
+    plan_spec = {
+        "free": {
+            "label": "FREE",
+            "extra_chart_types": [],
+            "kpi_range": "4-5",
+            "chart_range": "6-7",
+            "insight_depth": "foundational",
+            "focus": "clear starter dashboard with essential trends and breakdowns",
+            "advanced_enabled": False,
+        },
+        "light": {
+            "label": "LIGHT",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES,
+            "kpi_range": "5-6",
+            "chart_range": "7-9",
+            "insight_depth": "practical",
+            "focus": "more diagnostic analysis with one or two advanced visuals when useful",
+            "advanced_enabled": True,
+        },
+        "plus": {
+            "label": "PLUS",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "9-11",
+            "insight_depth": "advanced",
+            "focus": "multi-angle analysis with richer segmentation, variance and relationship views",
+            "advanced_enabled": True,
+        },
+        "pro": {
+            "label": "PRO",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+        },
+        "enterprise": {
+            "label": "ENTERPRISE",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+        },
+    }
+    selected_plan = plan_spec.get(_plan_lower, plan_spec["free"])
+    allowed_chart_types = _FREE_CHART_TYPES + selected_plan["extra_chart_types"]
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
     # Also detect date columns by semantic type
@@ -2715,6 +2765,14 @@ def ai_generate_dashboard_specs(
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
         "mode": mode,
+        "plan_profile": {
+            "plan": _plan_lower,
+            "insight_depth": selected_plan["insight_depth"],
+            "focus": selected_plan["focus"],
+            "kpi_range": selected_plan["kpi_range"],
+            "chart_range": selected_plan["chart_range"],
+            "advanced_chart_enabled": selected_plan["advanced_enabled"],
+        },
     }
 
     def _normalize_plan_to_specs(plan: object) -> list[dict]:
@@ -2846,19 +2904,24 @@ def ai_generate_dashboard_specs(
 
         return specs
 
-    # Build plan-specific instruction for chart types
+    # Build plan-specific instruction for chart types and dashboard sophistication
+    _advanced_chart_list = _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES
+    _advanced_chart_text = ", ".join(_advanced_chart_list)
     plan_chart_instruction = (
-        f"User plan: {_plan_lower.upper()}. "
+        f"User plan: {selected_plan['label']}. "
         f"ONLY use chart types from this list: {allowed_chart_types}. "
+        f"Target KPI range: {selected_plan['kpi_range']}. "
+        f"Target chart range: {selected_plan['chart_range']}. "
+        f"Insight depth: {selected_plan['insight_depth']}.\n"
+        f"Plan focus: {selected_plan['focus']}\n"
         + (
-            "Advanced charts available (bubble, polararea, mixed, funnel, gauge, waterfall) — "
-            "use them STRATEGICALLY where they add unique analytical value. "
+            "Advanced charts available for this plan — use them only when data context clearly fits: "
             "funnel → stage/conversion data, gauge → single KPI vs target, "
             "waterfall → period-over-period variance, bubble → 3-variable relationship, "
             "polararea → category comparison, mixed → bar+line dual-axis overlay."
-            if _is_pro else
-            "Free plan: use only bar, line, area, pie, doughnut, hbar, scatter, radar, table, kpi. "
-            "NEVER suggest bubble, polararea, mixed, funnel, gauge, or waterfall."
+            if selected_plan["advanced_enabled"] else
+            f"This plan does NOT include advanced charts ({_advanced_chart_text}). "
+            "Never suggest unavailable advanced chart types."
         )
     )
 
@@ -2919,7 +2982,7 @@ def ai_generate_dashboard_specs(
                         "BAD: 'Data Table', 'Records', 'Details'.\n\n"
 
                         "═══ KPI RULES ═══\n"
-                        "Generate 5-7 DISTINCT KPIs — each serving a unique analytical purpose:\n"
+                        f"Generate {selected_plan['kpi_range']} DISTINCT KPIs — each serving a unique analytical purpose:\n"
                         "  1. Total volume KPI: primary currency/financial metric (agg=sum) — e.g. 'Total Revenue'\n"
                         "  2. Average benchmark KPI: per-unit or rate metric (agg=avg) — e.g. 'Avg Order Value'\n"
                         "  3. Entity count KPI: unique entities for scope (agg=nunique) — e.g. 'Active Customers'\n"
@@ -2941,7 +3004,7 @@ def ai_generate_dashboard_specs(
                         "'change': benchmark string or null.\n\n"
 
                         "═══ CHART SELECTION RULES ═══\n"
-                        "Generate 7-12 charts. ALL must be UNIQUE (different chart_type OR different x+y). "
+                        f"Generate {selected_plan['chart_range']} charts. ALL must be UNIQUE (different chart_type OR different x+y). "
                         "Cover ALL these analytical patterns:\n"
                         "  • Date column present → MUST include: line (primary metric over time) + "
                         "area (secondary metric or cumulative), both size=lg\n"
