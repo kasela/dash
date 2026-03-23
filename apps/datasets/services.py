@@ -3117,7 +3117,6 @@ def ai_generate_dashboard_specs(
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             # Post-process: remove chart types not allowed for user's plan
-            _pro_set = set(_PRO_CHART_TYPES_LIST)
             allowed_set = set(allowed_chart_types)
             specs = [
                 s for s in specs
