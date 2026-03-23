@@ -2614,6 +2614,145 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     return None
 
 
+def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", dataset_name: str = "") -> str | None:
+    """Generate a complete, standalone HTML dashboard file using DeepSeek chat (V3).
+
+    deepseek-chat is used unconditionally here — it is far superior to deepseek-reasoner
+    for creative HTML/CSS/JS code generation (V3 matches web-chat quality).
+    Returns a full HTML string ready to save/serve as a .html file, or None on failure.
+    """
+    import json as _json
+    import re as _re
+    from django.conf import settings
+
+    api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return None
+
+    try:
+        import importlib.util
+        if importlib.util.find_spec("openai") is None:
+            return None
+        openai_module = __import__("openai")
+    except Exception:
+        return None
+
+    client = openai_module.OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+    # Build rich data context for the prompt
+    columns = [str(c) for c in df.columns[:30]]
+    numeric_cols = [str(c) for c in profile.numeric_columns[:10]]
+    categorical_cols = [str(c) for c in profile.categorical_columns[:15]]
+    date_cols = [c for c in columns if any(k in c.lower() for k in ["date", "month", "year", "period", "quarter"])]
+
+    sample_stats: dict = {}
+    for col in numeric_cols:
+        try:
+            s = df[col].dropna()
+            sample_stats[col] = {
+                "sum": round(float(s.sum()), 2),
+                "mean": round(float(s.mean()), 2),
+                "min": round(float(s.min()), 2),
+                "max": round(float(s.max()), 2),
+            }
+        except Exception:
+            pass
+
+    cat_top: dict = {}
+    for col in categorical_cols[:10]:
+        try:
+            top = df[col].value_counts().head(8)
+            cat_top[col] = {str(k): int(v) for k, v in top.items()}
+        except Exception:
+            pass
+
+    sample_rows: list = []
+    try:
+        sample_rows = df.head(5).fillna("").astype(str).to_dict(orient="records")
+    except Exception:
+        pass
+
+    payload = {
+        "dataset_name": str(dataset_name or "Sales Data").strip(),
+        "total_rows": int(profile.total_rows),
+        "columns": columns,
+        "numeric_columns": numeric_cols,
+        "categorical_columns": categorical_cols,
+        "date_columns": date_cols,
+        "sample_rows": sample_rows,
+        "numeric_stats": sample_stats,
+        "categorical_top_values": cat_top,
+    }
+
+    system_prompt = (
+        "You are a world-class front-end developer and data visualization expert.\n"
+        "Your task: generate ONE complete, self-contained HTML file for an advanced interactive dashboard.\n\n"
+        "STRICT REQUIREMENTS:\n"
+        "1. Return ONLY raw HTML — no markdown, no code fences, no explanation. Start with <!DOCTYPE html>.\n"
+        "2. Use these CDNs (exact versions):\n"
+        "   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\n"
+        "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
+        "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
+        "3. Excel upload with SheetJS: user uploads .xlsx/.xls/.csv; parse and load data dynamically.\n"
+        "4. Column mapping: use flexible case-insensitive keyword matching on the exact column names from the payload.\n"
+        "5. KPI cards: Total Target, Total Achievement, Achievement %, Average Achievement Rate.\n"
+        "6. Interactive filter dropdowns for key categorical columns (Province, Branch, Regional Manager, Cluster, etc.).\n"
+        "7. Charts (all Chart.js, all data-driven from uploaded file):\n"
+        "   - Grouped bar: Top 5 branches — Achievement vs Target\n"
+        "   - Horizontal bar: Province-wise achievement rate %\n"
+        "   - Doughnut: Achievement % share by Regional Manager\n"
+        "   - Radar: Achievement % by Cluster\n"
+        "   - Line chart (if date/month/year columns exist): monthly trend of Achievement vs Target\n"
+        "8. Scrollable data table showing all filtered rows with a % Achieved badge column.\n"
+        "9. Modern design: glassmorphism cards, gradient header, smooth hover transitions, responsive CSS grid.\n"
+        "10. Colors: indigo/blue primary, emerald for achievement, rose for shortfall, amber for neutral.\n"
+        "11. All filters update KPIs, all charts, and the table simultaneously.\n"
+        "12. 'Download Dashboard' button that saves the page HTML as a .html file.\n"
+        "13. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
+        "14. Currency: LKR prefix with locale comma formatting (e.g. LKR 15,100,000).\n"
+        "15. Column mapping keywords to detect from column names:\n"
+        "    Province: 'province' | Branch: 'branch' | Category: 'category'\n"
+        "    Regional Manager: 'regional manager' or 'rm' | Cluster: 'cluster'\n"
+        "    Month: 'month' | Year: 'year' | Target: 'target' | Achievement: 'achievement'\n"
+    )
+
+    user_message = (
+        f"Dataset context (use for column mapping and accurate defaults):\n"
+        f"{_json.dumps(payload, indent=2, default=str)}\n\n"
+        f"Generate the complete standalone HTML dashboard now. "
+        f"Output ONLY raw HTML starting with <!DOCTYPE html>."
+    )
+
+    try:
+        html_parts: list[str] = []
+        stream = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.25,
+            stream=True,
+            timeout=120,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                html_parts.append(delta)
+
+        html = "".join(html_parts).strip()
+        # Strip markdown code fences if the model ignores the instruction
+        html = _re.sub(r"^```(?:html)?\s*", "", html, flags=_re.IGNORECASE)
+        html = _re.sub(r"\s*```$", "", html).strip()
+
+        if html.lower().startswith("<!doctype") or html.lower().startswith("<html"):
+            return html
+    except Exception:
+        pass
+
+    return None
+
+
 def generate_widget_specs_from_version(dataset_version) -> list[dict]:
     """Read the saved dataset file and generate real chart widget specs."""
     from pathlib import Path
