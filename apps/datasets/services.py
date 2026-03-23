@@ -660,16 +660,23 @@ _LEGEND_OPTS = {
 }
 
 
-def _scale_opts(x_label: str = "", y_label: str = "") -> dict:
+def _scale_opts(x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
+    tick_opts: dict = {"color": "#94a3b8", "font": {"size": 11}, "maxRotation": 35}
+    y_tick_opts: dict = {"color": "#94a3b8", "font": {"size": 11}}
+    if large_num_fmt:
+        # Signal to frontend JS to inject large-number tick formatter
+        tick_opts["_largeNumFmt"] = True
+        y_tick_opts["_largeNumFmt"] = True
     x = {
         "grid": {"display": False},
         "border": {"display": False},
-        "ticks": {"color": "#94a3b8", "font": {"size": 11}, "maxRotation": 35},
+        "ticks": tick_opts,
     }
     y = {
-        "grid": {"color": "rgba(148,163,184,0.12)", "drawBorder": False},
+        "grid": {"color": "rgba(148,163,184,0.10)", "drawBorder": False},
         "border": {"display": False, "dash": [4, 4]},
-        "ticks": {"color": "#94a3b8", "font": {"size": 11}},
+        "ticks": y_tick_opts,
+        "beginAtZero": True,
     }
     if x_label:
         x["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}, "padding": {"top": 6}}
@@ -822,8 +829,10 @@ def apply_df_filters(df: pd.DataFrame, filters: list) -> pd.DataFrame:
 def _bar_config(labels: list, values: list, label: str, palette: str = "vibrant",
                 x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    cfg = {
         "type": "bar",
         "data": {
             "labels": labels,
@@ -848,27 +857,36 @@ def _bar_config(labels: list, values: list, label: str, palette: str = "vibrant"
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo",
-                      x_label: str = "", y_label: str = "") -> dict:
-    """Multi-series bar chart. datasets = [{"label": str, "data": list}, ...]"""
+                      x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
+    """Multi-series grouped bar chart. datasets = [{"label": str, "data": list}, ...]"""
     chart_datasets = []
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": _humanize_col(ds["label"]),
+            "label": _humanize_col(ds["label"]) if "_" in ds["label"] or ds["label"].islower() else ds["label"],
             "data": ds["data"],
-            "backgroundColor": color + "dd",
+            "backgroundColor": color + "cc",
             "borderColor": color,
-            "borderWidth": 1,
-            "borderRadius": 6,
+            "borderWidth": 1.5,
+            "borderRadius": 5,
             "borderSkipped": False,
             "hoverBackgroundColor": color,
+            "hoverBorderWidth": 0,
+            "barPercentage": 0.85,
+            "categoryPercentage": 0.75,
         })
+    # Compute if large numbers present
+    all_vals = [v for ds in datasets for v in (ds.get("data") or []) if isinstance(v, (int, float))]
+    _large = large_num_fmt or (bool(all_vals) and max(abs(v) for v in all_vals) >= 10_000)
     return {
         "type": "bar",
         "data": {"labels": labels, "datasets": chart_datasets},
@@ -880,8 +898,9 @@ def _multi_bar_config(labels: list, datasets: list[dict], palette: str = "indigo
                 "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
         },
+        **({"_large_num_fmt": True} if _large else {}),
     }
 
 
@@ -889,8 +908,10 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, 1)
     border = colors[0]
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    cfg = {
         "type": "line",
         "data": {
             "labels": labels,
@@ -898,7 +919,7 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                 "label": human_label,
                 "data": values,
                 "borderColor": border,
-                "backgroundColor": border + "22",
+                "backgroundColor": border + "20",
                 "tension": 0.42,
                 "fill": False,
                 "pointRadius": 4,
@@ -918,23 +939,26 @@ def _line_config(labels: list, values: list, label: str, palette: str = "aurora"
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
             "interaction": {"mode": "index", "intersect": False},
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indigo",
-                       x_label: str = "", y_label: str = "") -> dict:
+                       x_label: str = "", y_label: str = "", large_num_fmt: bool = False) -> dict:
     chart_datasets = []
     for i, ds in enumerate(datasets):
         color = _MULTI_COLORS[i % len(_MULTI_COLORS)]
         chart_datasets.append({
-            "label": _humanize_col(ds["label"]),
+            "label": _humanize_col(ds["label"]) if "_" in ds["label"] or ds["label"].islower() else ds["label"],
             "data": ds["data"],
             "borderColor": color,
-            "backgroundColor": color + "18",
-            "tension": 0.45,
+            "backgroundColor": color + "15",
+            "tension": 0.42,
             "fill": False,
             "pointRadius": 4,
             "pointHoverRadius": 7,
@@ -944,6 +968,8 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
             "borderWidth": 2.5,
             "spanGaps": True,
         })
+    all_vals = [v for ds in datasets for v in (ds.get("data") or []) if isinstance(v, (int, float))]
+    _large = large_num_fmt or (bool(all_vals) and max(abs(v) for v in all_vals) >= 10_000)
     return {
         "type": "line",
         "data": {"labels": labels, "datasets": chart_datasets},
@@ -955,9 +981,10 @@ def _multi_line_config(labels: list, datasets: list[dict], palette: str = "indig
                 "legend": _LEGEND_OPTS,
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": _scale_opts(x_label, y_label, large_num_fmt=_large),
             "interaction": {"mode": "index", "intersect": False},
         },
+        **({"_large_num_fmt": True} if _large else {}),
     }
 
 
@@ -1087,8 +1114,26 @@ def _doughnut_config(labels: list, values: list, palette: str = "candy") -> dict
 def _hbar_config(labels: list, values: list, label: str, palette: str = "tropical",
                  x_label: str = "", y_label: str = "") -> dict:
     colors = _resolve_palette(palette, len(labels))
-    human_label = _humanize_col(label)
-    return {
+    human_label = _humanize_col(label) if "_" in label or label.islower() else label
+    num_vals = [v for v in values if isinstance(v, (int, float))]
+    _large = bool(num_vals) and max(abs(v) for v in num_vals) >= 10_000
+    # For hbar, x is the value axis and y is the category axis
+    x_scale = {
+        "grid": {"color": "rgba(148,163,184,0.10)", "drawBorder": False},
+        "border": {"display": False},
+        "ticks": {"color": "#94a3b8", "font": {"size": 11}, **({"_largeNumFmt": True} if _large else {})},
+        "beginAtZero": True,
+    }
+    y_scale = {
+        "grid": {"display": False},
+        "border": {"display": False},
+        "ticks": {"color": "#475569", "font": {"size": 11, "weight": "500"}},
+    }
+    if x_label:
+        x_scale["title"] = {"display": True, "text": x_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}}
+    if y_label:
+        y_scale["title"] = {"display": True, "text": y_label, "color": "#64748b", "font": {"size": 11, "weight": "600"}}
+    cfg = {
         "type": "bar",
         "data": {
             "labels": labels,
@@ -1114,9 +1159,12 @@ def _hbar_config(labels: list, values: list, label: str, palette: str = "tropica
                 "legend": {"display": False},
                 "tooltip": _TOOLTIP_OPTS,
             },
-            "scales": _scale_opts(x_label, y_label),
+            "scales": {"x": x_scale, "y": y_scale},
         },
     }
+    if _large:
+        cfg["_large_num_fmt"] = True
+    return cfg
 
 
 def _scatter_config(x_values: list, y_values: list, x_label: str = "", y_label: str = "",
@@ -1473,6 +1521,74 @@ def _get_ai_client():
     return None, None
 
 
+def _get_ai_client_for_task(task: str = "general"):
+    """Return (client, model) with provider preference based on task intent.
+
+    task='analysis' -> DeepSeek Reasoner first (brain-heavy analysis).
+    task='design'   -> OpenAI first (UI/chart/KPI design and presentation quality).
+    """
+    import importlib.util
+    from django.conf import settings
+
+    if importlib.util.find_spec("openai") is None:
+        return None, None
+    openai_module = __import__("openai")
+
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    openai_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
+    gemini_key = str(getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+
+    if task == "analysis":
+        if deepseek_key:
+            model = (
+                str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
+                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
+            )
+            client = openai_module.OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+            )
+            return client, model
+        if openai_key:
+            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
+        if gemini_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                ),
+                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
+            )
+        return None, None
+
+    if task == "design":
+        if openai_key:
+            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
+        if deepseek_key:
+            model = (
+                str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip()
+                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
+            )
+            client = openai_module.OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+            )
+            return client, model
+        if gemini_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                ),
+                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
+            )
+        return None, None
+
+    return _get_ai_client()
+
+
 def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     """AI-powered column role detection: classifies each column as measure/dimension/date/id.
 
@@ -1500,7 +1616,7 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     # Incorporate heuristic column types for richer context
     heuristic_types = profile.column_types or detect_column_types(df)
@@ -1692,7 +1808,7 @@ def ai_generate_comprehensive_insights(
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     # Build rich statistics context including quartiles and distribution shape
     numeric_stats: dict = {}
@@ -1920,7 +2036,7 @@ def ai_generate_executive_summary(
         "generated_at": generated_at,
     }
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     if client is None:
         # Heuristic fallback findings
         findings = []
@@ -2054,7 +2170,7 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "outliers_capped": {},
     }
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     cleaning_plan: list[dict] = []
 
     if client is not None:
@@ -2240,7 +2356,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     if client is not None:
         # Include sample values per categorical column for better AI context
@@ -2352,7 +2468,7 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
     """Generate AI-powered analysis text for a chart. Returns (insight_text, is_ai_powered)."""
     import json as _json
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     if client is None:
         return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
@@ -2559,26 +2675,82 @@ def ai_generate_dashboard_specs(
     Narrative and section headings are injected at appropriate positions.
 
     Args:
-        plan: User subscription plan ('free', 'pro', 'enterprise'). Controls available chart types.
-              Free: basic charts only. Pro/Enterprise: all advanced chart types.
+        plan: User subscription plan ('free', 'light', 'plus', 'pro', 'enterprise').
+              Controls chart depth, advanced visuals, and insight complexity.
         column_roles: Pre-computed column role info with data_type for smarter chart selection.
     """
     import json as _json
     import re as _re
     from django.conf import settings
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("design")
     if client is None:
         return None
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
+    planning_model = model
 
-    # Determine allowed chart types based on user plan
+    # Determine allowed chart types + planning depth by user plan
     _plan_lower = str(plan).lower()
-    _is_pro = _plan_lower in ("pro", "enterprise")
     _FREE_CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"]
-    _PRO_CHART_TYPES_LIST = ["bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"]
-    allowed_chart_types = _FREE_CHART_TYPES + (_PRO_CHART_TYPES_LIST if _is_pro else [])
+    _LIGHT_PLUS_CHART_TYPES = ["mixed", "gauge"]
+    _PLUS_CHART_TYPES = ["bubble", "funnel", "waterfall"]
+    _PRO_CHART_TYPES = ["polararea"]
+
+    plan_spec = {
+        "free": {
+            "label": "FREE",
+            "extra_chart_types": [],
+            "kpi_range": "4-5",
+            "chart_range": "6-7",
+            "insight_depth": "foundational",
+            "focus": "clear starter dashboard with essential trends and breakdowns",
+            "advanced_enabled": False,
+            "advanced_target": "0",
+        },
+        "light": {
+            "label": "LIGHT",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES,
+            "kpi_range": "5-6",
+            "chart_range": "7-9",
+            "insight_depth": "practical",
+            "focus": "more diagnostic analysis with one or two advanced visuals when useful",
+            "advanced_enabled": True,
+            "advanced_target": "1-2",
+        },
+        "plus": {
+            "label": "PLUS",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "9-11",
+            "insight_depth": "advanced",
+            "focus": "multi-angle analysis with richer segmentation, variance and relationship views",
+            "advanced_enabled": True,
+            "advanced_target": "2-3",
+        },
+        "pro": {
+            "label": "PRO",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+            "advanced_target": "3-5",
+        },
+        "enterprise": {
+            "label": "ENTERPRISE",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+            "advanced_target": "3-5",
+        },
+    }
+    selected_plan = plan_spec.get(_plan_lower, plan_spec["free"])
+    allowed_chart_types = _FREE_CHART_TYPES + selected_plan["extra_chart_types"]
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
     # Also detect date columns by semantic type
@@ -2814,6 +2986,15 @@ def ai_generate_dashboard_specs(
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
         "mode": mode,
+        "plan_profile": {
+            "plan": _plan_lower,
+            "insight_depth": selected_plan["insight_depth"],
+            "focus": selected_plan["focus"],
+            "kpi_range": selected_plan["kpi_range"],
+            "chart_range": selected_plan["chart_range"],
+            "advanced_chart_enabled": selected_plan["advanced_enabled"],
+            "advanced_chart_target": selected_plan["advanced_target"],
+        },
     }
 
     def _normalize_plan_to_specs(plan: object) -> list[dict]:
@@ -2945,25 +3126,288 @@ def ai_generate_dashboard_specs(
 
         return specs
 
-    # Build plan-specific instruction for chart types
+    def _profile_guided_spec_repair(specs: list[dict]) -> list[dict]:
+        """Repair weak AI specs using dataset profile so charts stay meaningful."""
+        valid_columns = {str(c) for c in df.columns}
+        numeric_columns = [str(c) for c in profile.numeric_columns if str(c) in valid_columns]
+        primary_numeric = numeric_columns[0] if numeric_columns else ""
+        secondary_numeric = numeric_columns[1] if len(numeric_columns) > 1 else primary_numeric
+        category_columns = [str(c) for c in profile.categorical_columns if str(c) in valid_columns]
+        low_card_categories = [c for c in category_columns if categorical_cardinality.get(c, 999) <= 10]
+        ranked_categories = [c for c in category_columns if categorical_cardinality.get(c, 0) > 10]
+        default_category = low_card_categories[0] if low_card_categories else (category_columns[0] if category_columns else "")
+        default_rank_category = ranked_categories[0] if ranked_categories else default_category
+        default_date = str(date_cols[0]) if date_cols else ""
+        generic_tokens = ("chart", "kpi", "analysis", "overview", "section", "widget")
+
+        def _is_generic_title(value: str) -> bool:
+            title = (value or "").strip().lower()
+            if not title:
+                return True
+            if len(title) <= 6:
+                return True
+            return any(tok in title for tok in generic_tokens)
+
+        repaired: list[dict] = []
+        for raw in specs:
+            spec = dict(raw)
+            chart_type = str(spec.get("chart_type") or spec.get("widget_type") or "").strip().lower()
+            spec["chart_type"] = chart_type
+
+            if chart_type in ("heading", "text_canvas"):
+                repaired.append(spec)
+                continue
+
+            if chart_type == "kpi":
+                measures = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+                spec["measures"] = measures
+                if _is_generic_title(str(spec.get("title") or "")) and measures:
+                    spec["title"] = f"Total {_humanize_col(measures[0])}"
+                repaired.append(spec)
+                continue
+
+            if chart_type == "table":
+                cols = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not cols:
+                    cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+                spec["measures"] = cols
+                if _is_generic_title(str(spec.get("title") or "")):
+                    spec["title"] = "Detailed Records View"
+                repaired.append(spec)
+                continue
+
+            if chart_type not in allowed_chart_types:
+                continue
+
+            dimension = str(spec.get("dimension") or "").strip()
+            if dimension and dimension not in valid_columns:
+                dimension = ""
+            measures = [str(m).strip() for m in (spec.get("measures") or []) if str(m).strip() in valid_columns]
+            measures = [m for m in measures if (m in numeric_columns) or chart_type in ("pie", "doughnut", "table")]
+
+            if chart_type in ("line", "area"):
+                if not dimension:
+                    dimension = default_date or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type == "hbar":
+                if not dimension:
+                    dimension = default_rank_category or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("bar", "pie", "doughnut", "radar"):
+                if not dimension:
+                    dimension = default_category or default_date
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("scatter", "bubble", "mixed"):
+                if len(measures) < 2 and primary_numeric and secondary_numeric:
+                    measures = [primary_numeric, secondary_numeric]
+
+            spec["dimension"] = dimension
+            spec["measures"] = measures
+            if _is_generic_title(str(spec.get("title") or "")):
+                x_label = _humanize_col(dimension) if dimension else "Key Driver"
+                y_label = _humanize_col(measures[0]) if measures else "Performance"
+                spec["title"] = f"{y_label} by {x_label}"
+            repaired.append(spec)
+
+        # Coverage backfill: add profile-grounded widgets if AI missed core views.
+        has_kpi = any(s.get("chart_type") == "kpi" for s in repaired)
+        has_line = any(s.get("chart_type") == "line" for s in repaired)
+        has_breakdown = any(s.get("chart_type") in ("bar", "hbar") for s in repaired)
+        has_table = any(s.get("chart_type") == "table" for s in repaired)
+        existing_types = {str(s.get("chart_type") or "").lower() for s in repaired}
+
+        if not has_kpi and primary_numeric:
+            repaired.append({
+                "title": f"Total {_humanize_col(primary_numeric)}",
+                "chart_type": "kpi",
+                "dimension": None,
+                "measures": [primary_numeric],
+                "size": "sm",
+                "palette": "indigo",
+                "ai_insight": "",
+                "_agg": "sum",
+            })
+
+        if not has_line and default_date and primary_numeric and "line" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Trend Over Time",
+                "chart_type": "line",
+                "dimension": default_date,
+                "measures": [primary_numeric],
+                "size": "lg",
+                "palette": "ocean",
+                "ai_insight": "",
+            })
+
+        if not has_breakdown and default_category and primary_numeric and "bar" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} by {_humanize_col(default_category)}",
+                "chart_type": "bar",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "vibrant",
+                "ai_insight": "",
+                })
+
+        # Expand base chart pool coverage for more diverse dashboards.
+        if "hbar" in allowed_chart_types and "hbar" not in existing_types and (default_rank_category or default_category) and primary_numeric:
+            repaired.append({
+                "title": f"Top {_humanize_col(default_rank_category or default_category)} by {_humanize_col(primary_numeric)}",
+                "chart_type": "hbar",
+                "dimension": default_rank_category or default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "amber",
+                "ai_insight": "",
+            })
+
+        if "doughnut" in allowed_chart_types and "doughnut" not in existing_types and default_category and primary_numeric:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Share by {_humanize_col(default_category)}",
+                "chart_type": "doughnut",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "vibrant",
+                "ai_insight": "",
+            })
+
+        if "scatter" in allowed_chart_types and "scatter" not in existing_types and len(numeric_columns) >= 2:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Relationship",
+                "chart_type": "scatter",
+                "dimension": "",
+                "measures": [primary_numeric, secondary_numeric],
+                "x_measure": primary_numeric,
+                "y_measure": secondary_numeric,
+                "size": "md",
+                "palette": "sunset",
+                "ai_insight": "",
+            })
+
+        if "radar" in allowed_chart_types and "radar" not in existing_types and default_category and primary_numeric:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Pattern Across {_humanize_col(default_category)}",
+                "chart_type": "radar",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "ocean",
+                "ai_insight": "",
+            })
+
+        if not has_table:
+            table_cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+            if table_cols:
+                repaired.append({
+                    "title": "Detailed Records View",
+                    "chart_type": "table",
+                    "dimension": "",
+                    "measures": table_cols,
+                    "size": "lg",
+                    "palette": "slate",
+                    "ai_insight": "",
+                })
+
+        # Advanced-chart backfill for tiers that support them.
+        if selected_plan["advanced_enabled"]:
+            tertiary_numeric = numeric_columns[2] if len(numeric_columns) > 2 else secondary_numeric
+            if "gauge" in allowed_chart_types and "gauge" not in existing_types and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Performance Gauge",
+                    "chart_type": "gauge",
+                    "dimension": "",
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "emerald",
+                    "ai_insight": "",
+                })
+            if "mixed" in allowed_chart_types and "mixed" not in existing_types and primary_numeric and secondary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Comparison",
+                    "chart_type": "mixed",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric, secondary_numeric],
+                    "size": "lg",
+                    "palette": "ocean",
+                    "ai_insight": "",
+                })
+            if "polararea" in allowed_chart_types and "polararea" not in existing_types and default_category and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Distribution by {_humanize_col(default_category)}",
+                    "chart_type": "polararea",
+                    "dimension": default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "vibrant",
+                    "ai_insight": "",
+                })
+            if "funnel" in allowed_chart_types and "funnel" not in existing_types and (default_rank_category or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Funnel by {_humanize_col(default_rank_category or default_category)}",
+                    "chart_type": "funnel",
+                    "dimension": default_rank_category or default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "amber",
+                    "ai_insight": "",
+                })
+            if "waterfall" in allowed_chart_types and "waterfall" not in existing_types and (default_date or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Contribution Waterfall",
+                    "chart_type": "waterfall",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric],
+                    "size": "lg",
+                    "palette": "blue",
+                    "ai_insight": "",
+                })
+            if "bubble" in allowed_chart_types and "bubble" not in existing_types and len(numeric_columns) >= 2:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Opportunity Map",
+                    "chart_type": "bubble",
+                    "dimension": "",
+                    "measures": [tertiary_numeric] if tertiary_numeric else [],
+                    "x_measure": primary_numeric,
+                    "y_measure": secondary_numeric,
+                    "size": "md",
+                    "palette": "sunset",
+                    "ai_insight": "",
+                })
+
+        return repaired
+
+    # Build plan-specific instruction for chart types and dashboard sophistication
+    _advanced_chart_list = _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES
+    _advanced_chart_text = ", ".join(_advanced_chart_list)
     plan_chart_instruction = (
-        f"User plan: {_plan_lower.upper()}. "
+        f"User plan: {selected_plan['label']}. "
         f"ONLY use chart types from this list: {allowed_chart_types}. "
+        f"Target KPI range: {selected_plan['kpi_range']}. "
+        f"Target chart range: {selected_plan['chart_range']}. "
+        f"Insight depth: {selected_plan['insight_depth']}.\n"
+        f"Target advanced charts: {selected_plan['advanced_target']} when data supports.\n"
+        f"Plan focus: {selected_plan['focus']}\n"
         + (
-            "Advanced charts available (bubble, polararea, mixed, funnel, gauge, waterfall) — "
-            "use them STRATEGICALLY where they add unique analytical value. "
+            "Advanced charts available for this plan — include a meaningful subset within target advanced count when data context fits: "
             "funnel → stage/conversion data, gauge → single KPI vs target, "
             "waterfall → period-over-period variance, bubble → 3-variable relationship, "
             "polararea → category comparison, mixed → bar+line dual-axis overlay."
-            if _is_pro else
-            "Free plan: use only bar, line, area, pie, doughnut, hbar, scatter, radar, table, kpi. "
-            "NEVER suggest bubble, polararea, mixed, funnel, gauge, or waterfall."
+            if selected_plan["advanced_enabled"] else
+            f"This plan does NOT include advanced charts ({_advanced_chart_text}). "
+            "Never suggest unavailable advanced chart types."
         )
     )
 
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=planning_model or model,
             messages=[
                 {
                     "role": "system",
@@ -3050,14 +3494,29 @@ def ai_generate_dashboard_specs(
                         "Sentence 2: distribution (p75 vs median, skewness, % above mean).\n"
                         "'change': benchmark string or null.\n\n"
 
+                        "═══ MULTI-SERIES CHART RULES (NEW — CRITICAL) ═══\n"
+                        "The 'y' field in a chart spec can be a LIST of column names for grouped/multi-series charts.\n"
+                        "Multi-series charts are MORE powerful and data-dense than single-series:\n"
+                        "  • Multi-series bar (type='bar', y=['col1','col2','col3']): "
+                        "Use when multi_measure_groups in payload has related metrics. "
+                        "EXAMPLE: Revenue vs Cost vs Profit by Category — far more insightful than 3 separate bars.\n"
+                        "  • Multi-series line (type='line', y=['col1','col2']): "
+                        "Use when date column + 2-4 related measures exist. "
+                        "EXAMPLE: Revenue and Cost Trends over Time — shows trajectory and convergence.\n"
+                        "RULE: If multi_measure_groups has any groups, CREATE at least one multi-series chart using those groups.\n"
+                        "RULE: For date-based dashboards with 2+ numeric measures, prefer multi-line over multiple single-line.\n\n"
+
                         "═══ CHART SELECTION RULES ═══\n"
-                        "Generate 7-12 charts. ALL must be UNIQUE (different chart_type OR different x+y). "
+                        f"Generate {selected_plan['chart_range']} charts. ALL must be UNIQUE (different chart_type OR different x+y). "
                         "Cover ALL these analytical patterns:\n"
-                        "  • Date column present → MUST include: line (primary metric over time) + "
-                        "area (secondary metric or cumulative), both size=lg\n"
+                        "  • Date column present → MUST include: line (primary metric over time, size=lg) + "
+                        "area (secondary metric or cumulative, size=lg). "
+                        "If 2+ related measures exist, make the line chart MULTI-SERIES (y=[list]).\n"
+                        "  • multi_measure_groups in payload → grouped multi-series bar (type='bar', y=[list]) "
+                        "for the best group, to compare related metrics side-by-side\n"
                         "  • notable_correlations (r≥0.4) → scatter chart for each pair\n"
                         "  • Category cardinality 2-10 + currency/number → vertical bar chart\n"
-                        "  • Category cardinality >10 + numeric → horizontal bar (hbar) with top-12\n"
+                        "  • Category cardinality >10 + numeric → horizontal bar (hbar) with top-15\n"
                         "  • Part-to-whole breakdown (cardinality ≤8) → doughnut chart\n"
                         "  • Secondary part-to-whole (DIFFERENT category) → pie chart\n"
                         "  • Multi-numeric columns → radar (performance across dimensions)\n"
@@ -3068,7 +3527,7 @@ def ai_generate_dashboard_specs(
                         "  • Financial P&L or period variance → waterfall (Pro)\n\n"
                         "Chart titles MUST answer a business question (NOT column names):\n"
                         "  GOOD: 'Monthly Revenue Growth Trend', 'Revenue by Product Category', "
-                        "'Top 10 Customers by Spend', 'Sales vs Target Comparison'\n"
+                        "'Top 10 Customers by Spend', 'Revenue vs Cost vs Profit by Segment'\n"
                         "  BAD: 'sales_amount trend', 'bar of qty', 'Column2 vs Column3'\n\n"
                         "Chart insights (2 sentences each, cite exact numbers from sample_stats):\n"
                         "  GOOD: 'Electronics drives 38% of revenue at $1.6M, 2.8x the next category. "
@@ -3170,7 +3629,6 @@ def ai_generate_dashboard_specs(
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             # Post-process: remove chart types not allowed for user's plan
-            _pro_set = set(_PRO_CHART_TYPES_LIST)
             allowed_set = set(allowed_chart_types)
             specs = [
                 s for s in specs
@@ -3218,8 +3676,13 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, _model = _get_ai_client_for_task("design")
     if client is None:
+        return None
+    if not _model:
+        # Defensive fallback: avoid runtime failures if task router returns an empty model string.
+        _, _model = _get_ai_client()
+    if not _model:
         return None
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
@@ -3263,7 +3726,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     }
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=_model,
             messages=[
                 {
                     "role": "system",
@@ -3317,9 +3780,16 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     import json as _json
     import re as _re
 
-    client, _model = _get_ai_client()
+    client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
+    from django.conf import settings
+    # Design-heavy task: always prefer chat model over reasoner.
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
@@ -3368,10 +3838,10 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
 
     system_prompt = (
         "You are a world-class front-end developer and data visualization expert.\n"
-        "Your task: generate ONE complete, self-contained HTML file for an advanced interactive dashboard.\n\n"
-        "STRICT REQUIREMENTS:\n"
-        "1. Return ONLY raw HTML — no markdown, no code fences, no explanation. Start with <!DOCTYPE html>.\n"
-        "2. Use these CDNs (exact versions):\n"
+        "Generate ONE complete, self-contained HTML file for an advanced, data-driven analytics dashboard that adapts to ANY dataset schema.\n\n"
+        "STRICT OUTPUT RULES:\n"
+        "1) Return ONLY raw HTML (no markdown/code fences/explanations). Start with <!DOCTYPE html>.\n"
+        "2) Use these exact CDN versions:\n"
         "   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\n"
         "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
         "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
