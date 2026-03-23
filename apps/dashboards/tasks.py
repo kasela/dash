@@ -356,6 +356,18 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
     def _numeric_series(name: str):
         return pd.to_numeric(_col_series(name), errors="coerce")
 
+    def _to_datetime_series(series):
+        """Coerce datetime values while avoiding noisy format-inference warnings."""
+        import warnings
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                return pd.to_datetime(series, format="mixed", errors="coerce")
+        except TypeError:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                return pd.to_datetime(series, errors="coerce")
+
     specs = []
     position = 1
     _used_kpi_cols: set[str] = set()
@@ -597,7 +609,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     "_measure": _numeric_series(measure),
                 })
                 try:
-                    tmp["_dim"] = pd.to_datetime(tmp["_dim"], errors="coerce")
+                    tmp["_dim"] = _to_datetime_series(tmp["_dim"])
                     tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
                     trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
@@ -621,7 +633,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     "_measure": _numeric_series(measure),
                 })
                 try:
-                    tmp["_dim"] = pd.to_datetime(tmp["_dim"], errors="coerce")
+                    tmp["_dim"] = _to_datetime_series(tmp["_dim"])
                     tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
                     trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
