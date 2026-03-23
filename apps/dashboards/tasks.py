@@ -7,6 +7,34 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_for_json(value):
+    """Recursively convert values to JSON-safe primitives for JSONField storage.
+
+    Prevents sqlite JSON_VALID failures from NaN/Infinity and non-serializable scalars.
+    """
+    import math
+
+    if isinstance(value, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, tuple):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    # numpy/pandas scalar support
+    if hasattr(value, "item") and callable(getattr(value, "item")):
+        try:
+            return _sanitize_for_json(value.item())
+        except Exception:
+            return str(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)
 def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str = "free"):
     """Background task: generate all widgets for a newly created dashboard.
@@ -148,12 +176,13 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str 
         # ── Save widgets to DB ────────────────────────────────────────────────
         if widget_specs:
             for spec in widget_specs:
+                safe_config = _sanitize_for_json(spec.get("config", {}))
                 DashboardWidget.objects.create(
                     dashboard=dashboard,
                     title=spec["title"],
                     widget_type=spec["widget_type"],
                     position=spec["position"],
-                    chart_config=spec["config"],
+                    chart_config=safe_config,
                 )
         else:
             DashboardWidget.objects.create(
@@ -316,6 +345,16 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             if col not in exclude and pd.api.types.is_numeric_dtype(df[col]):
                 return col
         return None
+
+    def _col_series(name: str):
+        """Return a 1-D Series for a column, even if duplicate column names exist."""
+        col_obj = df.loc[:, name]
+        if isinstance(col_obj, pd.DataFrame):
+            return col_obj.iloc[:, 0]
+        return col_obj
+
+    def _numeric_series(name: str):
+        return pd.to_numeric(_col_series(name), errors="coerce")
 
     specs = []
     position = 1
@@ -525,7 +564,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Bar chart ─────────────────────────────────────────────────────
             elif chart_type == "bar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(12)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(12)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _bar_config(labels, values, _humanize_col(measure), palette,
@@ -539,7 +578,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Horizontal bar ────────────────────────────────────────────────
             elif chart_type == "hbar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(12)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(12)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _hbar_config(labels, values, _humanize_col(measure), palette,
@@ -553,14 +592,17 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Line chart ────────────────────────────────────────────────────
             elif chart_type == "line" and dimension and measure and dimension in df.columns and measure in df.columns:
-                tmp = df[[dimension, measure]].copy()
+                tmp = pd.DataFrame({
+                    "_dim": _col_series(dimension),
+                    "_measure": _numeric_series(measure),
+                })
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
-                    tmp = tmp.dropna(subset=[dimension]).sort_values(dimension)
-                    trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
+                    tmp["_dim"] = pd.to_datetime(tmp["_dim"], errors="coerce")
+                    tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
+                    trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
                 except Exception:
-                    trend_data = tmp.groupby(dimension)[measure].sum()
+                    trend_data = tmp.groupby("_dim")["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
                 values = [round(float(v), 2) for v in trend_data.values]
                 config = _line_config(labels, values, _humanize_col(measure), palette,
@@ -574,14 +616,17 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Area chart ────────────────────────────────────────────────────
             elif chart_type == "area" and dimension and measure and dimension in df.columns and measure in df.columns:
-                tmp = df[[dimension, measure]].copy()
+                tmp = pd.DataFrame({
+                    "_dim": _col_series(dimension),
+                    "_measure": _numeric_series(measure),
+                })
                 try:
-                    tmp[dimension] = pd.to_datetime(tmp[dimension], errors="coerce")
-                    tmp = tmp.dropna(subset=[dimension]).sort_values(dimension)
-                    trend_data = tmp.groupby(tmp[dimension].dt.to_period("M"))[measure].sum()
+                    tmp["_dim"] = pd.to_datetime(tmp["_dim"], errors="coerce")
+                    tmp = tmp.dropna(subset=["_dim"]).sort_values("_dim")
+                    trend_data = tmp.groupby(tmp["_dim"].dt.to_period("M"))["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
                 except Exception:
-                    trend_data = tmp.groupby(dimension)[measure].sum()
+                    trend_data = tmp.groupby("_dim")["_measure"].sum()
                     labels = [str(p) for p in trend_data.index]
                 values = [round(float(v), 2) for v in trend_data.values]
                 config = _area_config(labels, values, _humanize_col(measure), palette,
@@ -597,9 +642,9 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             elif chart_type in ("pie", "doughnut") and dimension and dimension in df.columns:
                 resolved_meas_for_pie = measure if measure and measure in df.columns else None
                 vc = (
-                    pd.to_numeric(df[resolved_meas_for_pie], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                    _numeric_series(resolved_meas_for_pie).groupby(_col_series(dimension)).sum().nlargest(8)
                     if resolved_meas_for_pie
-                    else df[dimension].value_counts().head(8)
+                    else _col_series(dimension).value_counts().head(8)
                 )
                 labels = [str(l) for l in vc.index]
                 values = [round(float(v), 2) for v in vc.values]
@@ -638,7 +683,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
 
             # ── Radar ─────────────────────────────────────────────────────────
             elif chart_type == "radar" and dimension and measure and dimension in df.columns and measure in df.columns:
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(8)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _radar_config(labels, values, _humanize_col(measure), palette)
@@ -695,9 +740,9 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                 from apps.datasets.services import _polararea_config
                 resolved_meas = measure if measure and measure in df.columns else None
                 vc = (
-                    pd.to_numeric(df[resolved_meas], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                    _numeric_series(resolved_meas).groupby(_col_series(dimension)).sum().nlargest(8)
                     if resolved_meas
-                    else df[dimension].value_counts().head(8)
+                    else _col_series(dimension).value_counts().head(8)
                 )
                 labels = [str(l) for l in vc.index]
                 values = [round(float(v), 2) for v in vc.values]
@@ -712,20 +757,38 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Mixed (bar + line) ────────────────────────────────────────────
             elif chart_type == "mixed" and dimension and dimension in df.columns:
                 from apps.datasets.services import _mixed_config
-                bar_measures = [m for m in measures[:2] if m and m in df.columns]
-                line_measures = [m for m in measures[2:4] if m and m in df.columns]
-                if not bar_measures and measure and measure in df.columns:
+                bar_measures = [m for m in measures[:2] if m and m in df.columns and m != dimension]
+                line_measures = [m for m in measures[2:4] if m and m in df.columns and m != dimension]
+                if not bar_measures and measure and measure in df.columns and measure != dimension:
                     bar_measures = [measure]
                 # Need at least 1 bar measure
                 if bar_measures:
-                    all_mix_cols = bar_measures + line_measures
-                    _mix_tmp = df[[dimension] + all_mix_cols].copy()
+                    # Keep only truly numeric measures and remove duplicates while preserving order.
+                    all_mix_cols: list[str] = []
+                    for candidate in bar_measures + line_measures:
+                        if candidate in all_mix_cols:
+                            continue
+                        numeric_candidate = _numeric_series(candidate)
+                        if numeric_candidate.notna().sum() > 0:
+                            all_mix_cols.append(candidate)
+                    if not all_mix_cols:
+                        continue
+                    bar_measures = [m for m in bar_measures if m in all_mix_cols]
+                    line_measures = [m for m in line_measures if m in all_mix_cols and m not in bar_measures]
+                    if not bar_measures:
+                        bar_measures = [all_mix_cols[0]]
+                    _mix_tmp = pd.DataFrame({"_dim": _col_series(dimension)})
                     for _mc in all_mix_cols:
-                        _mix_tmp[_mc] = pd.to_numeric(_mix_tmp[_mc], errors="coerce")
-                    grouped = _mix_tmp.groupby(dimension)[all_mix_cols].sum().head(12)
+                        _mix_tmp[_mc] = _numeric_series(_mc)
+                    grouped = _mix_tmp.groupby("_dim")[all_mix_cols].sum().head(12)
                     labels = [str(l) for l in grouped.index]
-                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in bar_measures]
-                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in line_measures]
+                    def _series_from_group(col_name: str):
+                        series_or_df = grouped[col_name]
+                        if isinstance(series_or_df, pd.DataFrame):
+                            return series_or_df.iloc[:, 0]
+                        return series_or_df
+                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in bar_measures]
+                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in _series_from_group(m)]} for m in line_measures]
                     config = _mixed_config(labels, bar_ds, line_ds, palette,
                                           x_label=_humanize_col(dimension),
                                           y_label=_humanize_col(bar_measures[0]) if bar_measures else "")
@@ -741,7 +804,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Funnel ────────────────────────────────────────────────────────
             elif chart_type == "funnel" and dimension and measure and dimension in df.columns and measure in df.columns:
                 from apps.datasets.services import _funnel_config
-                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(10)
+                top = _numeric_series(measure).groupby(_col_series(dimension)).sum().nlargest(10)
                 labels = [str(l) for l in top.index]
                 values = [round(float(v), 2) for v in top.values]
                 config = _funnel_config(labels, values, _humanize_col(measure), palette)
@@ -776,7 +839,7 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
             # ── Waterfall ─────────────────────────────────────────────────────
             elif chart_type == "waterfall" and dimension and measure and dimension in df.columns and measure in df.columns:
                 from apps.datasets.services import _waterfall_config
-                grouped = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().head(10)
+                grouped = _numeric_series(measure).groupby(_col_series(dimension)).sum().head(10)
                 labels = [str(l) for l in grouped.index]
                 values = [round(float(v), 2) for v in grouped.values]
                 config = _waterfall_config(labels, values, _humanize_col(measure), palette,
