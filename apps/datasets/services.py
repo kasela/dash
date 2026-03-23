@@ -1473,6 +1473,74 @@ def _get_ai_client():
     return None, None
 
 
+def _get_ai_client_for_task(task: str = "general"):
+    """Return (client, model) with provider preference based on task intent.
+
+    task='analysis' -> DeepSeek Reasoner first (brain-heavy analysis).
+    task='design'   -> OpenAI first (UI/chart/KPI design and presentation quality).
+    """
+    import importlib.util
+    from django.conf import settings
+
+    if importlib.util.find_spec("openai") is None:
+        return None, None
+    openai_module = __import__("openai")
+
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    openai_key = str(getattr(settings, "OPENAI_API_KEY", "") or "").strip()
+    gemini_key = str(getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+
+    if task == "analysis":
+        if deepseek_key:
+            model = (
+                str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
+                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
+            )
+            client = openai_module.OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+            )
+            return client, model
+        if openai_key:
+            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
+        if gemini_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                ),
+                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
+            )
+        return None, None
+
+    if task == "design":
+        if openai_key:
+            return openai_module.OpenAI(api_key=openai_key), str(getattr(settings, "OPENAI_MODEL", "gpt-4o"))
+        if deepseek_key:
+            model = (
+                str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip()
+                or str(getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat"))
+            )
+            client = openai_module.OpenAI(
+                api_key=deepseek_key,
+                base_url="https://api.deepseek.com",
+                max_retries=int(getattr(settings, "DEEPSEEK_MAX_RETRIES", 0)),
+            )
+            return client, model
+        if gemini_key:
+            return (
+                openai_module.OpenAI(
+                    api_key=gemini_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                ),
+                str(getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")),
+            )
+        return None, None
+
+    return _get_ai_client()
+
+
 def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     """AI-powered column role detection: classifies each column as measure/dimension/date/id.
 
@@ -1500,7 +1568,7 @@ def ai_detect_column_roles(df: pd.DataFrame, profile: "ProfileSummary") -> dict:
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     # Incorporate heuristic column types for richer context
     heuristic_types = profile.column_types or detect_column_types(df)
@@ -1692,7 +1760,7 @@ def ai_generate_comprehensive_insights(
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     # Build rich statistics context including quartiles and distribution shape
     numeric_stats: dict = {}
@@ -1920,7 +1988,7 @@ def ai_generate_executive_summary(
         "generated_at": generated_at,
     }
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     if client is None:
         # Heuristic fallback findings
         findings = []
@@ -2054,7 +2122,7 @@ def ai_clean_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "outliers_capped": {},
     }
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     cleaning_plan: list[dict] = []
 
     if client is not None:
@@ -2240,7 +2308,7 @@ def ai_suggest_slicers(df: pd.DataFrame, profile: "ProfileSummary") -> list[dict
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
 
     if client is not None:
         # Include sample values per categorical column for better AI context
@@ -2352,7 +2420,7 @@ def ai_analyze_chart(chart_type: str, labels: list, values: list, title: str) ->
     """Generate AI-powered analysis text for a chart. Returns (insight_text, is_ai_powered)."""
     import json as _json
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("analysis")
     if client is None:
         return _heuristic_chart_analysis(chart_type, labels, values, title), False
 
@@ -2567,20 +2635,12 @@ def ai_generate_dashboard_specs(
     import re as _re
     from django.conf import settings
 
-    client, model = _get_ai_client()
+    client, model = _get_ai_client_for_task("design")
     if client is None:
         return None
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
-    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
-    # Prefer DeepSeek Reasoner for comprehensive dashboard planning when available.
     planning_model = model
-    if deepseek_key:
-        reasoner_model = str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
-        if reasoner_model:
-            planning_model = reasoner_model
-    if planning_model and "reasoner" in planning_model.lower():
-        specs_timeout = max(specs_timeout, 90)
 
     # Determine allowed chart types + planning depth by user plan
     _plan_lower = str(plan).lower()
@@ -3365,7 +3425,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     import json as _json
     import re as _re
 
-    client, model = _get_ai_client()
+    client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
     from django.conf import settings
@@ -3418,7 +3478,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     }
     try:
         response = client.chat.completions.create(
-            model=_model or model,
+            model=_model,
             messages=[
                 {
                     "role": "system",
@@ -3472,7 +3532,7 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     import json as _json
     import re as _re
 
-    client, _model = _get_ai_client()
+    client, _model = _get_ai_client_for_task("design")
     if client is None:
         return None
     from django.conf import settings
