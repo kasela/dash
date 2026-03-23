@@ -2559,8 +2559,8 @@ def ai_generate_dashboard_specs(
     Narrative and section headings are injected at appropriate positions.
 
     Args:
-        plan: User subscription plan ('free', 'pro', 'enterprise'). Controls available chart types.
-              Free: basic charts only. Pro/Enterprise: all advanced chart types.
+        plan: User subscription plan ('free', 'light', 'plus', 'pro', 'enterprise').
+              Controls chart depth, advanced visuals, and insight complexity.
         column_roles: Pre-computed column role info with data_type for smarter chart selection.
     """
     import json as _json
@@ -2572,13 +2572,77 @@ def ai_generate_dashboard_specs(
         return None
     specs_timeout = int(getattr(settings, "DEEPSEEK_SPECS_TIMEOUT", 60))
     connect_timeout = int(getattr(settings, "DEEPSEEK_CONNECT_TIMEOUT", 10))
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    # Prefer DeepSeek Reasoner for comprehensive dashboard planning when available.
+    planning_model = model
+    if deepseek_key:
+        reasoner_model = str(getattr(settings, "DEEPSEEK_REASONER_MODEL", "") or "").strip()
+        if reasoner_model:
+            planning_model = reasoner_model
+    if planning_model and "reasoner" in planning_model.lower():
+        specs_timeout = max(specs_timeout, 90)
 
-    # Determine allowed chart types based on user plan
+    # Determine allowed chart types + planning depth by user plan
     _plan_lower = str(plan).lower()
-    _is_pro = _plan_lower in ("pro", "enterprise")
     _FREE_CHART_TYPES = ["kpi", "bar", "line", "area", "pie", "doughnut", "hbar", "scatter", "radar", "table"]
-    _PRO_CHART_TYPES_LIST = ["bubble", "polararea", "mixed", "funnel", "gauge", "waterfall"]
-    allowed_chart_types = _FREE_CHART_TYPES + (_PRO_CHART_TYPES_LIST if _is_pro else [])
+    _LIGHT_PLUS_CHART_TYPES = ["mixed", "gauge"]
+    _PLUS_CHART_TYPES = ["bubble", "funnel", "waterfall"]
+    _PRO_CHART_TYPES = ["polararea"]
+
+    plan_spec = {
+        "free": {
+            "label": "FREE",
+            "extra_chart_types": [],
+            "kpi_range": "4-5",
+            "chart_range": "6-7",
+            "insight_depth": "foundational",
+            "focus": "clear starter dashboard with essential trends and breakdowns",
+            "advanced_enabled": False,
+            "advanced_target": "0",
+        },
+        "light": {
+            "label": "LIGHT",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES,
+            "kpi_range": "5-6",
+            "chart_range": "7-9",
+            "insight_depth": "practical",
+            "focus": "more diagnostic analysis with one or two advanced visuals when useful",
+            "advanced_enabled": True,
+            "advanced_target": "1-2",
+        },
+        "plus": {
+            "label": "PLUS",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "9-11",
+            "insight_depth": "advanced",
+            "focus": "multi-angle analysis with richer segmentation, variance and relationship views",
+            "advanced_enabled": True,
+            "advanced_target": "2-3",
+        },
+        "pro": {
+            "label": "PRO",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+            "advanced_target": "3-5",
+        },
+        "enterprise": {
+            "label": "ENTERPRISE",
+            "extra_chart_types": _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES,
+            "kpi_range": "6-7",
+            "chart_range": "10-12",
+            "insight_depth": "executive+advanced",
+            "focus": "board-ready narrative with advanced diagnostics and decision support",
+            "advanced_enabled": True,
+            "advanced_target": "3-5",
+        },
+    }
+    selected_plan = plan_spec.get(_plan_lower, plan_spec["free"])
+    allowed_chart_types = _FREE_CHART_TYPES + selected_plan["extra_chart_types"]
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
     # Also detect date columns by semantic type
@@ -2715,6 +2779,15 @@ def ai_generate_dashboard_specs(
         "allowed_sizes": ["sm", "md", "lg"],
         "allowed_palettes": ["indigo", "blue", "emerald", "rose", "amber", "vibrant", "ocean", "sunset"],
         "mode": mode,
+        "plan_profile": {
+            "plan": _plan_lower,
+            "insight_depth": selected_plan["insight_depth"],
+            "focus": selected_plan["focus"],
+            "kpi_range": selected_plan["kpi_range"],
+            "chart_range": selected_plan["chart_range"],
+            "advanced_chart_enabled": selected_plan["advanced_enabled"],
+            "advanced_chart_target": selected_plan["advanced_target"],
+        },
     }
 
     def _normalize_plan_to_specs(plan: object) -> list[dict]:
@@ -2846,25 +2919,241 @@ def ai_generate_dashboard_specs(
 
         return specs
 
-    # Build plan-specific instruction for chart types
+    def _profile_guided_spec_repair(specs: list[dict]) -> list[dict]:
+        """Repair weak AI specs using dataset profile so charts stay meaningful."""
+        valid_columns = {str(c) for c in df.columns}
+        numeric_columns = [str(c) for c in profile.numeric_columns if str(c) in valid_columns]
+        primary_numeric = numeric_columns[0] if numeric_columns else ""
+        secondary_numeric = numeric_columns[1] if len(numeric_columns) > 1 else primary_numeric
+        category_columns = [str(c) for c in profile.categorical_columns if str(c) in valid_columns]
+        low_card_categories = [c for c in category_columns if categorical_cardinality.get(c, 999) <= 10]
+        ranked_categories = [c for c in category_columns if categorical_cardinality.get(c, 0) > 10]
+        default_category = low_card_categories[0] if low_card_categories else (category_columns[0] if category_columns else "")
+        default_rank_category = ranked_categories[0] if ranked_categories else default_category
+        default_date = str(date_cols[0]) if date_cols else ""
+        generic_tokens = ("chart", "kpi", "analysis", "overview", "section", "widget")
+
+        def _is_generic_title(value: str) -> bool:
+            title = (value or "").strip().lower()
+            if not title:
+                return True
+            if len(title) <= 6:
+                return True
+            return any(tok in title for tok in generic_tokens)
+
+        repaired: list[dict] = []
+        for raw in specs:
+            spec = dict(raw)
+            chart_type = str(spec.get("chart_type") or spec.get("widget_type") or "").strip().lower()
+            spec["chart_type"] = chart_type
+
+            if chart_type in ("heading", "text_canvas"):
+                repaired.append(spec)
+                continue
+
+            if chart_type == "kpi":
+                measures = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+                spec["measures"] = measures
+                if _is_generic_title(str(spec.get("title") or "")) and measures:
+                    spec["title"] = f"Total {_humanize_col(measures[0])}"
+                repaired.append(spec)
+                continue
+
+            if chart_type == "table":
+                cols = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not cols:
+                    cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+                spec["measures"] = cols
+                if _is_generic_title(str(spec.get("title") or "")):
+                    spec["title"] = "Detailed Records View"
+                repaired.append(spec)
+                continue
+
+            if chart_type not in allowed_chart_types:
+                continue
+
+            dimension = str(spec.get("dimension") or "").strip()
+            if dimension and dimension not in valid_columns:
+                dimension = ""
+            measures = [str(m).strip() for m in (spec.get("measures") or []) if str(m).strip() in valid_columns]
+            measures = [m for m in measures if (m in numeric_columns) or chart_type in ("pie", "doughnut", "table")]
+
+            if chart_type in ("line", "area"):
+                if not dimension:
+                    dimension = default_date or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type == "hbar":
+                if not dimension:
+                    dimension = default_rank_category or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("bar", "pie", "doughnut", "radar"):
+                if not dimension:
+                    dimension = default_category or default_date
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("scatter", "bubble", "mixed"):
+                if len(measures) < 2 and primary_numeric and secondary_numeric:
+                    measures = [primary_numeric, secondary_numeric]
+
+            spec["dimension"] = dimension
+            spec["measures"] = measures
+            if _is_generic_title(str(spec.get("title") or "")):
+                x_label = _humanize_col(dimension) if dimension else "Key Driver"
+                y_label = _humanize_col(measures[0]) if measures else "Performance"
+                spec["title"] = f"{y_label} by {x_label}"
+            repaired.append(spec)
+
+        # Coverage backfill: add profile-grounded widgets if AI missed core views.
+        has_kpi = any(s.get("chart_type") == "kpi" for s in repaired)
+        has_line = any(s.get("chart_type") == "line" for s in repaired)
+        has_breakdown = any(s.get("chart_type") in ("bar", "hbar") for s in repaired)
+        has_table = any(s.get("chart_type") == "table" for s in repaired)
+        existing_types = {str(s.get("chart_type") or "").lower() for s in repaired}
+
+        if not has_kpi and primary_numeric:
+            repaired.append({
+                "title": f"Total {_humanize_col(primary_numeric)}",
+                "chart_type": "kpi",
+                "dimension": None,
+                "measures": [primary_numeric],
+                "size": "sm",
+                "palette": "indigo",
+                "ai_insight": "",
+                "_agg": "sum",
+            })
+
+        if not has_line and default_date and primary_numeric and "line" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Trend Over Time",
+                "chart_type": "line",
+                "dimension": default_date,
+                "measures": [primary_numeric],
+                "size": "lg",
+                "palette": "ocean",
+                "ai_insight": "",
+            })
+
+        if not has_breakdown and default_category and primary_numeric and "bar" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} by {_humanize_col(default_category)}",
+                "chart_type": "bar",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "vibrant",
+                "ai_insight": "",
+            })
+
+        if not has_table:
+            table_cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+            if table_cols:
+                repaired.append({
+                    "title": "Detailed Records View",
+                    "chart_type": "table",
+                    "dimension": "",
+                    "measures": table_cols,
+                    "size": "lg",
+                    "palette": "slate",
+                    "ai_insight": "",
+                })
+
+        # Advanced-chart backfill for tiers that support them.
+        if selected_plan["advanced_enabled"]:
+            tertiary_numeric = numeric_columns[2] if len(numeric_columns) > 2 else secondary_numeric
+            if "gauge" in allowed_chart_types and "gauge" not in existing_types and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Performance Gauge",
+                    "chart_type": "gauge",
+                    "dimension": "",
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "emerald",
+                    "ai_insight": "",
+                })
+            if "mixed" in allowed_chart_types and "mixed" not in existing_types and primary_numeric and secondary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Comparison",
+                    "chart_type": "mixed",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric, secondary_numeric],
+                    "size": "lg",
+                    "palette": "ocean",
+                    "ai_insight": "",
+                })
+            if "polararea" in allowed_chart_types and "polararea" not in existing_types and default_category and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Distribution by {_humanize_col(default_category)}",
+                    "chart_type": "polararea",
+                    "dimension": default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "vibrant",
+                    "ai_insight": "",
+                })
+            if "funnel" in allowed_chart_types and "funnel" not in existing_types and (default_rank_category or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Funnel by {_humanize_col(default_rank_category or default_category)}",
+                    "chart_type": "funnel",
+                    "dimension": default_rank_category or default_category,
+                    "measures": [primary_numeric],
+                    "size": "md",
+                    "palette": "amber",
+                    "ai_insight": "",
+                })
+            if "waterfall" in allowed_chart_types and "waterfall" not in existing_types and (default_date or default_category) and primary_numeric:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} Contribution Waterfall",
+                    "chart_type": "waterfall",
+                    "dimension": default_date or default_category,
+                    "measures": [primary_numeric],
+                    "size": "lg",
+                    "palette": "blue",
+                    "ai_insight": "",
+                })
+            if "bubble" in allowed_chart_types and "bubble" not in existing_types and len(numeric_columns) >= 2:
+                repaired.append({
+                    "title": f"{_humanize_col(primary_numeric)} vs {_humanize_col(secondary_numeric)} Opportunity Map",
+                    "chart_type": "bubble",
+                    "dimension": "",
+                    "measures": [tertiary_numeric] if tertiary_numeric else [],
+                    "x_measure": primary_numeric,
+                    "y_measure": secondary_numeric,
+                    "size": "md",
+                    "palette": "sunset",
+                    "ai_insight": "",
+                })
+
+        return repaired
+
+    # Build plan-specific instruction for chart types and dashboard sophistication
+    _advanced_chart_list = _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES
+    _advanced_chart_text = ", ".join(_advanced_chart_list)
     plan_chart_instruction = (
-        f"User plan: {_plan_lower.upper()}. "
+        f"User plan: {selected_plan['label']}. "
         f"ONLY use chart types from this list: {allowed_chart_types}. "
+        f"Target KPI range: {selected_plan['kpi_range']}. "
+        f"Target chart range: {selected_plan['chart_range']}. "
+        f"Insight depth: {selected_plan['insight_depth']}.\n"
+        f"Target advanced charts: {selected_plan['advanced_target']} when data supports.\n"
+        f"Plan focus: {selected_plan['focus']}\n"
         + (
-            "Advanced charts available (bubble, polararea, mixed, funnel, gauge, waterfall) — "
-            "use them STRATEGICALLY where they add unique analytical value. "
+            "Advanced charts available for this plan — include a meaningful subset within target advanced count when data context fits: "
             "funnel → stage/conversion data, gauge → single KPI vs target, "
             "waterfall → period-over-period variance, bubble → 3-variable relationship, "
             "polararea → category comparison, mixed → bar+line dual-axis overlay."
-            if _is_pro else
-            "Free plan: use only bar, line, area, pie, doughnut, hbar, scatter, radar, table, kpi. "
-            "NEVER suggest bubble, polararea, mixed, funnel, gauge, or waterfall."
+            if selected_plan["advanced_enabled"] else
+            f"This plan does NOT include advanced charts ({_advanced_chart_text}). "
+            "Never suggest unavailable advanced chart types."
         )
     )
 
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=planning_model or model,
             messages=[
                 {
                     "role": "system",
@@ -2919,7 +3208,7 @@ def ai_generate_dashboard_specs(
                         "BAD: 'Data Table', 'Records', 'Details'.\n\n"
 
                         "═══ KPI RULES ═══\n"
-                        "Generate 5-7 DISTINCT KPIs — each serving a unique analytical purpose:\n"
+                        f"Generate {selected_plan['kpi_range']} DISTINCT KPIs — each serving a unique analytical purpose:\n"
                         "  1. Total volume KPI: primary currency/financial metric (agg=sum) — e.g. 'Total Revenue'\n"
                         "  2. Average benchmark KPI: per-unit or rate metric (agg=avg) — e.g. 'Avg Order Value'\n"
                         "  3. Entity count KPI: unique entities for scope (agg=nunique) — e.g. 'Active Customers'\n"
@@ -2941,7 +3230,7 @@ def ai_generate_dashboard_specs(
                         "'change': benchmark string or null.\n\n"
 
                         "═══ CHART SELECTION RULES ═══\n"
-                        "Generate 7-12 charts. ALL must be UNIQUE (different chart_type OR different x+y). "
+                        f"Generate {selected_plan['chart_range']} charts. ALL must be UNIQUE (different chart_type OR different x+y). "
                         "Cover ALL these analytical patterns:\n"
                         "  • Date column present → MUST include: line (primary metric over time) + "
                         "area (secondary metric or cumulative), both size=lg\n"
@@ -3054,13 +3343,13 @@ def ai_generate_dashboard_specs(
         specs = _normalize_plan_to_specs(parsed)
         if specs:
             # Post-process: remove chart types not allowed for user's plan
-            _pro_set = set(_PRO_CHART_TYPES_LIST)
             allowed_set = set(allowed_chart_types)
             specs = [
                 s for s in specs
                 if s.get("chart_type") in ("kpi", "heading", "text_canvas", "table") or
                 s.get("chart_type") in allowed_set
             ]
+            specs = _profile_guided_spec_repair(specs)
             return specs
         logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
@@ -3079,6 +3368,14 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     client, model = _get_ai_client()
     if client is None:
         return None
+    from django.conf import settings
+    # Design/text task: prefer chat-oriented model.
+    _model = model
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     date_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["date", "month", "year", "period", "quarter"])]
 
@@ -3121,7 +3418,7 @@ def ai_generate_dashboard_title(df: pd.DataFrame, profile: "ProfileSummary", dat
     }
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=_model or model,
             messages=[
                 {
                     "role": "system",
@@ -3178,6 +3475,13 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     client, _model = _get_ai_client()
     if client is None:
         return None
+    from django.conf import settings
+    # Design-heavy task: always prefer chat model over reasoner.
+    deepseek_key = str(getattr(settings, "DEEPSEEK_API_KEY", "") or "").strip()
+    if deepseek_key:
+        _model = str(getattr(settings, "DEEPSEEK_CHAT_MODEL", "") or "").strip() or str(
+            getattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+        )
 
     # Build rich data context for the prompt
     columns = [str(c) for c in df.columns[:30]]
@@ -3226,34 +3530,43 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
 
     system_prompt = (
         "You are a world-class front-end developer and data visualization expert.\n"
-        "Your task: generate ONE complete, self-contained HTML file for an advanced interactive dashboard.\n\n"
-        "STRICT REQUIREMENTS:\n"
-        "1. Return ONLY raw HTML — no markdown, no code fences, no explanation. Start with <!DOCTYPE html>.\n"
-        "2. Use these CDNs (exact versions):\n"
+        "Generate ONE complete, self-contained HTML file for an advanced, data-driven analytics dashboard that adapts to ANY dataset schema.\n\n"
+        "STRICT OUTPUT RULES:\n"
+        "1) Return ONLY raw HTML (no markdown/code fences/explanations). Start with <!DOCTYPE html>.\n"
+        "2) Use these exact CDN versions:\n"
         "   - Chart.js: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js\n"
         "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
-        "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
-        "3. Excel upload with SheetJS: user uploads .xlsx/.xls/.csv; parse and load data dynamically.\n"
-        "4. Column mapping: use flexible case-insensitive keyword matching on the exact column names from the payload.\n"
-        "5. KPI cards: Total Target, Total Achievement, Achievement %, Average Achievement Rate.\n"
-        "6. Interactive filter dropdowns for key categorical columns (Province, Branch, Regional Manager, Cluster, etc.).\n"
-        "7. Charts (all Chart.js, all data-driven from uploaded file):\n"
-        "   - Grouped bar: Top 5 branches — Achievement vs Target\n"
-        "   - Horizontal bar: Province-wise achievement rate %\n"
-        "   - Doughnut: Achievement % share by Regional Manager\n"
-        "   - Radar: Achievement % by Cluster\n"
-        "   - Line chart (if date/month/year columns exist): monthly trend of Achievement vs Target\n"
-        "8. Scrollable data table showing all filtered rows with a % Achieved badge column.\n"
-        "9. Modern design: glassmorphism cards, gradient header, smooth hover transitions, responsive CSS grid.\n"
-        "10. Colors: indigo/blue primary, emerald for achievement, rose for shortfall, amber for neutral.\n"
-        "11. All filters update KPIs, all charts, and the table simultaneously.\n"
-        "12. 'Download Dashboard' button that saves the page HTML as a .html file.\n"
-        "13. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
-        "14. Currency: LKR prefix with locale comma formatting (e.g. LKR 15,100,000).\n"
-        "15. Column mapping keywords to detect from column names:\n"
-        "    Province: 'province' | Branch: 'branch' | Category: 'category'\n"
-        "    Regional Manager: 'regional manager' or 'rm' | Cluster: 'cluster'\n"
-        "    Month: 'month' | Year: 'year' | Target: 'target' | Achievement: 'achievement'\n"
+        "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n\n"
+        "DASHBOARD GOALS (schema-agnostic):\n"
+        "- Build analytical views from the provided payload column metadata, not hard-coded domain fields.\n"
+        "- Infer semantic roles dynamically (date/time, category, metric, id/text) via robust case-insensitive matching.\n"
+        "- Use only columns that exist in payload.columns (no invented names).\n"
+        "- If a preferred field is missing, gracefully fallback to the next best available column.\n\n"
+        "REQUIRED FEATURES:\n"
+        "1) File upload (csv/xls/xlsx) parsed with SheetJS; dashboard renders from uploaded data in-browser.\n"
+        "2) Global interactive filters generated from top categorical/date columns; all filters update KPIs, charts, and table together.\n"
+        "3) KPI strip (4-6 cards) chosen from strongest numeric metrics:\n"
+        "   total, average, max/min, and at least one ratio/share metric when possible.\n"
+        "4) Chart section (minimum 6 charts), automatically selected by available data:\n"
+        "   - trend chart (line/area) when date-like columns exist\n"
+        "   - ranking chart (bar/hbar) for top categories by key metric\n"
+        "   - composition chart (doughnut/pie) for category share\n"
+        "   - comparison chart (grouped bar or mixed) when multiple metrics exist\n"
+        "   - relationship chart (scatter/bubble) when 2+ numeric columns exist\n"
+        "   - distribution chart (histogram-style bar via binned values) for a major metric when feasible\n"
+        "5) Scrollable detail table for filtered rows with searchable columns and basic pagination.\n"
+        "6) Download button that saves current dashboard HTML as a .html file.\n"
+        "7) Footer text: 'Powered by DashAI | Data stays in your browser'.\n\n"
+        "DESIGN REQUIREMENTS:\n"
+        "- Modern executive UI: gradient header, glassmorphism cards, subtle shadows, smooth transitions.\n"
+        "- Responsive CSS grid layout for desktop/tablet/mobile.\n"
+        "- Color system: indigo/blue primary, emerald positive, rose negative, amber neutral.\n"
+        "- Readable typography and strong contrast.\n\n"
+        "ANALYTICAL QUALITY BAR:\n"
+        "- Titles must express business questions/insights (not raw column names only).\n"
+        "- Tooltips should show formatted values with locale separators.\n"
+        "- Prefer intelligent defaults based on payload.numeric_stats and categorical_top_values.\n"
+        "- Include empty-state handling when uploaded data is invalid or too sparse.\n"
     )
 
     user_message = (
