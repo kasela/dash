@@ -534,7 +534,7 @@ def dashboard_create_from_version(request: HttpRequest, version_id: int) -> Http
 
     # Dispatch background Celery task to build charts
     from apps.dashboards.tasks import build_dashboard_widgets
-    task = build_dashboard_widgets.delay(str(dashboard.id), dataset_version.id)
+    task = build_dashboard_widgets.delay(str(dashboard.id), dataset_version.id, billing_profile.plan)
     dashboard.celery_task_id = task.id
     dashboard.save(update_fields=["celery_task_id"])
 
@@ -621,8 +621,12 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     role_info = column_roles.get(resolved_measure, {})
                     role_label = str(role_info.get("label") or "").strip()
                     human_label = role_label if role_label else _humanize_col(resolved_measure)
-                    kpi_meta = _detect_kpi_meta(resolved_measure)
-                    agg = spec_agg if spec_agg else str(role_info.get("agg") or "sum").strip()
+                    sem_type = str(role_info.get("data_type") or "").strip()
+                    kpi_meta = _detect_kpi_meta(resolved_measure, semantic_type=sem_type)
+                    role_agg = str(role_info.get("agg") or "sum").strip()
+                    if sem_type == "percentage" and not spec_agg:
+                        role_agg = "avg"
+                    agg = spec_agg if spec_agg else role_agg
 
                     # Smart value formatting based on aggregation preference
                     if agg == "nunique":

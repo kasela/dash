@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=5)
-def build_dashboard_widgets(self, dashboard_id: str, version_id: int):
+def build_dashboard_widgets(self, dashboard_id: str, version_id: int, plan: str = "free"):
     """Background task: generate all widgets for a newly created dashboard.
 
     Runs after the dashboard record is created so the user can be redirected
@@ -41,6 +41,7 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int):
         _detect_kpi_meta,
         _compute_kpi_trend,
         detect_and_clean_headers,
+        deduplicate_chart_specs,
         ai_generate_dashboard_specs,
         ai_generate_dashboard_title,
         ai_suggest_slicers,
@@ -107,12 +108,19 @@ def build_dashboard_widgets(self, dashboard_id: str, version_id: int):
                 dashboard.save(update_fields=["filter_config"])
 
             # ── Step 4: Comprehensive dashboard spec ────────────────────────────
-            logger.info("Dashboard %s: generating comprehensive dashboard specs", dashboard_id)
-            ai_specs = ai_generate_dashboard_specs(df, profile, dataset_version.dataset.name)
+            logger.info("Dashboard %s: generating comprehensive dashboard specs (plan=%s)", dashboard_id, plan)
+            ai_specs = ai_generate_dashboard_specs(
+                df, profile, dataset_version.dataset.name,
+                plan=plan,
+                column_roles=column_roles,
+            )
 
             if ai_specs:
                 logger.info("AI specs generated: %d widgets planned", len(ai_specs))
                 widget_specs = _build_widget_specs_from_ai(ai_specs, df, profile, column_roles)
+                # Deduplicate charts to ensure every widget shows unique data
+                widget_specs = deduplicate_chart_specs(widget_specs)
+                logger.info("After deduplication: %d widgets retained", len(widget_specs))
             else:
                 logger.info("AI specs unavailable; using heuristic generator")
                 widget_specs = generate_widget_specs_from_version(dataset_version)
@@ -389,8 +397,16 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                     role_info = column_roles.get(resolved_measure, {})
                     role_label = str(role_info.get("label") or "").strip()
                     human_label = role_label if role_label else _humanize_col(resolved_measure)
-                    kpi_meta = _detect_kpi_meta(resolved_measure)
-                    agg = spec_agg if spec_agg else str(role_info.get("agg") or "sum").strip()
+                    # Use data_type from column_roles or profile.column_types for richer KPI meta
+                    sem_type = str(role_info.get("data_type") or "").strip()
+                    if not sem_type and profile.column_types:
+                        sem_type = profile.column_types.get(resolved_measure, {}).get("semantic_type", "")
+                    kpi_meta = _detect_kpi_meta(resolved_measure, semantic_type=sem_type)
+                    # Use aggregation from column_roles if not explicitly specified
+                    role_agg = str(role_info.get("agg") or "sum").strip()
+                    if sem_type == "percentage" and not spec_agg:
+                        role_agg = "avg"  # percentages should always be averaged
+                    agg = spec_agg if spec_agg else role_agg
 
                     if agg == "nunique":
                         display_val = f"{int(df[resolved_measure].nunique()):,}"
@@ -632,6 +648,142 @@ def _build_widget_specs_from_ai(ai_specs: list, df, profile, column_roles: dict 
                         ai_insight, _ = ai_analyze_chart("radar", labels, values, title)
                     except Exception:
                         pass
+
+            # ── Bubble chart ──────────────────────────────────────────────────
+            elif chart_type == "bubble":
+                from apps.datasets.services import _bubble_config
+                rx = x_measure if x_measure and x_measure in df.columns else None
+                ry = y_measure if y_measure and y_measure in df.columns else None
+                rr = measure if measure and measure in df.columns else None
+                if not rx or not ry:
+                    nums = [c for c in profile.numeric_columns if c in df.columns]
+                    if len(nums) >= 2:
+                        rx = rx or nums[0]
+                        ry = ry or (nums[1] if len(nums) > 1 and nums[1] != rx else None)
+                    if len(nums) >= 3 and not rr:
+                        rr = nums[2] if nums[2] != rx and nums[2] != ry else None
+                if rx and ry and rx in df.columns and ry in df.columns:
+                    tmp = df[[c for c in [rx, ry, rr] if c and c in df.columns]].dropna().head(200)
+                    x_raw = tmp[rx].tolist()
+                    y_raw = tmp[ry].tolist()
+                    if rr and rr in tmp.columns:
+                        r_raw = tmp[rr].tolist()
+                        r_min = min(r_raw) if r_raw else 0
+                        r_max = max(r_raw) if r_raw else 1
+                        r_range = max(r_max - r_min, 1)
+                        r_norm = [max(4, round((v - r_min) / r_range * 30 + 4, 1)) for v in r_raw]
+                    else:
+                        r_norm = [8] * len(x_raw)
+                    data_pts = [{"x": round(float(x), 4), "y": round(float(y), 4), "r": r}
+                                for x, y, r in zip(x_raw, y_raw, r_norm)]
+                    config = _bubble_config(data_pts, title, palette,
+                                           x_label=_humanize_col(rx), y_label=_humanize_col(ry))
+                    config["layout"] = {"size": size}
+                    if not ai_insight:
+                        ai_insight = (
+                            f"Bubble chart visualizing {_humanize_col(rx)} vs {_humanize_col(ry)}"
+                            + (f" with bubble size representing {_humanize_col(rr)}" if rr else "")
+                            + f" across {len(data_pts)} data points. "
+                            f"Larger bubbles and clusters indicate high-value segments worth prioritizing."
+                        )
+
+            # ── Polar Area ────────────────────────────────────────────────────
+            elif chart_type == "polararea" and dimension and dimension in df.columns:
+                from apps.datasets.services import _polararea_config
+                resolved_meas = measure if measure and measure in df.columns else None
+                vc = (
+                    pd.to_numeric(df[resolved_meas], errors="coerce").groupby(df[dimension]).sum().nlargest(8)
+                    if resolved_meas
+                    else df[dimension].value_counts().head(8)
+                )
+                labels = [str(l) for l in vc.index]
+                values = [round(float(v), 2) for v in vc.values]
+                config = _polararea_config(labels, values, palette)
+                config["layout"] = {"size": size}
+                if not ai_insight and labels and values:
+                    try:
+                        ai_insight, _ = ai_analyze_chart("polararea", labels, values, title)
+                    except Exception:
+                        pass
+
+            # ── Mixed (bar + line) ────────────────────────────────────────────
+            elif chart_type == "mixed" and dimension and dimension in df.columns:
+                from apps.datasets.services import _mixed_config
+                bar_measures = [m for m in measures[:2] if m and m in df.columns]
+                line_measures = [m for m in measures[2:4] if m and m in df.columns]
+                if not bar_measures and measure and measure in df.columns:
+                    bar_measures = [measure]
+                # Need at least 1 bar measure
+                if bar_measures:
+                    all_mix_cols = bar_measures + line_measures
+                    grouped = df.groupby(dimension)[all_mix_cols].sum().head(12)
+                    labels = [str(l) for l in grouped.index]
+                    bar_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in bar_measures]
+                    line_ds = [{"label": _humanize_col(m), "data": [round(float(v), 2) for v in grouped[m]]} for m in line_measures]
+                    config = _mixed_config(labels, bar_ds, line_ds, palette,
+                                          x_label=_humanize_col(dimension),
+                                          y_label=_humanize_col(bar_measures[0]) if bar_measures else "")
+                    config["layout"] = {"size": size}
+                    if not ai_insight:
+                        ai_insight = (
+                            f"Dual-axis chart showing {', '.join(_humanize_col(m) for m in bar_measures)} "
+                            f"(bars) vs {', '.join(_humanize_col(m) for m in line_measures) if line_measures else 'trend'} "
+                            f"(line) across {len(labels)} {_humanize_col(dimension)} segments. "
+                            f"Use to identify volume-rate relationships and outlier segments."
+                        )
+
+            # ── Funnel ────────────────────────────────────────────────────────
+            elif chart_type == "funnel" and dimension and measure and dimension in df.columns and measure in df.columns:
+                from apps.datasets.services import _funnel_config
+                top = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().nlargest(10)
+                labels = [str(l) for l in top.index]
+                values = [round(float(v), 2) for v in top.values]
+                config = _funnel_config(labels, values, _humanize_col(measure), palette)
+                config["layout"] = {"size": size}
+                if not ai_insight and labels and values:
+                    total = sum(values)
+                    drop = round((values[0] - values[-1]) / values[0] * 100, 1) if values[0] else 0
+                    ai_insight = (
+                        f"Funnel shows {len(labels)} stages from '{labels[0]}' ({values[0]:,.0f}) "
+                        f"to '{labels[-1]}' ({values[-1]:,.0f}) — a {drop}% drop-off overall. "
+                        f"Largest conversion gap: identify the stage with steepest fall for optimization."
+                    )
+
+            # ── Gauge ─────────────────────────────────────────────────────────
+            elif chart_type == "gauge" and measure and measure in df.columns:
+                from apps.datasets.services import _gauge_config
+                col_data = pd.to_numeric(df[measure], errors="coerce").dropna()
+                if len(col_data) > 0:
+                    val = float(col_data.mean())  # show average as gauge needle
+                    min_v = float(col_data.min())
+                    max_v = float(col_data.max())
+                    config = _gauge_config(val, min_v, max_v, _humanize_col(measure), palette)
+                    config["layout"] = {"size": size}
+                    pct = round((val - min_v) / max(max_v - min_v, 1) * 100, 1)
+                    if not ai_insight:
+                        ai_insight = (
+                            f"Average {_humanize_col(measure)} is {val:,.2f} — "
+                            f"at {pct}% of the range ({min_v:,.2f}–{max_v:,.2f}). "
+                            f"Use target lines to assess performance against benchmarks."
+                        )
+
+            # ── Waterfall ─────────────────────────────────────────────────────
+            elif chart_type == "waterfall" and dimension and measure and dimension in df.columns and measure in df.columns:
+                from apps.datasets.services import _waterfall_config
+                grouped = pd.to_numeric(df[measure], errors="coerce").groupby(df[dimension]).sum().head(10)
+                labels = [str(l) for l in grouped.index]
+                values = [round(float(v), 2) for v in grouped.values]
+                config = _waterfall_config(labels, values, _humanize_col(measure), palette,
+                                           x_label=_humanize_col(dimension), y_label=_humanize_col(measure))
+                config["layout"] = {"size": size}
+                if not ai_insight and labels and values:
+                    pos = sum(v for v in values if v > 0)
+                    neg = sum(v for v in values if v < 0)
+                    ai_insight = (
+                        f"Waterfall breakdown: {_humanize_col(measure)} totals "
+                        f"+{pos:,.0f} gains vs {neg:,.0f} deductions across {len(labels)} categories. "
+                        f"Identify the largest contributors and detractors for budget or P&L optimization."
+                    )
 
             # ── Table ─────────────────────────────────────────────────────────
             elif chart_type == "table":
