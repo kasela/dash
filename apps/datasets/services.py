@@ -3699,10 +3699,17 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     if client is None:
         return None
     # Build rich data context for the prompt
-    columns = [str(c) for c in df.columns[:30]]
-    numeric_cols = [str(c) for c in profile.numeric_columns[:10]]
-    categorical_cols = [str(c) for c in profile.categorical_columns[:15]]
-    date_cols = [c for c in columns if any(k in c.lower() for k in ["date", "month", "year", "period", "quarter"])]
+    columns = [str(c) for c in df.columns[:40]]
+    numeric_cols = [str(c) for c in profile.numeric_columns[:14]]
+    categorical_cols = [str(c) for c in profile.categorical_columns[:20]]
+    col_types_local = profile.column_types or detect_column_types(df)
+    date_cols = [
+        c for c in columns
+        if (
+            (col_types_local.get(c, {}) or {}).get("semantic_type") == "date"
+            or any(k in c.lower() for k in ["date", "month", "year", "period", "quarter", "time"])
+        )
+    ][:8]
 
     sample_stats: dict = {}
     for col in numeric_cols:
@@ -3731,6 +3738,79 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     except Exception:
         pass
 
+    semantic_type_counts: dict[str, int] = {}
+    for c in columns:
+        sem = str((col_types_local.get(c, {}) or {}).get("semantic_type", "unknown"))
+        semantic_type_counts[sem] = semantic_type_counts.get(sem, 0) + 1
+
+    field_profiles: list[dict] = []
+    for c in columns:
+        meta = col_types_local.get(c, {}) or {}
+        field_profiles.append({
+            "column": c,
+            "semantic_type": str(meta.get("semantic_type", "unknown")),
+            "cardinality": int(meta.get("cardinality", 0) or 0),
+            "null_pct": float(meta.get("null_pct", 0.0) or 0.0),
+            "sample_values": list(meta.get("sample_values", []))[:5],
+        })
+
+    grouping_recommendations: list[dict] = []
+    for dim in categorical_cols[:10]:
+        for meas in numeric_cols[:8]:
+            if dim == meas:
+                continue
+            grouping_recommendations.append({
+                "group_by": dim,
+                "measure": meas,
+                "aggregation": "sum",
+                "chart_hint": "bar",
+                "question": f"What drives {_humanize_col(meas)} across {_humanize_col(dim)} segments?",
+            })
+    grouping_recommendations = grouping_recommendations[:24]
+
+    derived_columns_blueprint: list[dict] = []
+    if numeric_cols:
+        primary_metric = numeric_cols[0]
+        derived_columns_blueprint.append({
+            "column": f"{primary_metric}_share_pct",
+            "formula_hint": f"{primary_metric} / SUM({primary_metric})",
+            "why": "contribution/share analysis for KPI and composition charts",
+        })
+    if len(numeric_cols) >= 2:
+        left = numeric_cols[0]
+        right = numeric_cols[1]
+        derived_columns_blueprint.append({
+            "column": f"{left}_to_{right}_ratio",
+            "formula_hint": f"{left} / NULLIF({right}, 0)",
+            "why": "efficiency KPI and outlier diagnostics",
+        })
+        derived_columns_blueprint.append({
+            "column": f"{left}_minus_{right}",
+            "formula_hint": f"{left} - {right}",
+            "why": "gap / variance analysis",
+        })
+    if date_cols:
+        d0 = date_cols[0]
+        derived_columns_blueprint.extend([
+            {"column": f"{d0}_year", "formula_hint": f"YEAR({d0})", "why": "year-over-year grouping"},
+            {"column": f"{d0}_month", "formula_hint": f"MONTH({d0})", "why": "seasonality and trend grouping"},
+            {"column": f"{d0}_quarter", "formula_hint": f"QUARTER({d0})", "why": "executive quarter view"},
+        ])
+
+    kpi_candidates: list[dict] = []
+    for c in numeric_cols[:8]:
+        stats = sample_stats.get(c)
+        if not stats:
+            continue
+        kpi_candidates.append({
+            "column": c,
+            "semantic_type": str((col_types_local.get(c, {}) or {}).get("semantic_type", "number")),
+            "preferred_aggregation": "avg" if "pct" in c.lower() or "rate" in c.lower() else "sum",
+            "sum": stats.get("sum"),
+            "mean": stats.get("mean"),
+            "max": stats.get("max"),
+        })
+
     payload = {
         "dataset_name": str(dataset_name or "Sales Data").strip(),
         "total_rows": int(profile.total_rows),
@@ -3738,6 +3818,11 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "numeric_columns": numeric_cols,
         "categorical_columns": categorical_cols,
         "date_columns": date_cols,
+        "semantic_type_counts": semantic_type_counts,
+        "field_profiles": field_profiles,
+        "grouping_recommendations": grouping_recommendations,
+        "derived_columns_blueprint": derived_columns_blueprint,
+        "kpi_candidates": kpi_candidates,
         "sample_rows": sample_rows,
         "numeric_stats": sample_stats,
         "categorical_top_values": cat_top,
@@ -3753,11 +3838,15 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "   - SheetJS: https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js\n"
         "   - Font Awesome 6: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css\n"
         "3. Data ingestion: user uploads .xlsx/.xls/.csv; parse with SheetJS and build all visuals dynamically.\n"
-        "4. FIRST PHASE (mandatory): identify data types + field roles from payload columns (date, dimension, measure, id/text).\n"
+        "4. FIRST PHASE (mandatory): identify column names, data types, semantic roles from payload (date, dimension, measure, id/text).\n"
+        "   - Build a schema map in JS first (field => {semanticType, canGroupBy, canAggregate}).\n"
+        "   - Respect payload.field_profiles and semantic_type_counts.\n"
         "5. SECOND PHASE (mandatory): compute grouped datasets + derived metrics before rendering widgets:\n"
         "   - totals, averages, counts, unique counts, shares %, variance, growth/trend rates.\n"
+        "   - Create derived columns from payload.derived_columns_blueprint only when source columns exist.\n"
+        "   - Build reusable grouping pipelines from payload.grouping_recommendations.\n"
         "6. THIRD PHASE (mandatory): design dashboard items from these computed datasets, not raw rows.\n"
-        "7. KPI design: create 5-8 high-value KPI cards with clear business labels and contextual micro-insights.\n"
+        "7. KPI design: create 6-10 high-value KPI cards with clear business labels and contextual micro-insights.\n"
         "8. Chart design: choose chart types based on data semantics (trend, comparison, composition, correlation, distribution).\n"
         "9. Include a professional chart pool (where data supports): line, area, bar, hbar, doughnut, pie, radar, scatter, bubble, mixed, funnel, gauge, waterfall.\n"
         "10. Auto-assign chart size + order for executive storytelling: top=KPIs, middle=primary trends/comparisons, lower=diagnostics/table.\n"
@@ -3765,9 +3854,10 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
         "12. Include both buttons: (a) Download Dashboard HTML, (b) Full Screen toggle for the dashboard canvas/page.\n"
         "13. Build a modern UI: glassmorphism cards, gradient header, responsive CSS grid, smooth transitions.\n"
         "14. Use color semantics: indigo/blue primary, emerald positive, rose negative, amber neutral.\n"
-        "15. Add a scrollable detailed table with calculated helper columns (e.g., share %, variance %) when relevant.\n"
+        "15. Add a scrollable detailed table with calculated helper columns (e.g., share %, variance %, ratio, YoY/MoM deltas) when relevant.\n"
         "16. Focus on decision-making insights: highlight outliers, concentration risk, growth/decline pockets, and actionable comparisons.\n"
         "17. Footer: 'Powered by DashAI | Data stays in your browser'.\n"
+        "18. Architecture requirement: implement separate JS functions for identifySchema(), buildDerivedColumns(), buildGroupedDatasets(), buildKpis(), buildCharts(), buildTable().\n"
     )
 
     user_message = (
