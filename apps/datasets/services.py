@@ -2904,6 +2904,149 @@ def ai_generate_dashboard_specs(
 
         return specs
 
+    def _profile_guided_spec_repair(specs: list[dict]) -> list[dict]:
+        """Repair weak AI specs using dataset profile so charts stay meaningful."""
+        valid_columns = {str(c) for c in df.columns}
+        numeric_columns = [str(c) for c in profile.numeric_columns if str(c) in valid_columns]
+        primary_numeric = numeric_columns[0] if numeric_columns else ""
+        secondary_numeric = numeric_columns[1] if len(numeric_columns) > 1 else primary_numeric
+        category_columns = [str(c) for c in profile.categorical_columns if str(c) in valid_columns]
+        low_card_categories = [c for c in category_columns if categorical_cardinality.get(c, 999) <= 10]
+        ranked_categories = [c for c in category_columns if categorical_cardinality.get(c, 0) > 10]
+        default_category = low_card_categories[0] if low_card_categories else (category_columns[0] if category_columns else "")
+        default_rank_category = ranked_categories[0] if ranked_categories else default_category
+        default_date = str(date_cols[0]) if date_cols else ""
+        generic_tokens = ("chart", "kpi", "analysis", "overview", "section", "widget")
+
+        def _is_generic_title(value: str) -> bool:
+            title = (value or "").strip().lower()
+            if not title:
+                return True
+            if len(title) <= 6:
+                return True
+            return any(tok in title for tok in generic_tokens)
+
+        repaired: list[dict] = []
+        for raw in specs:
+            spec = dict(raw)
+            chart_type = str(spec.get("chart_type") or spec.get("widget_type") or "").strip().lower()
+            spec["chart_type"] = chart_type
+
+            if chart_type in ("heading", "text_canvas"):
+                repaired.append(spec)
+                continue
+
+            if chart_type == "kpi":
+                measures = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+                spec["measures"] = measures
+                if _is_generic_title(str(spec.get("title") or "")) and measures:
+                    spec["title"] = f"Total {_humanize_col(measures[0])}"
+                repaired.append(spec)
+                continue
+
+            if chart_type == "table":
+                cols = [m for m in (spec.get("measures") or []) if str(m) in valid_columns]
+                if not cols:
+                    cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+                spec["measures"] = cols
+                if _is_generic_title(str(spec.get("title") or "")):
+                    spec["title"] = "Detailed Records View"
+                repaired.append(spec)
+                continue
+
+            if chart_type not in allowed_chart_types:
+                continue
+
+            dimension = str(spec.get("dimension") or "").strip()
+            if dimension and dimension not in valid_columns:
+                dimension = ""
+            measures = [str(m).strip() for m in (spec.get("measures") or []) if str(m).strip() in valid_columns]
+            measures = [m for m in measures if (m in numeric_columns) or chart_type in ("pie", "doughnut", "table")]
+
+            if chart_type in ("line", "area"):
+                if not dimension:
+                    dimension = default_date or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type == "hbar":
+                if not dimension:
+                    dimension = default_rank_category or default_category
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("bar", "pie", "doughnut", "radar"):
+                if not dimension:
+                    dimension = default_category or default_date
+                if not measures and primary_numeric:
+                    measures = [primary_numeric]
+            elif chart_type in ("scatter", "bubble", "mixed"):
+                if len(measures) < 2 and primary_numeric and secondary_numeric:
+                    measures = [primary_numeric, secondary_numeric]
+
+            spec["dimension"] = dimension
+            spec["measures"] = measures
+            if _is_generic_title(str(spec.get("title") or "")):
+                x_label = _humanize_col(dimension) if dimension else "Key Driver"
+                y_label = _humanize_col(measures[0]) if measures else "Performance"
+                spec["title"] = f"{y_label} by {x_label}"
+            repaired.append(spec)
+
+        # Coverage backfill: add profile-grounded widgets if AI missed core views.
+        has_kpi = any(s.get("chart_type") == "kpi" for s in repaired)
+        has_line = any(s.get("chart_type") == "line" for s in repaired)
+        has_breakdown = any(s.get("chart_type") in ("bar", "hbar") for s in repaired)
+        has_table = any(s.get("chart_type") == "table" for s in repaired)
+
+        if not has_kpi and primary_numeric:
+            repaired.append({
+                "title": f"Total {_humanize_col(primary_numeric)}",
+                "chart_type": "kpi",
+                "dimension": None,
+                "measures": [primary_numeric],
+                "size": "sm",
+                "palette": "indigo",
+                "ai_insight": "",
+                "_agg": "sum",
+            })
+
+        if not has_line and default_date and primary_numeric and "line" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} Trend Over Time",
+                "chart_type": "line",
+                "dimension": default_date,
+                "measures": [primary_numeric],
+                "size": "lg",
+                "palette": "ocean",
+                "ai_insight": "",
+            })
+
+        if not has_breakdown and default_category and primary_numeric and "bar" in allowed_chart_types:
+            repaired.append({
+                "title": f"{_humanize_col(primary_numeric)} by {_humanize_col(default_category)}",
+                "chart_type": "bar",
+                "dimension": default_category,
+                "measures": [primary_numeric],
+                "size": "md",
+                "palette": "vibrant",
+                "ai_insight": "",
+            })
+
+        if not has_table:
+            table_cols = [c for c in [default_date, default_category, primary_numeric, secondary_numeric] if c][:4]
+            if table_cols:
+                repaired.append({
+                    "title": "Detailed Records View",
+                    "chart_type": "table",
+                    "dimension": "",
+                    "measures": table_cols,
+                    "size": "lg",
+                    "palette": "slate",
+                    "ai_insight": "",
+                })
+
+        return repaired
+
     # Build plan-specific instruction for chart types and dashboard sophistication
     _advanced_chart_list = _LIGHT_PLUS_CHART_TYPES + _PLUS_CHART_TYPES + _PRO_CHART_TYPES
     _advanced_chart_text = ", ".join(_advanced_chart_list)
@@ -3123,6 +3266,7 @@ def ai_generate_dashboard_specs(
                 if s.get("chart_type") in ("kpi", "heading", "text_canvas", "table") or
                 s.get("chart_type") in allowed_set
             ]
+            specs = _profile_guided_spec_repair(specs)
             return specs
         logger.warning("AI returned a response but produced no normalizable dashboard specs.")
     except Exception:
