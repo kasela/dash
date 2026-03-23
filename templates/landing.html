@@ -79,157 +79,194 @@
 {% block content %}
 
 <!-- ── Hero ──────────────────────────────────────────────────────────────── -->
-<section class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 py-24 md:py-36">
-  <!-- Decorative grid -->
-  <div class="absolute inset-0 opacity-10" style="background-image: linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:40px 40px"></div>
-  <!-- Glow -->
-  <div class="absolute -top-40 left-1/2 -translate-x-1/2 h-96 w-96 rounded-full bg-indigo-600/30 blur-3xl pointer-events-none"></div>
+<section class="relative overflow-hidden py-24 md:py-36" style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 40%, #0f172a 100%);">
+  <!-- Grid texture -->
+  <div class="absolute inset-0 opacity-100" style="background-image: linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:48px 48px"></div>
+  <!-- Radial glows -->
+  <div class="pointer-events-none absolute -top-60 left-1/2 -translate-x-1/2 h-[600px] w-[600px] rounded-full" style="background: radial-gradient(circle, rgba(99,102,241,.20) 0%, transparent 70%)"></div>
+  <div class="pointer-events-none absolute top-40 -left-40 h-80 w-80 rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,.12) 0%, transparent 70%)"></div>
+  <div class="pointer-events-none absolute top-20 -right-40 h-80 w-80 rounded-full" style="background: radial-gradient(circle, rgba(99,102,241,.10) 0%, transparent 70%)"></div>
 
   <div class="relative mx-auto max-w-7xl px-5 text-center md:px-10">
-    <div class="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs font-semibold text-indigo-300 mb-6">
-      <span class="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-      No-code dashboard builder · Powered by AI
+
+    <!-- Badge -->
+    <div class="inline-flex items-center gap-2 rounded-full border border-brand-500/25 bg-brand-500/10 px-4 py-1.5 text-xs font-semibold text-brand-300 mb-7 backdrop-blur-sm">
+      <span class="h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse"></span>
+      AI-powered · No code required · Free to start
     </div>
 
-    <h1 class="mx-auto max-w-4xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
+    <!-- Headline -->
+    <h1 class="mx-auto max-w-4xl text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
       Turn Spreadsheets into
-      <span class="bg-gradient-to-r from-indigo-400 via-violet-400 to-indigo-300 bg-clip-text text-transparent"> Beautiful Dashboards</span>
+      <span class="relative">
+        <span class="bg-gradient-to-r from-brand-400 via-violet-400 to-brand-300 bg-clip-text text-transparent"> Beautiful Dashboards</span>
+        <svg class="absolute -bottom-2 left-0 w-full" viewBox="0 0 400 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M2 9.5C2 9.5 100 3 200 5.5C300 8 398 2.5 398 2.5" stroke="url(#underline-grad)" stroke-width="3" stroke-linecap="round"/>
+          <defs><linearGradient id="underline-grad" x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+        </svg>
+      </span>
     </h1>
 
-    <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
-      Upload a CSV, Excel, or JSON file. DashAI profiles your data, suggests the right charts, and generates shareable dashboards — in seconds.
+    <!-- Subheadline -->
+    <p class="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+      Upload a CSV, Excel, or JSON file. DashAI profiles your data, suggests the right charts, and generates shareable dashboards — in seconds. No engineers needed.
     </p>
 
+    <!-- CTAs -->
     <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
       {% if user.is_authenticated %}
-        <a href="{% url 'app-home' %}" class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-900/40 transition-all hover:bg-indigo-500 hover:shadow-xl hover:-translate-y-0.5">
+        <a href="{% url 'app-home' %}" class="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-950/60 transition-all hover:bg-brand-500 hover:shadow-xl hover:-translate-y-0.5">
           Go to your dashboards
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
         </a>
       {% else %}
-        <a href="{% url 'signup' %}" class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-900/40 transition-all hover:bg-indigo-500 hover:shadow-xl hover:-translate-y-0.5">
-          Start for free – no card needed
+        <a href="{% url 'signup' %}" class="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-950/60 transition-all hover:bg-brand-500 hover:shadow-xl hover:-translate-y-0.5" style="box-shadow: 0 0 30px -5px rgba(99,102,241,.5)">
+          Start for free — no card needed
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
         </a>
-        <a href="{% url 'dataset-upload' %}" class="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-white/5 px-7 py-3.5 text-base font-semibold text-white backdrop-blur transition-all hover:bg-white/10">
-          Try a live demo
+        <a href="{% url 'dataset-upload' %}" class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/8 px-7 py-3.5 text-base font-semibold text-white backdrop-blur transition-all hover:bg-white/12 hover:border-white/30">
+          <svg class="h-4.5 w-4.5 h-[18px] w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          See live demo
         </a>
       {% endif %}
     </div>
 
-    <p class="mt-5 text-sm text-slate-500">Supports CSV · XLSX · XLSM · JSON · No SQL required</p>
+    <!-- Trust signals -->
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
+      <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>CSV · XLSX · XLSM · JSON</span>
+      <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>No SQL required</span>
+      <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Free forever on Starter</span>
+      <span class="flex items-center gap-1.5"><svg class="h-3.5 w-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Share without login</span>
+    </div>
 
     <!-- Mock dashboard preview -->
-    <div class="mt-16 relative mx-auto max-w-5xl rounded-2xl border border-slate-700/60 bg-slate-800/60 p-1 shadow-2xl backdrop-blur ring-1 ring-white/5">
-      <div class="rounded-xl bg-slate-800 p-5">
-        <!-- Mock top bar -->
-        <div class="flex items-center gap-2 mb-5">
-          <div class="h-3 w-3 rounded-full bg-red-400/80"></div>
-          <div class="h-3 w-3 rounded-full bg-yellow-400/80"></div>
-          <div class="h-3 w-3 rounded-full bg-green-400/80"></div>
-          <div class="ml-3 h-5 w-48 rounded bg-slate-700"></div>
-          <div class="ml-auto h-7 w-24 rounded-lg bg-indigo-600/60"></div>
-        </div>
-        <!-- Mock stats row -->
-        <div class="mb-4 grid grid-cols-3 gap-3">
-          {% for stat in mock_stats %}
-          <div class="rounded-xl bg-slate-700/60 p-4 text-left">
-            <p class="text-xs text-slate-400">{{ stat.label }}</p>
-            <p class="mt-1 text-2xl font-bold text-white">{{ stat.value }}</p>
-          </div>
-          {% endfor %}
-        </div>
-        <!-- Mock chart area -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="rounded-xl bg-slate-700/60 p-4">
-            <div class="h-4 w-32 rounded bg-slate-600 mb-4"></div>
-            <div class="h-32">
-              <canvas id="home-chart"></canvas>
-              {{ chart_config|json_script:"chart-config" }}
+    <div class="mt-16 relative mx-auto max-w-5xl">
+      <!-- Glow behind the preview -->
+      <div class="absolute inset-x-10 -bottom-8 h-40 rounded-full blur-3xl opacity-30" style="background: linear-gradient(90deg,#6366f1,#a78bfa)"></div>
+      <div class="relative rounded-2xl border border-white/10 bg-slate-900/80 p-1.5 shadow-2xl backdrop-blur ring-1 ring-white/5">
+        <div class="rounded-xl bg-slate-800/90 p-5">
+          <!-- Mock browser chrome -->
+          <div class="flex items-center gap-2 mb-5">
+            <div class="h-3 w-3 rounded-full bg-red-400/70"></div>
+            <div class="h-3 w-3 rounded-full bg-yellow-400/70"></div>
+            <div class="h-3 w-3 rounded-full bg-green-400/70"></div>
+            <div class="ml-3 flex items-center gap-2 flex-1">
+              <div class="h-5 w-52 rounded-md bg-slate-700/70"></div>
             </div>
+            <div class="h-7 w-28 rounded-lg bg-brand-600/50 border border-brand-500/30"></div>
           </div>
-          <div class="rounded-xl bg-slate-700/60 p-4">
-            <div class="h-4 w-28 rounded bg-slate-600 mb-4"></div>
-            <div class="space-y-2.5 mt-4">
-              {% for row in mock_table_rows %}
-              <div class="flex items-center justify-between">
-                <div class="h-3 rounded bg-slate-600" style="width:{{ row.width }}%"></div>
-                <div class="h-3 w-10 rounded bg-slate-500 ml-3"></div>
+          <!-- Mock stats row -->
+          <div class="mb-4 grid grid-cols-3 gap-3">
+            {% for stat in mock_stats %}
+            <div class="rounded-xl bg-slate-700/50 border border-white/5 p-4 text-left">
+              <p class="text-xs text-slate-400">{{ stat.label }}</p>
+              <p class="mt-1 text-2xl font-bold text-white">{{ stat.value }}</p>
+              <p class="mt-1 text-xs text-emerald-400 flex items-center gap-0.5">
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+                12.4%
+              </p>
+            </div>
+            {% endfor %}
+          </div>
+          <!-- Mock chart area -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-xl bg-slate-700/50 border border-white/5 p-4">
+              <div class="flex items-center justify-between mb-4">
+                <div class="h-4 w-32 rounded bg-slate-600/80"></div>
+                <div class="h-5 w-16 rounded-full bg-emerald-500/20 border border-emerald-500/30"></div>
               </div>
-              {% endfor %}
+              <div class="h-32">
+                <canvas id="home-chart"></canvas>
+                {{ chart_config|json_script:"chart-config" }}
+              </div>
+            </div>
+            <div class="rounded-xl bg-slate-700/50 border border-white/5 p-4">
+              <div class="flex items-center justify-between mb-4">
+                <div class="h-4 w-28 rounded bg-slate-600/80"></div>
+                <div class="h-5 w-12 rounded-full bg-brand-500/20 border border-brand-500/30"></div>
+              </div>
+              <div class="space-y-3 mt-2">
+                {% for row in mock_table_rows %}
+                <div class="flex items-center gap-3">
+                  <div class="h-2 rounded-full bg-brand-500/50" style="width:{{ row.width }}%"></div>
+                  <div class="h-2 w-8 rounded-full bg-slate-600/80 ml-auto shrink-0"></div>
+                </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
   </div>
 </section>
 
 <!-- ── Social proof / logos ───────────────────────────────────────────────── -->
-<section class="border-y border-slate-100 bg-slate-50 py-10">
+<section class="border-y border-slate-100 bg-slate-50/70 py-10">
   <div class="mx-auto max-w-7xl px-5 md:px-10">
-    <p class="mb-6 text-center text-sm font-semibold uppercase tracking-widest text-slate-400">Trusted by data-driven teams at</p>
-    <div class="flex flex-wrap items-center justify-center gap-8 md:gap-16 opacity-50 grayscale">
+    <p class="mb-7 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Trusted by data-driven teams at</p>
+    <div class="flex flex-wrap items-center justify-center gap-8 md:gap-16 opacity-40 grayscale">
       {% for brand in trust_brands %}
-      <span class="text-xl font-bold text-slate-600">{{ brand }}</span>
+      <span class="text-lg font-black text-slate-700 tracking-tight">{{ brand }}</span>
       {% endfor %}
     </div>
   </div>
 </section>
 
 <!-- ── Features ───────────────────────────────────────────────────────────── -->
-<section id="features" class="py-24">
+<section id="features" class="py-24 bg-white">
   <div class="mx-auto max-w-7xl px-5 md:px-10">
     <div class="text-center mb-16">
-      <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">Everything you need</p>
-      <h2 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">From raw data to shareable insight</h2>
-      <p class="mt-4 mx-auto max-w-2xl text-lg text-slate-500">No engineers required. Just drag, drop, and share.</p>
+      <p class="text-xs font-bold uppercase tracking-widest text-brand-600 mb-3">Everything you need</p>
+      <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">From raw data to shareable insight</h2>
+      <p class="mt-4 mx-auto max-w-xl text-lg text-slate-500">No engineers required. Just drag, drop, and share.</p>
     </div>
 
-    <div class="grid gap-8 md:grid-cols-3">
+    <div class="grid gap-6 md:grid-cols-3">
 
-      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all">
-        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-[0_1px_3px_0_rgba(0,0,0,.06)] transition-all duration-200 hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,.08)] hover:border-brand-100 hover:-translate-y-0.5">
+        <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600 transition-colors group-hover:bg-brand-100">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
           </svg>
         </div>
-        <h3 class="text-lg font-bold text-slate-900">Smart Data Upload</h3>
+        <h3 class="text-base font-bold text-slate-900">Smart Data Upload</h3>
         <p class="mt-2 text-sm leading-relaxed text-slate-500">Drag and drop CSV, Excel, or JSON files. DashAI automatically parses, cleans, and profiles your dataset — no configuration needed.</p>
-        <ul class="mt-4 space-y-2 text-sm text-slate-500">
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>CSV, XLSX, XLSM, JSON</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Up to 1M rows supported</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Data quality warnings</li>
+        <ul class="mt-5 space-y-2">
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>CSV, XLSX, XLSM, JSON</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Up to 1M rows supported</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Data quality warnings</li>
         </ul>
       </div>
 
-      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all">
-        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-[0_1px_3px_0_rgba(0,0,0,.06)] transition-all duration-200 hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,.08)] hover:border-violet-100 hover:-translate-y-0.5">
+        <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600 transition-colors group-hover:bg-violet-100">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
           </svg>
         </div>
-        <h3 class="text-lg font-bold text-slate-900">AI-Powered Profiling</h3>
+        <h3 class="text-base font-bold text-slate-900">AI-Powered Profiling</h3>
         <p class="mt-2 text-sm leading-relaxed text-slate-500">Our AI analyses column types, detects dimensions and measures, and suggests the best charts to tell your data's story — automatically.</p>
-        <ul class="mt-4 space-y-2 text-sm text-slate-500">
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Column type detection</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Smart chart suggestions</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Missing data insights</li>
+        <ul class="mt-5 space-y-2">
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Column type detection</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Smart chart suggestions</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Missing data insights</li>
         </ul>
       </div>
 
-      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all">
-        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+      <div class="group rounded-2xl border border-slate-100 bg-white p-8 shadow-[0_1px_3px_0_rgba(0,0,0,.06)] transition-all duration-200 hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,.08)] hover:border-emerald-100 hover:-translate-y-0.5">
+        <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 transition-colors group-hover:bg-emerald-100">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
           </svg>
         </div>
-        <h3 class="text-lg font-bold text-slate-900">One-Click Sharing</h3>
+        <h3 class="text-base font-bold text-slate-900">One-Click Sharing</h3>
         <p class="mt-2 text-sm leading-relaxed text-slate-500">Generate a secure, permanent share link for any dashboard. Share with stakeholders — no account needed to view.</p>
-        <ul class="mt-4 space-y-2 text-sm text-slate-500">
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>UUID-secured links</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Revoke anytime</li>
-          <li class="flex items-center gap-2"><svg class="h-4 w-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>No login needed to view</li>
+        <ul class="mt-5 space-y-2">
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>UUID-secured links</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Revoke anytime</li>
+          <li class="flex items-center gap-2 text-sm text-slate-500"><svg class="h-4 w-4 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>No login needed to view</li>
         </ul>
       </div>
 
@@ -238,20 +275,25 @@
 </section>
 
 <!-- ── How it works ───────────────────────────────────────────────────────── -->
-<section class="bg-slate-50 py-24">
+<section class="bg-slate-50 py-24 border-y border-slate-100">
   <div class="mx-auto max-w-7xl px-5 md:px-10">
     <div class="text-center mb-16">
-      <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">Simple by design</p>
-      <h2 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Up and running in 3 steps</h2>
+      <p class="text-xs font-bold uppercase tracking-widest text-brand-600 mb-3">Simple by design</p>
+      <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Up and running in 3 steps</h2>
+      <p class="mt-4 mx-auto max-w-xl text-lg text-slate-500">From spreadsheet to shareable dashboard in under 60 seconds.</p>
     </div>
 
-    <div class="grid gap-8 md:grid-cols-3">
+    <div class="grid gap-8 md:grid-cols-3 relative">
+      <!-- Connector lines (desktop) -->
+      <div class="hidden md:block absolute top-8 left-1/3 right-1/3 h-0.5 bg-gradient-to-r from-brand-200 to-brand-300 -translate-x-1/4"></div>
+      <div class="hidden md:block absolute top-8 left-2/3 right-0 h-0.5 bg-gradient-to-r from-brand-300 to-brand-200 -translate-x-8"></div>
+
       {% for step in how_it_works %}
       <div class="relative flex flex-col">
-        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-bold text-white shadow-md shadow-indigo-200">
+        <div class="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-800 text-xl font-extrabold text-white shadow-lg shadow-brand-900/30 relative z-10">
           {{ step.num }}
         </div>
-        <h3 class="text-lg font-bold text-slate-900">{{ step.title }}</h3>
+        <h3 class="text-base font-bold text-slate-900">{{ step.title }}</h3>
         <p class="mt-2 text-sm leading-relaxed text-slate-500">{{ step.description }}</p>
       </div>
       {% endfor %}
@@ -260,29 +302,30 @@
 </section>
 
 <!-- ── Testimonials ───────────────────────────────────────────────────────── -->
-<section class="py-24">
+<section class="py-24 bg-white">
   <div class="mx-auto max-w-7xl px-5 md:px-10">
     <div class="text-center mb-16">
-      <p class="text-sm font-semibold uppercase tracking-widest text-indigo-600 mb-3">What teams say</p>
-      <h2 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Loved by analysts everywhere</h2>
+      <p class="text-xs font-bold uppercase tracking-widest text-brand-600 mb-3">What teams say</p>
+      <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Loved by analysts everywhere</h2>
     </div>
 
-    <div class="grid gap-6 md:grid-cols-3">
+    <div class="grid gap-5 md:grid-cols-3">
       {% for testimonial in testimonials %}
-      <div class="rounded-2xl border border-slate-100 bg-white p-7 shadow-sm">
-        <div class="flex gap-1 mb-4">
+      <div class="rounded-2xl border border-slate-100 bg-white p-7 shadow-[0_1px_3px_0_rgba(0,0,0,.06)] hover:shadow-[0_4px_16px_-2px_rgba(0,0,0,.08)] transition-shadow">
+        <!-- Stars -->
+        <div class="flex gap-0.5 mb-4">
           {% for i in "12345" %}
           <svg class="h-4 w-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
           {% endfor %}
         </div>
         <p class="text-sm leading-relaxed text-slate-600">"{{ testimonial.quote }}"</p>
-        <div class="mt-5 flex items-center gap-3">
-          <div class="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600">
+        <div class="mt-6 flex items-center gap-3">
+          <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-violet-600 text-sm font-bold text-white">
             {{ testimonial.initials }}
           </div>
           <div>
-            <p class="text-sm font-semibold text-slate-900">{{ testimonial.name }}</p>
-            <p class="text-xs text-slate-400">{{ testimonial.role }}</p>
+            <p class="text-sm font-semibold text-slate-900 leading-tight">{{ testimonial.name }}</p>
+            <p class="text-xs text-slate-400 mt-0.5">{{ testimonial.role }}</p>
           </div>
         </div>
       </div>
@@ -292,19 +335,31 @@
 </section>
 
 <!-- ── CTA ────────────────────────────────────────────────────────────────── -->
-<section class="bg-gradient-to-br from-indigo-600 to-violet-700 py-24">
-  <div class="mx-auto max-w-3xl px-5 text-center md:px-10">
-    <h2 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Ready to transform your data?</h2>
-    <p class="mt-4 text-lg text-indigo-100">Join thousands of teams already using DashAI. Free to start, no credit card required.</p>
-    <div class="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-      <a href="{% url 'signup' %}" class="inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-indigo-700 shadow-lg transition-all hover:bg-indigo-50 hover:-translate-y-0.5">
+<section class="relative overflow-hidden py-24" style="background: linear-gradient(135deg, #4338ca 0%, #4f46e5 40%, #7c3aed 100%);">
+  <!-- Texture -->
+  <div class="absolute inset-0 opacity-10" style="background-image: linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:32px 32px"></div>
+  <!-- Glow -->
+  <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <div class="h-96 w-96 rounded-full blur-3xl opacity-20 bg-white"></div>
+  </div>
+
+  <div class="relative mx-auto max-w-3xl px-5 text-center md:px-10">
+    <div class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/80 mb-6">
+      <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+      Thousands of teams already use DashAI
+    </div>
+    <h2 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">Ready to transform your data?</h2>
+    <p class="mt-5 text-lg text-indigo-100 leading-relaxed">Start for free today. No credit card required. Upgrade when your team is ready.</p>
+    <div class="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+      <a href="{% url 'signup' %}" class="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-bold text-brand-700 shadow-xl transition-all hover:bg-brand-50 hover:-translate-y-0.5 hover:shadow-2xl">
         Get started for free
         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
       </a>
-      <a href="{% url 'pricing' %}" class="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-7 py-3.5 text-base font-semibold text-white backdrop-blur transition-all hover:bg-white/20">
+      <a href="{% url 'pricing' %}" class="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-8 py-3.5 text-base font-semibold text-white backdrop-blur transition-all hover:bg-white/20">
         View pricing
       </a>
     </div>
+    <p class="mt-6 text-sm text-indigo-200/70">Free forever on Starter · No card required · Cancel anytime</p>
   </div>
 </section>
 
