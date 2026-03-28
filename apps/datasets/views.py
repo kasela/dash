@@ -528,7 +528,7 @@ def dataset_transform_version(request: HttpRequest, version_id: int) -> HttpResp
 
     version = get_object_or_404(DatasetVersion, pk=version_id)
     action = request.POST.get("action", "").strip()
-    if action not in {"promote_header", "set_type", "add_column"}:
+    if action not in {"promote_header", "set_type", "add_column", "remove_column", "add_row"}:
         return HttpResponseBadRequest("Invalid transform action")
 
     try:
@@ -606,6 +606,34 @@ def dataset_transform_version(request: HttpRequest, version_id: int) -> HttpResp
             else:
                 transformed[new_col] = s.str[max(start, 0) : max(start, 0) + max(length, 0)]
         note = f"Created column {new_col}."
+
+    elif action == "remove_column":
+        column_name = request.POST.get("column_name", "").strip()
+        if column_name not in transformed.columns:
+            return HttpResponseBadRequest("Column not found")
+        transformed = transformed.drop(columns=[column_name])
+        note = f"Removed column {column_name}."
+
+    elif action == "add_row":
+        if transformed.shape[1] == 0:
+            return HttpResponseBadRequest("Cannot add row to a dataset with no columns")
+
+        row_payload = request.POST.get("row_data", "").strip()
+        if row_payload:
+            try:
+                parsed_row = json.loads(row_payload)
+            except json.JSONDecodeError:
+                return HttpResponseBadRequest("Invalid row JSON")
+
+            if not isinstance(parsed_row, dict):
+                return HttpResponseBadRequest("Row data must be a JSON object")
+
+            new_row = {col: parsed_row.get(col, None) for col in transformed.columns}
+        else:
+            new_row = {col: None for col in transformed.columns}
+
+        transformed = pd.concat([transformed, pd.DataFrame([new_row])], ignore_index=True)
+        note = "Added 1 new row."
 
     with transaction.atomic():
         new_version = _save_transformed_version(version, transformed, "transformed")
