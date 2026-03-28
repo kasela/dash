@@ -3408,6 +3408,8 @@ def ai_generate_dashboard_specs(
                         "Every widget must earn its place — insight-dense, narratively coherent, visually purposeful.\n\n"
 
                         "Design a COMPREHENSIVE, schema-agnostic enterprise dashboard for the dataset below.\n"
+                        "LANGUAGE REQUIREMENT: Use US English for all text (titles, headings, labels, insights, tooltips).\n"
+                        "Use US spellings such as 'analyze', 'optimization', 'color', and 'organization'.\n"
                         "Use 'dataset_name' and column names to infer the business domain "
                         "(Sales, HR, Finance, Supply Chain, Marketing, Operations, E-commerce, Logistics, etc.).\n"
                         "Mode: executive | analytical | operational — adjust insight depth accordingly.\n"
@@ -3912,6 +3914,8 @@ def ai_generate_html_dashboard(df: pd.DataFrame, profile: "ProfileSummary", data
     system_prompt = (
         "You are a world-class front-end developer and data visualization expert.\n"
         "Generate ONE complete, self-contained HTML file for an advanced, data-driven analytics dashboard that adapts to ANY dataset schema.\n\n"
+        "LANGUAGE REQUIREMENT: Use US English for all UI text (headings, chart titles, labels, helper text, tooltip text).\n"
+        "Prefer US spellings like 'analyze', 'color', and 'optimization'.\n"
         "STRICT OUTPUT RULES:\n"
         "1) Return ONLY raw HTML (no markdown/code fences/explanations). Start with <!DOCTYPE html>.\n"
         "2) Use these exact CDN versions:\n"
